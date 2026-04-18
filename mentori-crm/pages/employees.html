@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Сотрудники — Mentori CRM</title>
+  <link rel="stylesheet" href="../css/styles.css"/>
+</head>
+<body>
+  <div class="app">
+    <div data-component="sidebar" data-active="employees"></div>
+
+    <div class="main">
+      <div data-component="header" data-title="Сотрудники"></div>
+
+      <main class="content">
+        <div class="page-title">
+          <div>
+            <h1>Команда</h1>
+            <p>Зарплата = выполнено отзывов × ставка. Управление через <span style="color:var(--accent);font-weight:600">+</span> и <span style="color:var(--accent);font-weight:600">−</span>.</p>
+          </div>
+          <button class="btn btn--primary" id="btnAdd">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Добавить сотрудника
+          </button>
+        </div>
+
+        <section class="cards" id="empKpis"></section>
+
+        <div class="filters">
+          <select id="fStatus" class="select">
+            <option value="">Все статусы</option>
+            <option value="active">Активные</option>
+            <option value="inactive">Неактивные</option>
+          </select>
+          <input type="text" id="fSearch" class="input" placeholder="Поиск..." style="flex:1;min-width:200px"/>
+        </div>
+
+        <div class="panel">
+          <div class="table-wrap">
+            <table class="table" id="empTable">
+              <thead>
+                <tr>
+                  <th>Имя</th>
+                  <th>Роль</th>
+                  <th class="num">Ставка / отзыв</th>
+                  <th class="num">Выполнено отзывов</th>
+                  <th class="num">К выплате</th>
+                  <th class="num">Выплачено</th>
+                  <th class="num">Долг</th>
+                  <th>Дата начала</th>
+                  <th>Статус</th>
+                  <th class="actions"></th>
+                </tr>
+              </thead>
+              <tbody id="empRows"></tbody>
+              <tfoot id="empFoot"></tfoot>
+            </table>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- Модалка: добавить -->
+  <div class="modal-backdrop" id="addModal">
+    <div class="modal">
+      <div class="modal__header">
+        <h3>Новый сотрудник</h3>
+        <button class="btn--icon" data-close>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal__body">
+        <div class="field">
+          <label for="mName">Имя</label>
+          <input type="text" id="mName" class="input" placeholder="Напр. Настя"/>
+        </div>
+        <div class="field">
+          <label for="mRole">Роль</label>
+          <input type="text" id="mRole" class="input" value="Ревьюер" placeholder="Ревьюер / Менеджер..."/>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="mRate">Ставка за отзыв, ₽</label>
+            <input type="number" id="mRate" class="input" value="300" min="0" step="50"/>
+          </div>
+          <div class="field">
+            <label for="mHired">Дата начала</label>
+            <input type="date" id="mHired" class="input"/>
+          </div>
+        </div>
+        <div class="field">
+          <label for="mStatus">Статус</label>
+          <select id="mStatus" class="select">
+            <option value="active">Активен</option>
+            <option value="inactive">Неактивен</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal__footer">
+        <button class="btn btn--ghost" data-close>Отмена</button>
+        <button class="btn btn--primary" id="mSave">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Модалка: история выплат -->
+  <div class="modal-backdrop" id="payModal">
+    <div class="modal" style="max-width:560px">
+      <div class="modal__header">
+        <h3 id="payTitle">История выплат</h3>
+        <button class="btn--icon" data-close>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal__body">
+        <div id="payList"></div>
+        <div style="border-top:1px solid var(--border); padding-top:14px;">
+          <div class="field-row">
+            <div class="field">
+              <label for="pDate">Дата</label>
+              <input type="date" id="pDate" class="input"/>
+            </div>
+            <div class="field">
+              <label for="pAmount">Сумма, ₽</label>
+              <input type="number" id="pAmount" class="input" value="0" min="0" step="500"/>
+            </div>
+          </div>
+          <div class="field" style="margin-top:12px">
+            <label for="pNote">Комментарий</label>
+            <input type="text" id="pNote" class="input" placeholder="Напр. ЗП за апрель"/>
+          </div>
+        </div>
+      </div>
+      <div class="modal__footer">
+        <button class="btn btn--ghost" data-close>Закрыть</button>
+        <button class="btn btn--primary" id="pAdd">Добавить выплату</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="../data/seed.js"></script>
+  <script src="../js/app.js"></script>
+  <script src="../components/sidebar.js"></script>
+  <script src="../components/header.js"></script>
+  <script src="../components/table.js"></script>
+
+  <script>
+  /* ========================================================================
+     Сотрудники: счётчик +/− для отзывов, авто-расчёт зарплаты
+     ======================================================================== */
+  document.addEventListener('DOMContentLoaded', () => {
+    const { Store, Modal, Counter, toast, fmtMoney, fmtDate, todayISO, tomorrowISO } = window.App;
+    const { makeEditable, confirmDelete } = window.TableUtils;
+
+    Store.load();
+
+    const filters = { status: '', q: '' };
+    let currentEmpId = null;
+
+    /* ---- KPI ---- */
+    function renderKpis(rows) {
+      const active = rows.filter(r => r.status === 'active').length;
+      const reviews = rows.reduce((s, r) => s + (+r.reviewsDone || 0), 0);
+      const earned = rows.reduce((s, r) => s + (+r.reviewsDone || 0) * (+r.ratePerReview || 0), 0);
+      const paidTotal = rows.reduce((s, r) => s + (+r.paid || 0), 0);
+      const debt = Math.max(0, earned - paidTotal);
+      document.getElementById('empKpis').innerHTML = `
+        <div class="card"><div class="card__label">Активных</div><div class="card__value">${active}</div></div>
+        <div class="card"><div class="card__label">Отзывов сделано</div><div class="card__value">${reviews}</div></div>
+        <div class="card"><div class="card__label">Заработано</div><div class="card__value">${fmtMoney(earned)}</div></div>
+        <div class="card"><div class="card__label">Выплачено</div><div class="card__value pos">${fmtMoney(paidTotal)}</div></div>
+        <div class="card"><div class="card__label">К выплате</div><div class="card__value ${debt>0?'neg':''}">${fmtMoney(debt)}</div></div>
+      `;
+    }
+
+    /* ---- Фильтрация ---- */
+    function getFiltered() {
+      return Store.state.employees.filter(r => {
+        if (filters.status && r.status !== filters.status) return false;
+        if (filters.q) {
+          const s = (r.name + ' ' + r.role).toLowerCase();
+          if (!s.includes(filters.q)) return false;
+        }
+        return true;
+      });
+    }
+
+    function render() {
+      const rows = getFiltered();
+      const tbody = document.getElementById('empRows');
+      const tfoot = document.getElementById('empFoot');
+      if (rows.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="10" class="empty">Нет сотрудников. Нажмите «Добавить сотрудника».</td></tr>`;
+        tfoot.innerHTML = '';
+      } else {
+        tbody.innerHTML = rows.map(r => rowHtml(r)).join('');
+        const reviews = rows.reduce((s, r) => s + (+r.reviewsDone || 0), 0);
+        const earned = rows.reduce((s, r) => s + (+r.reviewsDone || 0) * (+r.ratePerReview || 0), 0);
+        const paid = rows.reduce((s, r) => s + (+r.paid || 0), 0);
+        tfoot.innerHTML = `
+          <tr>
+            <td colspan="3">ИТОГО</td>
+            <td class="num">${reviews}</td>
+            <td class="num">${fmtMoney(earned)}</td>
+            <td class="num pos">${fmtMoney(paid)}</td>
+            <td class="num ${earned-paid>0?'neg':''}">${fmtMoney(Math.max(0, earned - paid))}</td>
+            <td colspan="3"></td>
+          </tr>`;
+        bindRowEditors();
+      }
+      renderKpis(rows);
+    }
+
+    function rowHtml(r) {
+      const reviews = +r.reviewsDone || 0;
+      const rate = +r.ratePerReview || 0;
+      const earned = reviews * rate;
+      const paid = +r.paid || 0;
+      const debt = Math.max(0, earned - paid);
+      return `
+        <tr data-id="${r.id}">
+          <td data-field="name"><strong>${escapeHtml(r.name || '—')}</strong></td>
+          <td data-field="role">${escapeHtml(r.role || '—')}</td>
+          <td class="num" data-field="ratePerReview" data-type="number">${rate}</td>
+          <td class="num">${Counter.html(reviews, { id: r.id + ':reviewsDone' })}</td>
+          <td class="num"><strong>${fmtMoney(earned)}</strong></td>
+          <td class="num pos" data-field="paid" data-type="number">${paid}</td>
+          <td class="num ${debt>0?'neg':''}">${fmtMoney(debt)}</td>
+          <td><input type="date" class="input" style="padding:4px 6px;background:transparent;border:1px solid transparent" data-field="hired" value="${r.hired || ''}"/></td>
+          <td>
+            <select class="select" style="padding:4px 8px" data-field="status">
+              <option value="active" ${r.status==='active'?'selected':''}>Активен</option>
+              <option value="inactive" ${r.status==='inactive'?'selected':''}>Неактивен</option>
+            </select>
+          </td>
+          <td class="actions">
+            <button class="btn btn--ghost btn--sm" data-act="history" title="История выплат">
+              История (${(r.payments || []).length})
+            </button>
+            <button class="btn--icon" data-act="del" title="Удалить">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+            </button>
+          </td>
+        </tr>`;
+    }
+
+    function bindRowEditors() {
+      document.querySelectorAll('#empRows tr').forEach(tr => {
+        const id = tr.dataset.id;
+
+        // Counter (отзывы)
+        Counter.bindAll(tr, (cid) => (newVal) => {
+          const [, field] = cid.split(':');
+          Store.updateEmployee(id, { [field]: newVal });
+          render();
+        });
+
+        // editable text/number
+        tr.querySelectorAll('td[data-field]').forEach(cell => {
+          if (cell.querySelector('input,select')) return;
+          const field = cell.dataset.field;
+          makeEditable(cell, val => {
+            Store.updateEmployee(id, { [field]: val });
+            render();
+          }, { type: cell.dataset.type === 'number' ? 'number' : 'text' });
+        });
+
+        // status
+        const statusSel = tr.querySelector('select[data-field="status"]');
+        if (statusSel) statusSel.addEventListener('change', e => {
+          Store.updateEmployee(id, { status: e.target.value });
+          render();
+        });
+
+        // hired date
+        const hiredInput = tr.querySelector('input[data-field="hired"]');
+        if (hiredInput) hiredInput.addEventListener('change', e => {
+          Store.updateEmployee(id, { hired: e.target.value });
+          render();
+        });
+
+        // delete
+        tr.querySelector('[data-act="del"]').addEventListener('click', () => {
+          if (confirmDelete('Удалить сотрудника?')) {
+            Store.deleteEmployee(id);
+            toast('Сотрудник удалён');
+            render();
+          }
+        });
+        // payments
+        tr.querySelector('[data-act="history"]').addEventListener('click', () => openPayments(id));
+      });
+    }
+
+    /* ---- Выплаты ---- */
+    function openPayments(id) {
+      currentEmpId = id;
+      const e = Store.state.employees.find(x => x.id === id);
+      if (!e) return;
+      const earned = (+e.reviewsDone || 0) * (+e.ratePerReview || 0);
+      const debt = Math.max(0, earned - (+e.paid || 0));
+      document.getElementById('payTitle').textContent = `Выплаты — ${e.name} · к выплате ${fmtMoney(debt)}`;
+      document.getElementById('pDate').value = todayISO();
+      document.getElementById('pAmount').value = debt > 0 ? debt : 0;
+      document.getElementById('pNote').value = '';
+      renderPayments(e);
+      Modal.open('payModal');
+    }
+
+    function renderPayments(e) {
+      const list = document.getElementById('payList');
+      const payments = (e.payments || []).slice().sort((a, b) => (b.date||'').localeCompare(a.date||''));
+      if (payments.length === 0) {
+        list.innerHTML = `<div class="empty">Выплат ещё не было.</div>`;
+        return;
+      }
+      list.innerHTML = `
+        <table class="table" style="min-width:auto">
+          <thead><tr><th>Дата</th><th class="num">Сумма</th><th>Комментарий</th><th class="actions"></th></tr></thead>
+          <tbody>
+            ${payments.map(p => `
+              <tr data-pid="${p.id}">
+                <td>${fmtDate(p.date)}</td>
+                <td class="num pos">${fmtMoney(p.amount)}</td>
+                <td>${escapeHtml(p.note || '')}</td>
+                <td class="actions">
+                  <button class="btn--icon" data-remove title="Удалить">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  </button>
+                </td>
+              </tr>`).join('')}
+          </tbody>
+        </table>`;
+      list.querySelectorAll('[data-remove]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const pid = btn.closest('tr').dataset.pid;
+          const emp = Store.state.employees.find(x => x.id === currentEmpId);
+          const pay = emp.payments.find(p => p.id === pid);
+          emp.payments = emp.payments.filter(p => p.id !== pid);
+          emp.paid = Math.max(0, (emp.paid || 0) - (pay ? Number(pay.amount) : 0));
+          Store.save();
+          renderPayments(emp);
+          render();
+          toast('Выплата удалена');
+        });
+      });
+    }
+
+    document.getElementById('pAdd').addEventListener('click', () => {
+      if (!currentEmpId) return;
+      const p = {
+        date:   document.getElementById('pDate').value || todayISO(),
+        amount: Number(document.getElementById('pAmount').value) || 0,
+        note:   document.getElementById('pNote').value.trim()
+      };
+      if (p.amount <= 0) { toast('Укажите сумму', 'error'); return; }
+      Store.addPayment(currentEmpId, p);
+      toast('Выплата добавлена');
+      const e = Store.state.employees.find(x => x.id === currentEmpId);
+      renderPayments(e);
+      document.getElementById('pAmount').value = '0';
+      document.getElementById('pNote').value = '';
+      render();
+    });
+
+    /* ---- Фильтры ---- */
+    document.getElementById('fStatus').addEventListener('change', e => { filters.status = e.target.value; render(); });
+    document.getElementById('fSearch').addEventListener('input',  e => { filters.q = e.target.value.trim().toLowerCase(); render(); });
+    window.onGlobalSearch = (q) => { filters.q = q; document.getElementById('fSearch').value = q; render(); };
+
+    /* ---- Модалка добавления ---- */
+    document.getElementById('btnAdd').addEventListener('click', () => {
+      document.getElementById('mName').value = '';
+      document.getElementById('mRole').value = 'Ревьюер';
+      document.getElementById('mRate').value = '300';
+      document.getElementById('mHired').value = tomorrowISO();
+      document.getElementById('mStatus').value = 'active';
+      Modal.open('addModal');
+      setTimeout(() => document.getElementById('mName').focus(), 60);
+    });
+    document.getElementById('mSave').addEventListener('click', () => {
+      const name = document.getElementById('mName').value.trim();
+      if (!name) { toast('Укажите имя', 'error'); return; }
+      Store.addEmployee({
+        name,
+        role:          document.getElementById('mRole').value.trim() || 'Ревьюер',
+        ratePerReview: Number(document.getElementById('mRate').value) || 0,
+        reviewsDone:   0,
+        paid:          0,
+        hired:         document.getElementById('mHired').value || tomorrowISO(),
+        status:        document.getElementById('mStatus').value,
+        payments:      []
+      });
+      Modal.close('addModal');
+      toast('Сотрудник добавлен');
+      render();
+    });
+
+    render();
+  });
+
+  function escapeHtml(s) {
+    return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+  </script>
+</body>
+</html>

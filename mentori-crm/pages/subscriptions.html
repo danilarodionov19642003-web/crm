@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Подписки — Mentori CRM</title>
+  <link rel="stylesheet" href="../css/styles.css"/>
+</head>
+<body>
+  <div class="app">
+    <div data-component="sidebar" data-active="subscriptions"></div>
+
+    <div class="main">
+      <div data-component="header" data-title="Подписки и платежи"></div>
+
+      <main class="content">
+        <div class="page-title">
+          <div>
+            <h1>Подписки клиентов и сервисов</h1>
+            <p>Связывайте подписку с клиентом и тарифом. Близкие платежи подсвечены.</p>
+          </div>
+          <button class="btn btn--primary" id="btnAdd">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Добавить подписку
+          </button>
+        </div>
+
+        <section class="cards" id="subKpis"></section>
+
+        <div class="filters">
+          <select id="fStatus" class="select">
+            <option value="">Все статусы</option>
+            <option value="оплачен">Оплачено</option>
+            <option value="не оплачен">Не оплачено</option>
+          </select>
+          <select id="fTariff" class="select">
+            <option value="">Все тарифы</option>
+          </select>
+          <select id="fDue" class="select">
+            <option value="">Все сроки</option>
+            <option value="overdue">Просрочено</option>
+            <option value="soon">≤ 7 дней</option>
+            <option value="month">≤ 30 дней</option>
+          </select>
+          <input type="text" id="fSearch" class="input" placeholder="Поиск по названию или клиенту..." style="flex:1;min-width:200px"/>
+          <button class="btn btn--ghost" id="btnReset">Сбросить</button>
+        </div>
+
+        <div class="panel">
+          <div class="table-wrap">
+            <table class="table" id="subTable">
+              <thead>
+                <tr>
+                  <th>Название</th>
+                  <th>Частота</th>
+                  <th class="num">Сумма</th>
+                  <th>Статус</th>
+                  <th>След. платёж</th>
+                  <th class="num">Дней до</th>
+                  <th class="actions"></th>
+                </tr>
+              </thead>
+              <tbody id="subRows"></tbody>
+              <tfoot id="subFoot"></tfoot>
+            </table>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- Модалка -->
+  <div class="modal-backdrop" id="addModal">
+    <div class="modal" style="max-width:520px">
+      <div class="modal__header">
+        <h3>Новая подписка</h3>
+        <button class="btn--icon" data-close>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal__body">
+        <div class="field">
+          <label for="mName">Название</label>
+          <input type="text" id="mName" class="input" placeholder="Напр. Подписка Никиты / Прокси МСК 1"/>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="mClient">Клиент (необязательно)</label>
+            <select id="mClient" class="select"></select>
+          </div>
+          <div class="field">
+            <label for="mTariff">Тариф</label>
+            <select id="mTariff" class="select"></select>
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="mFreq">Частота</label>
+            <select id="mFreq" class="select">
+              <option value="Каждые 7 дней">Каждые 7 дней</option>
+              <option value="Каждые 30 дней" selected>Каждые 30 дней</option>
+              <option value="Каждые 90 дней">Каждые 90 дней</option>
+              <option value="Каждый год">Каждый год</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="mAmount">Сумма, ₽</label>
+            <input type="number" id="mAmount" class="input" value="0" min="0" step="50"/>
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="mStatus">Статус</label>
+            <select id="mStatus" class="select">
+              <option value="оплачен">Оплачено</option>
+              <option value="не оплачен">Не оплачено</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="mNext">Дата след. платежа</label>
+            <input type="date" id="mNext" class="input"/>
+          </div>
+        </div>
+      </div>
+      <div class="modal__footer">
+        <button class="btn btn--ghost" data-close>Отмена</button>
+        <button class="btn btn--primary" id="mSave">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="../data/seed.js"></script>
+  <script src="../js/app.js"></script>
+  <script src="../components/sidebar.js"></script>
+  <script src="../components/header.js"></script>
+  <script src="../components/table.js"></script>
+
+  <script>
+  /* ========================================================================
+     Подписки: связь клиент + тариф + дата + статус
+     ======================================================================== */
+  document.addEventListener('DOMContentLoaded', () => {
+    const { Store, Modal, toast, fmtMoney, fmtDate, todayISO,
+            TARIFFS, TARIFF_NAMES } = window.App;
+    const { makeEditable, confirmDelete } = window.TableUtils;
+
+    Store.load();
+    const filters = { status: '', tariff: '', due: '', q: '' };
+
+    const clientName = (id) => {
+      if (!id) return '';
+      const c = Store.state.clients.find(x => x.id === id);
+      return c ? c.name : '';
+    };
+
+    function daysUntil(iso) {
+      if (!iso) return null;
+      const today = new Date(todayISO());
+      const target = new Date(iso);
+      return Math.round((target - today) / 86400000);
+    }
+
+    /* ---- Селекты в модалке ---- */
+    function refreshModalSelects() {
+      const cs = ['<option value="">— без клиента (сервис) —</option>']
+        .concat(Store.state.clients.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`));
+      document.getElementById('mClient').innerHTML = cs.join('');
+      document.getElementById('mTariff').innerHTML =
+        '<option value="">— без тарифа —</option>' +
+        TARIFFS.map(t => `<option value="${t.name}">${t.name} — ${t.price.toLocaleString('ru-RU')} ₽</option>`).join('');
+    }
+
+    /* ---- Фильтр по тарифам ---- */
+    function refreshFilterOptions() {
+      const tf = document.getElementById('fTariff');
+      const keep = tf.value;
+      tf.innerHTML = '<option value="">Все тарифы</option>' +
+        TARIFF_NAMES.map(t => `<option value="${t}">${t}</option>`).join('');
+      tf.value = TARIFF_NAMES.includes(keep) ? keep : '';
+    }
+
+    /* ---- KPI ---- */
+    function renderKpis(rows) {
+      const monthly = rows.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+      const overdue = rows.filter(r => { const d = daysUntil(r.nextDate); return d !== null && d < 0; }).length;
+      const soon = rows.filter(r => { const d = daysUntil(r.nextDate); return d !== null && d >= 0 && d <= 7; }).length;
+      document.getElementById('subKpis').innerHTML = `
+        <div class="card"><div class="card__label">Подписок</div><div class="card__value">${rows.length}</div></div>
+        <div class="card"><div class="card__label">В месяц</div><div class="card__value">${fmtMoney(monthly)}</div></div>
+        <div class="card"><div class="card__label">В год</div><div class="card__value">${fmtMoney(monthly * 12)}</div></div>
+        <div class="card"><div class="card__label">Скоро (7 дней)</div><div class="card__value">${soon}</div></div>
+        <div class="card"><div class="card__label">Просрочено</div><div class="card__value ${overdue>0?'neg':''}">${overdue}</div></div>
+      `;
+    }
+
+    function getFiltered() {
+      return Store.state.subscriptions.filter(r => {
+        const status = (r.status || '').trim().toLowerCase();
+        if (filters.status && !status.startsWith(filters.status)) return false;
+        if (filters.tariff && r.tariff !== filters.tariff) return false;
+        if (filters.q) {
+          const cn = clientName(r.clientId).toLowerCase();
+          const s = (r.name + ' ' + cn + ' ' + r.tariff).toLowerCase();
+          if (!s.includes(filters.q)) return false;
+        }
+        if (filters.due) {
+          const d = daysUntil(r.nextDate);
+          if (d === null) return false;
+          if (filters.due === 'overdue' && d >= 0) return false;
+          if (filters.due === 'soon' && (d < 0 || d > 7)) return false;
+          if (filters.due === 'month' && (d < 0 || d > 30)) return false;
+        }
+        return true;
+      }).sort((a, b) => (daysUntil(a.nextDate) ?? 1e9) - (daysUntil(b.nextDate) ?? 1e9));
+    }
+
+    function render() {
+      refreshFilterOptions();
+      const rows = getFiltered();
+      const tbody = document.getElementById('subRows');
+      const tfoot = document.getElementById('subFoot');
+      if (rows.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7" class="empty">Нет подписок под фильтр.</td></tr>`;
+        tfoot.innerHTML = '';
+      } else {
+        tbody.innerHTML = rows.map(r => rowHtml(r)).join('');
+        const monthly = rows.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+        tfoot.innerHTML = `<tr><td colspan="2">ИТОГО в месяц</td><td class="num">${fmtMoney(monthly)}</td><td colspan="4"></td></tr>`;
+        bindRowEditors();
+      }
+      renderKpis(rows);
+    }
+
+    function rowHtml(r) {
+      const status = (r.status || '').trim().toLowerCase();
+      const paid = status.startsWith('оплачен');
+      const d = daysUntil(r.nextDate);
+      let dueHtml = '<span class="badge badge--gray">—</span>';
+      if (d !== null) {
+        if (d < 0) dueHtml = `<span class="badge badge--red">просрочено ${-d} дн.</span>`;
+        else if (d === 0) dueHtml = `<span class="badge badge--orange">сегодня</span>`;
+        else if (d <= 7) dueHtml = `<span class="badge badge--orange">через ${d} дн.</span>`;
+        else dueHtml = `<span class="badge badge--gray">через ${d} дн.</span>`;
+      }
+      const statusBadge = paid
+        ? '<span class="badge badge--green"><span class="dot"></span>Оплачено</span>'
+        : '<span class="badge badge--red"><span class="dot"></span>Не оплачено</span>';
+      return `
+        <tr data-id="${r.id}">
+          <td data-field="name"><strong>${escapeHtml(r.name || '—')}</strong></td>
+          <td>
+            <select class="select" style="padding:4px 8px" data-field="frequency">
+              <option value="Каждые 7 дней" ${r.frequency==='Каждые 7 дней'?'selected':''}>Каждые 7 дней</option>
+              <option value="Каждые 30 дней" ${r.frequency==='Каждые 30 дней'?'selected':''}>Каждые 30 дней</option>
+              <option value="Каждые 90 дней" ${r.frequency==='Каждые 90 дней'?'selected':''}>Каждые 90 дней</option>
+              <option value="Каждый год" ${r.frequency==='Каждый год'?'selected':''}>Каждый год</option>
+            </select>
+          </td>
+          <td class="num" data-field="amount" data-type="number">${r.amount || 0}</td>
+          <td>
+            <select class="select" style="padding:4px 8px" data-field="status">
+              <option value="оплачен" ${paid?'selected':''}>Оплачено</option>
+              <option value="не оплачен" ${!paid?'selected':''}>Не оплачено</option>
+            </select>
+            <div style="margin-top:4px">${statusBadge}</div>
+          </td>
+          <td>
+            <input type="date" class="input" style="padding:4px 6px;background:transparent;border:1px solid transparent" data-field="nextDate" value="${r.nextDate || ''}"/>
+          </td>
+          <td class="num">${dueHtml}</td>
+          <td class="actions">
+            <button class="btn btn--ghost btn--sm" data-act="pay" title="Продлить">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;vertical-align:middle"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Продлить
+            </button>
+            <button class="btn--icon" data-act="del" title="Удалить">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+            </button>
+          </td>
+        </tr>`;
+    }
+
+    function bindRowEditors() {
+      document.querySelectorAll('#subRows tr').forEach(tr => {
+        const id = tr.dataset.id;
+        tr.querySelectorAll('td[data-field]').forEach(cell => {
+          if (cell.querySelector('input,select')) return;
+          const field = cell.dataset.field;
+          makeEditable(cell, val => {
+            Store.updateSubscription(id, { [field]: val });
+            render();
+          }, { type: cell.dataset.type === 'number' ? 'number' : 'text' });
+        });
+        tr.querySelectorAll('select[data-field]').forEach(sel => {
+          sel.addEventListener('change', e => {
+            const v = sel.dataset.field === 'clientId' ? (e.target.value || null) : e.target.value;
+            // авто-подстановка суммы из тарифа
+            const patch = { [sel.dataset.field]: v };
+            if (sel.dataset.field === 'tariff') {
+              const t = TARIFFS.find(x => x.name === v);
+              if (t) patch.amount = t.price;
+            }
+            Store.updateSubscription(id, patch);
+            render();
+          });
+        });
+        const dateInput = tr.querySelector('input[data-field="nextDate"]');
+        if (dateInput) dateInput.addEventListener('change', e => {
+          Store.updateSubscription(id, { nextDate: e.target.value });
+          render();
+        });
+        tr.querySelector('[data-act="pay"]').addEventListener('click', () => {
+          const s = Store.state.subscriptions.find(x => x.id === id);
+          const f = (s.frequency || '').toLowerCase();
+          let add = 30;
+          if (f.includes('7')) add = 7;
+          else if (f.includes('90')) add = 90;
+          else if (f.includes('год')) add = 365;
+          const base = s.nextDate ? new Date(s.nextDate) : new Date();
+          base.setDate(base.getDate() + add);
+          const iso = base.toISOString().slice(0, 10);
+          Store.updateSubscription(id, { nextDate: iso, status: 'оплачен' });
+          toast(`Продлено до ${fmtDate(iso)}`);
+          render();
+        });
+        tr.querySelector('[data-act="del"]').addEventListener('click', () => {
+          if (confirmDelete('Удалить подписку?')) {
+            Store.deleteSubscription(id);
+            toast('Подписка удалена');
+            render();
+          }
+        });
+      });
+    }
+
+    /* ---- Фильтры ---- */
+    document.getElementById('fStatus').addEventListener('change', e => { filters.status = e.target.value; render(); });
+    document.getElementById('fTariff').addEventListener('change', e => { filters.tariff = e.target.value; render(); });
+    document.getElementById('fDue').addEventListener('change',    e => { filters.due = e.target.value; render(); });
+    document.getElementById('fSearch').addEventListener('input',  e => { filters.q = e.target.value.trim().toLowerCase(); render(); });
+    document.getElementById('btnReset').addEventListener('click', () => {
+      filters.status = filters.tariff = filters.due = filters.q = '';
+      ['fStatus','fTariff','fDue','fSearch'].forEach(id => document.getElementById(id).value = '');
+      render();
+    });
+    window.onGlobalSearch = (q) => { filters.q = q; document.getElementById('fSearch').value = q; render(); };
+
+    /* ---- Модалка ---- */
+    document.getElementById('btnAdd').addEventListener('click', () => {
+      refreshModalSelects();
+      document.getElementById('mName').value = '';
+      document.getElementById('mClient').value = '';
+      document.getElementById('mTariff').value = '';
+      document.getElementById('mFreq').value = 'Каждые 30 дней';
+      document.getElementById('mAmount').value = '0';
+      document.getElementById('mStatus').value = 'оплачен';
+      document.getElementById('mNext').value = todayISO();
+      Modal.open('addModal');
+      setTimeout(() => document.getElementById('mName').focus(), 60);
+    });
+    // авто-подставлять сумму при выборе тарифа
+    document.getElementById('mTariff').addEventListener('change', e => {
+      const t = TARIFFS.find(x => x.name === e.target.value);
+      if (t) document.getElementById('mAmount').value = t.price;
+    });
+    document.getElementById('mSave').addEventListener('click', () => {
+      const name = document.getElementById('mName').value.trim();
+      if (!name) { toast('Укажите название', 'error'); return; }
+      Store.addSubscription({
+        name,
+        clientId:  document.getElementById('mClient').value || null,
+        tariff:    document.getElementById('mTariff').value,
+        frequency: document.getElementById('mFreq').value,
+        amount:    Number(document.getElementById('mAmount').value) || 0,
+        status:    document.getElementById('mStatus').value,
+        nextDate:  document.getElementById('mNext').value || todayISO()
+      });
+      Modal.close('addModal');
+      toast('Подписка добавлена');
+      render();
+    });
+
+    render();
+  });
+
+  function escapeHtml(s) {
+    return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+  </script>
+</body>
+</html>
