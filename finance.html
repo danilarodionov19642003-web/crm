@@ -1,0 +1,572 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Финансы — Mentori CRM</title>
+  <link rel="stylesheet" href="../css/styles.css"/>
+</head>
+<body>
+  <div class="app">
+    <div data-component="sidebar" data-active="finance"></div>
+
+    <div class="main">
+      <div data-component="header" data-title="Финансы"></div>
+
+      <main class="content">
+        <div class="page-title">
+          <div>
+            <h1>Финансовый учёт</h1>
+            <p>Доходы и расходы — раздельно. Прибыль считается автоматически.</p>
+          </div>
+          <button class="btn btn--primary" id="btnAdd">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            <span id="btnAddLabel">Добавить доход</span>
+          </button>
+        </div>
+
+        <!-- KPI -->
+        <section class="cards" id="finKpis"></section>
+
+        <!-- Tabs -->
+        <div class="tabs" id="tabs">
+          <button class="tab active" data-tab="income">📥 Доходы <span class="tab__count" id="cntIncome">0</span></button>
+          <button class="tab" data-tab="expense">📤 Расходы <span class="tab__count" id="cntExpense">0</span></button>
+        </div>
+
+        <!-- Фильтры (общие) -->
+        <div class="filters">
+          <input type="date" id="fDateFrom" class="input" title="С"/>
+          <input type="date" id="fDateTo"   class="input" title="По"/>
+          <select id="fGroup" class="select">
+            <option value="">Все категории / услуги</option>
+          </select>
+          <input type="text" id="fSearch" class="input" placeholder="Поиск..." style="flex:1;min-width:200px"/>
+          <button class="btn btn--ghost" id="btnReset">Сбросить</button>
+        </div>
+
+        <!-- Доходы (по месяцам, аккордеон) -->
+        <div class="tab-panel active" data-panel="income">
+          <div id="incomeBlocks" class="month-blocks"></div>
+        </div>
+
+        <!-- Расходы (по месяцам + категориям, аккордеон) -->
+        <div class="tab-panel" data-panel="expense">
+          <div id="expenseBlocks" class="month-blocks"></div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- Модалка дохода -->
+  <div class="modal-backdrop" id="incomeModal">
+    <div class="modal">
+      <div class="modal__header">
+        <h3>Новый доход</h3>
+        <button class="btn--icon" data-close>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal__body">
+        <div class="field-row">
+          <div class="field">
+            <label for="iDate">Дата</label>
+            <input type="date" id="iDate" class="input"/>
+          </div>
+          <div class="field">
+            <label for="iAmount">Сумма, ₽</label>
+            <input type="number" id="iAmount" class="input" value="0" min="0" step="100"/>
+          </div>
+        </div>
+        <div class="field">
+          <label for="iClient">Клиент</label>
+          <input type="text" id="iClient" class="input" placeholder="Напр. Денис Мехнин" list="clientList"/>
+          <datalist id="clientList"></datalist>
+        </div>
+        <div class="field">
+          <label for="iService">Услуга</label>
+          <select id="iService" class="select"></select>
+        </div>
+        <div class="field">
+          <label for="iComment">Комментарий</label>
+          <input type="text" id="iComment" class="input" placeholder="Необязательно"/>
+        </div>
+      </div>
+      <div class="modal__footer">
+        <button class="btn btn--ghost" data-close>Отмена</button>
+        <button class="btn btn--primary" id="iSave">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Модалка расхода -->
+  <div class="modal-backdrop" id="expenseModal">
+    <div class="modal">
+      <div class="modal__header">
+        <h3>Новый расход</h3>
+        <button class="btn--icon" data-close>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal__body">
+        <div class="field-row">
+          <div class="field">
+            <label for="eDate">Дата</label>
+            <input type="date" id="eDate" class="input"/>
+          </div>
+          <div class="field">
+            <label for="eAmount">Сумма, ₽</label>
+            <input type="number" id="eAmount" class="input" value="0" min="0" step="100"/>
+          </div>
+        </div>
+        <div class="field">
+          <label for="eCategory">Категория</label>
+          <select id="eCategory" class="select"></select>
+        </div>
+        <div class="field">
+          <label for="eComment">Комментарий</label>
+          <input type="text" id="eComment" class="input" placeholder="Необязательно"/>
+        </div>
+      </div>
+      <div class="modal__footer">
+        <button class="btn btn--ghost" data-close>Отмена</button>
+        <button class="btn btn--primary" id="eSave">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="../data/seed.js"></script>
+  <script src="../js/app.js"></script>
+  <script src="../components/sidebar.js"></script>
+  <script src="../components/header.js"></script>
+  <script src="../components/table.js"></script>
+
+  <script>
+  /* ========================================================================
+     Финансы: 2 вкладки — Доходы / Расходы. Каждая со своим CRUD и итогами.
+     Прибыль = сумма доходов − сумма расходов (показано в KPI и на дашборде).
+     ======================================================================== */
+  document.addEventListener('DOMContentLoaded', () => {
+    const { Store, Modal, toast, fmtMoney, fmtDate, todayISO,
+            SERVICES, EXPENSE_CATEGORIES } = window.App;
+    const { makeEditable, confirmDelete } = window.TableUtils;
+
+    Store.load();
+
+    let activeTab = 'income';
+    const filters = { from: '', to: '', group: '', q: '' };
+
+    /* ---- Селекты в модалках ---- */
+    document.getElementById('iService').innerHTML = SERVICES.map(s => `<option value="${s}">${s}</option>`).join('');
+    document.getElementById('eCategory').innerHTML = EXPENSE_CATEGORIES.map(s => `<option value="${s}">${s}</option>`).join('');
+
+    /* Уникальные клиенты для подсказок ввода в модалке дохода */
+    function refreshClientDatalist() {
+      const names = [...new Set([
+        ...Store.state.income.map(r => r.client),
+        ...Store.state.clients.map(c => c.name)
+      ].filter(Boolean))].sort();
+      document.getElementById('clientList').innerHTML = names.map(n => `<option value="${escapeAttr(n)}"></option>`).join('');
+    }
+
+    /* ---- KPI ---- */
+    function renderKpis() {
+      const t = Store.totals();
+      document.getElementById('finKpis').innerHTML = `
+        <div class="card"><div class="card__label">Доход</div><div class="card__value pos">${fmtMoney(t.income)}</div></div>
+        <div class="card"><div class="card__label">Расход</div><div class="card__value neg">${fmtMoney(t.expense)}</div></div>
+        <div class="card"><div class="card__label">Прибыль</div><div class="card__value">${fmtMoney(t.profit)}</div><div class="card__trend ${t.profit>=0?'up':'down'}">${t.income ? Math.round(t.profit/t.income*100) : 0}% маржа</div></div>
+        <div class="card"><div class="card__label">Записей</div><div class="card__value">${Store.state.income.length + Store.state.expenses.length}</div><div class="card__trend">доходов ${Store.state.income.length} · расходов ${Store.state.expenses.length}</div></div>
+      `;
+      document.getElementById('cntIncome').textContent = Store.state.income.length;
+      document.getElementById('cntExpense').textContent = Store.state.expenses.length;
+    }
+
+    /* ---- Селект группы (зависит от вкладки) ---- */
+    function refreshGroupFilter() {
+      const sel = document.getElementById('fGroup');
+      const opts = activeTab === 'income' ? SERVICES : EXPENSE_CATEGORIES;
+      const label = activeTab === 'income' ? 'услуги' : 'категории';
+      const keep = sel.value;
+      sel.innerHTML = `<option value="">Все ${label}</option>` + opts.map(o => `<option value="${o}">${o}</option>`).join('');
+      sel.value = opts.includes(keep) ? keep : '';
+    }
+
+    /* ---- Фильтрация ---- */
+    function getFilteredIncome() {
+      return Store.state.income.filter(r => {
+        if (filters.from && r.date < filters.from) return false;
+        if (filters.to && r.date > filters.to) return false;
+        if (filters.group && r.service !== filters.group) return false;
+        if (filters.q) {
+          const s = (r.client + ' ' + r.service + ' ' + (r.comment||'')).toLowerCase();
+          if (!s.includes(filters.q)) return false;
+        }
+        return true;
+      }).sort((a,b) => (b.date||'').localeCompare(a.date||''));
+    }
+    function getFilteredExpense() {
+      return Store.state.expenses.filter(r => {
+        if (filters.from && r.date < filters.from) return false;
+        if (filters.to && r.date > filters.to) return false;
+        if (filters.group && r.category !== filters.group) return false;
+        if (filters.q) {
+          const s = (r.category + ' ' + (r.comment||'')).toLowerCase();
+          if (!s.includes(filters.q)) return false;
+        }
+        return true;
+      }).sort((a,b) => (b.date||'').localeCompare(a.date||''));
+    }
+
+    /* ---- Группировка по месяцам ---- */
+    const MONTH_NAMES = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+    function monthKey(iso) { return (iso || '').slice(0, 7); }  // 'YYYY-MM'
+    function monthLabel(key) {
+      if (!key || key.length < 7) return 'Без даты';
+      const [y, m] = key.split('-');
+      return `${MONTH_NAMES[(+m)-1] || m} ${y}`;
+    }
+    function groupByMonth(rows) {
+      const map = new Map();
+      rows.forEach(r => {
+        const k = monthKey(r.date);
+        if (!map.has(k)) map.set(k, []);
+        map.get(k).push(r);
+      });
+      // сортировка: новые месяцы сверху
+      return [...map.entries()].sort((a,b) => b[0].localeCompare(a[0]));
+    }
+    function groupByCategory(rows) {
+      const map = new Map();
+      rows.forEach(r => {
+        const k = r.category || 'Прочее';
+        if (!map.has(k)) map.set(k, []);
+        map.get(k).push(r);
+      });
+      return [...map.entries()].sort((a,b) =>
+        (b[1].reduce((s,r)=>s+(+r.amount||0),0)) - (a[1].reduce((s,r)=>s+(+r.amount||0),0))
+      );
+    }
+
+    /* Сохраняем какие <details> были открыты, чтобы не сворачивались на каждом render */
+    function captureOpenState(containerId) {
+      const open = new Set();
+      document.querySelectorAll(`#${containerId} details[data-key]`).forEach(d => {
+        if (d.open) open.add(d.dataset.key);
+      });
+      return open;
+    }
+
+    /* ---- Рендер: Доходы по месяцам ---- */
+    function renderIncome() {
+      const rows = getFilteredIncome();
+      const container = document.getElementById('incomeBlocks');
+      const wasOpen = captureOpenState('incomeBlocks');
+
+      if (rows.length === 0) {
+        container.innerHTML = `<div class="panel"><div class="empty" style="padding:32px;text-align:center;color:var(--text-mute)">Нет доходов под фильтр.</div></div>`;
+        return;
+      }
+
+      const groups = groupByMonth(rows);
+      const currMonth = todayISO().slice(0, 7);
+      // По умолчанию открыт текущий месяц + месяцы которые пользователь раскрывал
+      container.innerHTML = groups.map(([key, items]) => {
+        const sum = items.reduce((s,r) => s + (+r.amount || 0), 0);
+        const isOpen = wasOpen.has(key) || (wasOpen.size === 0 && key === currMonth) || wasOpen.has(key);
+        return `
+          <details class="month-block" data-key="${key}" ${isOpen?'open':''}>
+            <summary class="month-summary">
+              <span class="month-summary__chev">▸</span>
+              <span class="month-summary__title">${monthLabel(key)}</span>
+              <span class="month-summary__count">${items.length} ${pluralRu(items.length,'запись','записи','записей')}</span>
+              <span class="month-summary__sum pos">${fmtMoney(sum)}</span>
+            </summary>
+            <div class="table-wrap">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Дата</th>
+                    <th>Клиент</th>
+                    <th>Услуга</th>
+                    <th class="num">Сумма</th>
+                    <th>Комментарий</th>
+                    <th class="actions"></th>
+                  </tr>
+                </thead>
+                <tbody data-month="${key}">
+                  ${items.map(r => incomeRowHtml(r)).join('')}
+                </tbody>
+              </table>
+            </div>
+          </details>`;
+      }).join('');
+      bindIncomeEditors();
+    }
+
+    function incomeRowHtml(r) {
+      return `
+        <tr data-id="${r.id}">
+          <td><input type="date" class="input" style="padding:4px 6px;background:transparent;border:1px solid transparent" data-field="date" value="${r.date||''}"/></td>
+          <td data-field="client">${escapeHtml(r.client||'')}</td>
+          <td>
+            <select class="select" style="padding:4px 8px" data-field="service">
+              ${SERVICES.map(s => `<option value="${s}" ${r.service===s?'selected':''}>${s}</option>`).join('')}
+            </select>
+          </td>
+          <td class="num pos" data-field="amount" data-type="number">${r.amount||0}</td>
+          <td data-field="comment">${escapeHtml(r.comment||'')}</td>
+          <td class="actions">
+            <button class="btn--icon" data-act="del" title="Удалить">${trashIco()}</button>
+          </td>
+        </tr>`;
+    }
+
+    /* ---- Рендер: Расходы по месяцам + категориям ---- */
+    function renderExpense() {
+      const rows = getFilteredExpense();
+      const container = document.getElementById('expenseBlocks');
+      const wasOpen = captureOpenState('expenseBlocks');
+
+      if (rows.length === 0) {
+        container.innerHTML = `<div class="panel"><div class="empty" style="padding:32px;text-align:center;color:var(--text-mute)">Нет расходов под фильтр.</div></div>`;
+        return;
+      }
+
+      const groups = groupByMonth(rows);
+      const currMonth = todayISO().slice(0, 7);
+      container.innerHTML = groups.map(([key, items]) => {
+        const sum = items.reduce((s,r) => s + (+r.amount || 0), 0);
+        const isOpen = wasOpen.has(key) || (wasOpen.size === 0 && key === currMonth);
+        const cats = groupByCategory(items);
+        return `
+          <details class="month-block" data-key="${key}" ${isOpen?'open':''}>
+            <summary class="month-summary">
+              <span class="month-summary__chev">▸</span>
+              <span class="month-summary__title">${monthLabel(key)}</span>
+              <span class="month-summary__count">${items.length} ${pluralRu(items.length,'запись','записи','записей')}</span>
+              <span class="month-summary__sum neg">${fmtMoney(sum)}</span>
+            </summary>
+            <div class="cat-blocks">
+              ${cats.map(([cat, catItems]) => {
+                const catSum = catItems.reduce((s,r) => s + (+r.amount || 0), 0);
+                const catKey = `${key}::${cat}`;
+                const catOpen = wasOpen.has(catKey);
+                return `
+                  <details class="cat-block" data-key="${catKey}" ${catOpen?'open':''}>
+                    <summary class="cat-summary">
+                      <span class="month-summary__chev">▸</span>
+                      <span class="cat-summary__title">${escapeHtml(cat)}</span>
+                      <span class="month-summary__count">${catItems.length}</span>
+                      <span class="month-summary__sum neg">${fmtMoney(catSum)}</span>
+                    </summary>
+                    <div class="table-wrap">
+                      <table class="table">
+                        <thead>
+                          <tr>
+                            <th>Дата</th>
+                            <th>Категория</th>
+                            <th class="num">Сумма</th>
+                            <th>Комментарий</th>
+                            <th class="actions"></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          ${catItems.map(r => expenseRowHtml(r)).join('')}
+                        </tbody>
+                      </table>
+                    </div>
+                  </details>`;
+              }).join('')}
+            </div>
+          </details>`;
+      }).join('');
+      bindExpenseEditors();
+    }
+
+    function expenseRowHtml(r) {
+      return `
+        <tr data-id="${r.id}">
+          <td><input type="date" class="input" style="padding:4px 6px;background:transparent;border:1px solid transparent" data-field="date" value="${r.date||''}"/></td>
+          <td>
+            <select class="select" style="padding:4px 8px" data-field="category">
+              ${EXPENSE_CATEGORIES.map(s => `<option value="${s}" ${r.category===s?'selected':''}>${s}</option>`).join('')}
+            </select>
+          </td>
+          <td class="num neg" data-field="amount" data-type="number">${r.amount||0}</td>
+          <td data-field="comment">${escapeHtml(r.comment||'')}</td>
+          <td class="actions">
+            <button class="btn--icon" data-act="del" title="Удалить">${trashIco()}</button>
+          </td>
+        </tr>`;
+    }
+
+    function pluralRu(n, one, few, many) {
+      const m10 = n % 10, m100 = n % 100;
+      if (m10 === 1 && m100 !== 11) return one;
+      if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few;
+      return many;
+    }
+
+    function bindIncomeEditors() {
+      document.querySelectorAll('#incomeBlocks tr[data-id]').forEach(tr => {
+        const id = tr.dataset.id;
+        // contenteditable
+        tr.querySelectorAll('td[data-field]').forEach(cell => {
+          if (cell.querySelector('input,select')) return;
+          const field = cell.dataset.field;
+          makeEditable(cell, val => {
+            Store.updateIncome(id, { [field]: val });
+            renderAll();
+          }, { type: cell.dataset.type === 'number' ? 'number' : 'text' });
+        });
+        // селект услуги
+        tr.querySelector('select[data-field="service"]').addEventListener('change', e => {
+          Store.updateIncome(id, { service: e.target.value });
+          renderAll();
+        });
+        // дата
+        tr.querySelector('input[data-field="date"]').addEventListener('change', e => {
+          Store.updateIncome(id, { date: e.target.value });
+          renderAll();
+        });
+        // удаление
+        tr.querySelector('[data-act="del"]').addEventListener('click', () => {
+          if (confirmDelete('Удалить эту запись?')) {
+            Store.deleteIncome(id);
+            toast('Доход удалён');
+            renderAll();
+          }
+        });
+      });
+    }
+
+    function bindExpenseEditors() {
+      document.querySelectorAll('#expenseBlocks tr[data-id]').forEach(tr => {
+        const id = tr.dataset.id;
+        tr.querySelectorAll('td[data-field]').forEach(cell => {
+          if (cell.querySelector('input,select')) return;
+          const field = cell.dataset.field;
+          makeEditable(cell, val => {
+            Store.updateExpense(id, { [field]: val });
+            renderAll();
+          }, { type: cell.dataset.type === 'number' ? 'number' : 'text' });
+        });
+        tr.querySelector('select[data-field="category"]').addEventListener('change', e => {
+          Store.updateExpense(id, { category: e.target.value });
+          renderAll();
+        });
+        tr.querySelector('input[data-field="date"]').addEventListener('change', e => {
+          Store.updateExpense(id, { date: e.target.value });
+          renderAll();
+        });
+        tr.querySelector('[data-act="del"]').addEventListener('click', () => {
+          if (confirmDelete('Удалить эту запись?')) {
+            Store.deleteExpense(id);
+            toast('Расход удалён');
+            renderAll();
+          }
+        });
+      });
+    }
+
+    function renderAll() {
+      refreshGroupFilter();
+      renderKpis();
+      renderIncome();
+      renderExpense();
+    }
+
+    /* ---- Tabs ---- */
+    document.querySelectorAll('#tabs .tab').forEach(t => {
+      t.addEventListener('click', () => {
+        document.querySelectorAll('#tabs .tab').forEach(x => x.classList.remove('active'));
+        t.classList.add('active');
+        activeTab = t.dataset.tab;
+        document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+        document.querySelector(`.tab-panel[data-panel="${activeTab}"]`).classList.add('active');
+        document.getElementById('btnAddLabel').textContent = activeTab === 'income' ? 'Добавить доход' : 'Добавить расход';
+        renderAll();
+      });
+    });
+
+    /* ---- Add buttons ---- */
+    document.getElementById('btnAdd').addEventListener('click', () => {
+      if (activeTab === 'income') {
+        document.getElementById('iDate').value = todayISO();
+        document.getElementById('iClient').value = '';
+        document.getElementById('iService').value = SERVICES[0];
+        document.getElementById('iAmount').value = '0';
+        document.getElementById('iComment').value = '';
+        refreshClientDatalist();
+        Modal.open('incomeModal');
+        setTimeout(() => document.getElementById('iClient').focus(), 60);
+      } else {
+        document.getElementById('eDate').value = todayISO();
+        document.getElementById('eCategory').value = EXPENSE_CATEGORIES[0];
+        document.getElementById('eAmount').value = '0';
+        document.getElementById('eComment').value = '';
+        Modal.open('expenseModal');
+        setTimeout(() => document.getElementById('eAmount').focus(), 60);
+      }
+    });
+
+    document.getElementById('iSave').addEventListener('click', () => {
+      const rec = {
+        date: document.getElementById('iDate').value || todayISO(),
+        client: document.getElementById('iClient').value.trim(),
+        service: document.getElementById('iService').value,
+        amount: Number(document.getElementById('iAmount').value) || 0,
+        comment: document.getElementById('iComment').value.trim()
+      };
+      if (!rec.client) { toast('Укажите клиента', 'error'); return; }
+      if (rec.amount <= 0) { toast('Укажите сумму', 'error'); return; }
+      Store.addIncome(rec);
+      Modal.close('incomeModal');
+      toast('Доход добавлен');
+      renderAll();
+    });
+
+    document.getElementById('eSave').addEventListener('click', () => {
+      const rec = {
+        date: document.getElementById('eDate').value || todayISO(),
+        category: document.getElementById('eCategory').value,
+        amount: Number(document.getElementById('eAmount').value) || 0,
+        comment: document.getElementById('eComment').value.trim()
+      };
+      if (rec.amount <= 0) { toast('Укажите сумму', 'error'); return; }
+      Store.addExpense(rec);
+      Modal.close('expenseModal');
+      toast('Расход добавлен');
+      renderAll();
+    });
+
+    /* ---- Фильтры ---- */
+    document.getElementById('fDateFrom').addEventListener('change', e => { filters.from = e.target.value; renderAll(); });
+    document.getElementById('fDateTo').addEventListener('change',   e => { filters.to = e.target.value; renderAll(); });
+    document.getElementById('fGroup').addEventListener('change',    e => { filters.group = e.target.value; renderAll(); });
+    document.getElementById('fSearch').addEventListener('input',    e => { filters.q = e.target.value.trim().toLowerCase(); renderAll(); });
+    document.getElementById('btnReset').addEventListener('click', () => {
+      filters.from = filters.to = filters.group = filters.q = '';
+      ['fDateFrom','fDateTo','fGroup','fSearch'].forEach(id => document.getElementById(id).value = '');
+      renderAll();
+    });
+    window.onGlobalSearch = (q) => {
+      filters.q = q;
+      document.getElementById('fSearch').value = q;
+      renderAll();
+    };
+
+    renderAll();
+  });
+
+  function trashIco() {
+    return `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/></svg>`;
+  }
+  function escapeHtml(s) {
+    return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+  function escapeAttr(s) { return escapeHtml(s); }
+  </script>
+</body>
+</html>
