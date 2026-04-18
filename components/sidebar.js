@@ -1,0 +1,86 @@
+/* ==========================================================================
+   Sidebar — боковое меню
+   Рендерится в любой элемент с data-component="sidebar".
+   Активный пункт определяется по атрибуту data-active у контейнера
+   или по имени страницы в URL.
+   ========================================================================== */
+(function () {
+  'use strict';
+
+  const NAV = [
+    { id: 'dashboard',     label: 'Дашборд',    href: 'dashboard.html',     icon: icoGrid() },
+    { id: 'finance',       label: 'Финансы',    href: 'finance.html',       icon: icoWallet() },
+    { id: 'clients',       label: 'Клиенты',    href: 'clients.html',       icon: icoClient() },
+    { id: 'subscriptions', label: 'Подписки',   href: 'subscriptions.html', icon: icoSub() },
+    { id: 'employees',     label: 'Сотрудники', href: 'employees.html',     icon: icoUsers() }
+  ];
+
+  function resolveHref(baseHref) {
+    // Если страница лежит в /pages/, ссылки относительно текущей директории.
+    // Если это index.html в корне — нужен префикс pages/.
+    const path = location.pathname.toLowerCase();
+    if (path.endsWith('/') || path.endsWith('index.html')) return 'pages/' + baseHref;
+    return baseHref;
+  }
+
+  function render(el) {
+    const active = (el.dataset.active || detectActive()).toLowerCase();
+    el.innerHTML = `
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar__brand">
+          <div class="sidebar__logo">M</div>
+          <span>Mentori</span>
+        </div>
+        <nav class="sidebar__nav">
+          ${NAV.map(n => `
+            <a href="${resolveHref(n.href)}" class="nav-item ${n.id === active ? 'active' : ''}">
+              ${n.icon}
+              <span>${n.label}</span>
+            </a>
+          `).join('')}
+        </nav>
+        <div class="sidebar__footer">
+          © ${new Date().getFullYear()} Mentori CRM
+        </div>
+      </aside>
+      <div class="backdrop-sidebar" id="sidebarBackdrop"></div>
+    `;
+
+    // Мобильный тоггл — закрытие по бэкдропу
+    const backdrop = document.getElementById('sidebarBackdrop');
+    backdrop.addEventListener('click', () => {
+      document.getElementById('sidebar').classList.remove('open');
+      backdrop.classList.remove('open');
+    });
+  }
+
+  function detectActive() {
+    const f = location.pathname.split('/').pop().replace('.html','');
+    return f || 'dashboard';
+  }
+
+  /* --- icons ------------------------------------------------------- */
+  function icoGrid() {
+    return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>`;
+  }
+  function icoWallet() {
+    return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12V8a2 2 0 0 0-2-2H5a2 2 0 0 1 0-4h14v4"/><rect x="2" y="6" width="20" height="14" rx="2"/><circle cx="17" cy="13" r="1.2" fill="currentColor"/></svg>`;
+  }
+  function icoUsers() {
+    return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`;
+  }
+  function icoClient() {
+    return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`;
+  }
+  function icoSub() {
+    return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><polyline points="21 3 21 9 15 9"/></svg>`;
+  }
+
+  window.Sidebar = {
+    mount() {
+      document.querySelectorAll('[data-component="sidebar"]').forEach(render);
+    }
+  };
+
+  document.addEventListener('DOMContentLoaded', () => window.Sidebar.mount());
+})();
