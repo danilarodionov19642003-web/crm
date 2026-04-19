@@ -21,6 +21,12 @@
   }
 
   function authHeader() {
+    // Личную сессию используем ТОЛЬКО в кабинете сотрудника
+    // (страницы /pages/employee/*). Админка всегда ходит анонимно
+    // под публичным ключом — иначе протухший JWT сотрудника на том же
+    // устройстве ломает все REST-запросы админки (PGRST303 JWT expired).
+    const isEmployeeArea = location.pathname.includes('/employee/');
+    if (!isEmployeeArea) return `Bearer ${KEY}`;
     const s = getSession();
     return s && s.access_token ? `Bearer ${s.access_token}` : `Bearer ${KEY}`;
   }
