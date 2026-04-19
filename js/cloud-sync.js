@@ -162,11 +162,11 @@
   });
 
   /* ---- Если страница уже отрисована, а пришли свежие данные —
-         простейший способ обновить UI везде: перезагрузить страницу. ---- */
+         НЕ перезагружаем страницу (это вызывало бесконечную петлю,
+         когда accounts-sync и cloud-sync друг друга «перетягивают»).
+         Пробрасываем событие как cloudstate:updated — страницы сами
+         подписываются и перерисовываются без релоада. ---- */
   window.addEventListener('store:reloaded', () => {
-    // флажок не даёт зациклить релоад, если cloudstate приходит снова
-    if (window.__cloudReloadDone) return;
-    window.__cloudReloadDone = true;
-    setTimeout(() => location.reload(), 100);
+    window.dispatchEvent(new CustomEvent('cloudstate:updated'));
   });
 })();
