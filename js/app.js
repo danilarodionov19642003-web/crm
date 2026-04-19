@@ -122,7 +122,13 @@
       return this.state;
     },
 
-    save() { localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state)); },
+    save() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state));
+      // Облачная синхронизация (если подключена)
+      if (window.CloudSync && window.CloudSync.isConfigured()) {
+        window.CloudSync.push(this.state);
+      }
+    },
 
     reset() {
       localStorage.removeItem(STORAGE_KEY);
@@ -501,5 +507,12 @@
   document.addEventListener('DOMContentLoaded', () => {
     Store.load();
     Modal.bind();
+  });
+
+  /* При обновлении состояния из облака — перечитываем localStorage и шлём
+     событие 'store:reloaded', чтобы каждая страница перерендерилась. */
+  window.addEventListener('cloudstate:updated', () => {
+    Store.load();
+    window.dispatchEvent(new CustomEvent('store:reloaded'));
   });
 })();

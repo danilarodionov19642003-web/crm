@@ -540,6 +540,38 @@ input, select, textarea { font-family: inherit; font-size: inherit; }
   height: 280px;
 }
 
+/* --- Cloud sync status indicator --- */
+.cloud-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--text-mute);
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: nowrap;
+}
+.cloud-status__dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: #888;
+  box-shadow: 0 0 0 0 rgba(255,122,0,0);
+  transition: background .2s;
+}
+.cloud-status[data-state="syncing"] .cloud-status__dot { background: var(--accent); animation: cs-pulse 1s infinite; }
+.cloud-status[data-state="synced"]  .cloud-status__dot { background: #2ecc71; }
+.cloud-status[data-state="error"]   .cloud-status__dot { background: #ff4444; }
+.cloud-status[data-state="offline"] .cloud-status__dot { background: #888; }
+.cloud-status[data-state="syncing"] { color: var(--accent); }
+.cloud-status[data-state="error"]   { color: #ff6b6b; }
+@keyframes cs-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(255,122,0,0.6); }
+  70%  { box-shadow: 0 0 0 6px rgba(255,122,0,0); }
+  100% { box-shadow: 0 0 0 0 rgba(255,122,0,0); }
+}
+
 /* --- Month accordion (finance) --- */
 .month-blocks { display: flex; flex-direction: column; gap: 10px; }
 .month-block, .cat-block {

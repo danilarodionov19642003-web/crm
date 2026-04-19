@@ -21,6 +21,10 @@
           <input type="text" id="globalSearch" placeholder="Поиск по CRM..." autocomplete="off"/>
         </div>
         <div class="header__actions">
+          <div id="cloudStatus" class="cloud-status" data-state="idle" title="Статус облачной синхронизации">
+            <span class="cloud-status__dot"></span>
+            <span class="cloud-status__text">…</span>
+          </div>
           <button class="btn--icon" title="Уведомления">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
           </button>
