@@ -555,6 +555,49 @@ input, select, textarea { font-family: inherit; font-size: inherit; }
   height: 280px;
 }
 
+/* --- Payment items (привязка дохода к анкетам) --- */
+.payment-items {
+  display: flex; flex-direction: column; gap: 6px;
+  margin-top: 6px;
+}
+.payment-item {
+  display: grid;
+  grid-template-columns: 1fr 110px 32px;
+  gap: 6px;
+  align-items: center;
+}
+.payment-item .select { padding: 7px 10px; font-size: 13px; }
+.payment-item .input  { padding: 7px 10px; font-size: 13px; }
+.payment-item .btn--icon {
+  width: 32px; height: 32px;
+  color: var(--red);
+  background: transparent;
+  border: 1px solid transparent;
+}
+.payment-item .btn--icon:hover { background: rgba(239,68,68,0.1); border-color: rgba(239,68,68,0.3); }
+.payment-items--empty {
+  padding: 14px;
+  text-align: center;
+  color: var(--text-mute);
+  font-size: 12px;
+  background: var(--bg-elev-2);
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+}
+
+/* Тэги анкет в строке таблицы доходов */
+.account-tag {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; margin: 2px 3px 2px 0;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.account-tag__amt { color: var(--text); opacity: .8; font-weight: 500; }
+
 /* --- Cloud sync status indicator --- */
 .cloud-status {
   display: inline-flex;

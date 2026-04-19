@@ -214,25 +214,105 @@
     },
 
     /* ---------- Income ---------- */
+    /**
+     * Добавление дохода. Если передан rec.items = [{accountId, amount}, ...]
+     * — автоматически распределяем оплату по анкетам и синхронизируем
+     * client.paid / client.remain.
+     */
     addIncome(rec) {
       const item = Object.assign({
         id: uid(), date: todayISO(),
         client: '', service: SERVICES[0],
-        amount: 0, comment: ''
+        amount: 0, comment: '',
+        items: null   // null = старый формат (по тексту); [] = распределённый
       }, rec);
+
+      // Если есть items — пересчитать сумму и автоподписать клиента
+      if (Array.isArray(item.items) && item.items.length > 0) {
+        item.items = item.items
+          .filter(x => x.accountId && Number(x.amount) > 0)
+          .map(x => ({ accountId: x.accountId, amount: Number(x.amount) }));
+        item.amount = item.items.reduce((s, x) => s + x.amount, 0);
+        // Автозаполнить текстовое поле client = "A15 Варвара, A16 Никита"
+        if (!item.client) {
+          item.client = item.items.map(x => {
+            const c = this.state.clients.find(cl => cl.id === x.accountId);
+            return c ? `${c.code || ''} ${c.name || ''}`.trim() : '';
+          }).filter(Boolean).join(', ');
+        }
+        // Раскидать paid по клиентам
+        this._applyPaymentItems(item.items, +1);
+      }
+
       this.state.income.push(item);
       this.save();
       return item;
     },
+
     updateIncome(id, patch) {
       const i = this.state.income.findIndex(x => x.id === id);
       if (i < 0) return;
-      this.state.income[i] = Object.assign({}, this.state.income[i], patch);
+
+      const old = this.state.income[i];
+      const next = Object.assign({}, old, patch);
+
+      // Если меняются items — откатить старые, применить новые
+      if ('items' in patch) {
+        if (Array.isArray(old.items) && old.items.length) {
+          this._applyPaymentItems(old.items, -1);
+        }
+        if (Array.isArray(next.items) && next.items.length) {
+          next.items = next.items
+            .filter(x => x.accountId && Number(x.amount) > 0)
+            .map(x => ({ accountId: x.accountId, amount: Number(x.amount) }));
+          next.amount = next.items.reduce((s, x) => s + x.amount, 0);
+          this._applyPaymentItems(next.items, +1);
+        }
+      }
+
+      this.state.income[i] = next;
       this.save();
     },
+
     deleteIncome(id) {
+      const rec = this.state.income.find(x => x.id === id);
+      if (rec && Array.isArray(rec.items) && rec.items.length) {
+        // откатить оплату
+        this._applyPaymentItems(rec.items, -1);
+      }
       this.state.income = this.state.income.filter(x => x.id !== id);
       this.save();
+    },
+
+    /** Применить (sign=+1) или откатить (sign=-1) набор items к client.paid/remain */
+    _applyPaymentItems(items, sign) {
+      items.forEach(({ accountId, amount }) => {
+        const c = this.state.clients.find(x => x.id === accountId);
+        if (!c) return;
+        c.paid = Math.max(0, (Number(c.paid) || 0) + sign * Number(amount));
+        const total = Number(c.total) || 0;
+        if (total > 0) c.remain = Math.max(0, total - c.paid);
+      });
+    },
+
+    /** Все доходы, в которых участвует данный клиент (по items.accountId) */
+    getPaymentsForClient(clientId) {
+      const list = [];
+      (this.state.income || []).forEach(inc => {
+        if (!Array.isArray(inc.items)) return;
+        inc.items.forEach(it => {
+          if (it.accountId === clientId) {
+            list.push({
+              incomeId: inc.id,
+              date: inc.date,
+              amount: Number(it.amount) || 0,
+              service: inc.service,
+              comment: inc.comment || ''
+            });
+          }
+        });
+      });
+      return list.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
     },
 
     /* ---------- Expenses ---------- */

@@ -60,7 +60,7 @@
 
   <!-- Модалка дохода -->
   <div class="modal-backdrop" id="incomeModal">
-    <div class="modal">
+    <div class="modal" style="max-width:600px">
       <div class="modal__header">
         <h3>Новый доход</h3>
         <button class="btn--icon" data-close>
@@ -74,22 +74,53 @@
             <input type="date" id="iDate" class="input"/>
           </div>
           <div class="field">
-            <label for="iAmount">Сумма, ₽</label>
-            <input type="number" id="iAmount" class="input" value="0" min="0" step="100"/>
+            <label for="iService">Услуга</label>
+            <select id="iService" class="select"></select>
           </div>
         </div>
-        <div class="field">
-          <label for="iClient">Клиент</label>
-          <input type="text" id="iClient" class="input" placeholder="Напр. Денис Мехнин" list="clientList"/>
-          <datalist id="clientList"></datalist>
+
+        <!-- Привязка к анкетам — основной способ -->
+        <div class="field" style="margin-top:6px">
+          <label style="display:flex;align-items:center;justify-content:space-between">
+            <span>Анкеты и суммы</span>
+            <button class="btn btn--ghost btn--sm" type="button" id="iAddItem">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;vertical-align:middle"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Добавить анкету
+            </button>
+          </label>
+          <div id="iItems" class="payment-items"></div>
+          <div id="iItemsHint" style="font-size:11px;color:var(--text-mute);margin-top:6px">
+            Выберите одну или несколько анкет. Сумма платежа будет распределена по ним и автоматически попадёт в поле «Оплачено» каждой анкеты.
+          </div>
         </div>
-        <div class="field">
-          <label for="iService">Услуга</label>
-          <select id="iService" class="select"></select>
-        </div>
-        <div class="field">
-          <label for="iComment">Комментарий</label>
-          <input type="text" id="iComment" class="input" placeholder="Необязательно"/>
+
+        <!-- Альтернатива: ручной ввод (если нет привязки) -->
+        <details id="iManualBlock" style="margin-top:10px">
+          <summary style="cursor:pointer;font-size:12px;color:var(--text-mute);user-select:none">
+            ⚙ Ручной ввод (без привязки к анкете)
+          </summary>
+          <div style="padding-top:10px">
+            <div class="field-row">
+              <div class="field">
+                <label for="iClient">Клиент (текст)</label>
+                <input type="text" id="iClient" class="input" placeholder="Напр. Денис Мехнин" list="clientList"/>
+                <datalist id="clientList"></datalist>
+              </div>
+              <div class="field">
+                <label for="iAmount">Сумма, ₽</label>
+                <input type="number" id="iAmount" class="input" value="0" min="0" step="100"/>
+              </div>
+            </div>
+            <div class="field" style="margin-top:8px">
+              <label for="iComment">Комментарий</label>
+              <input type="text" id="iComment" class="input" placeholder="Необязательно"/>
+            </div>
+          </div>
+        </details>
+
+        <div id="iTotal" style="margin-top:14px;padding:10px 12px;background:var(--bg-elev-2);border-radius:8px;display:flex;justify-content:space-between;align-items:center">
+          <span style="color:var(--text-mute);font-size:12px;text-transform:uppercase;letter-spacing:.05em">Итого</span>
+          <span id="iTotalVal" style="font-size:18px;font-weight:700;color:var(--accent)">0 ₽</span>
         </div>
       </div>
       <div class="modal__footer">
@@ -306,16 +337,34 @@
     }
 
     function incomeRowHtml(r) {
+      // Если есть items — показываем тэги анкет, иначе текст клиента
+      let clientCell;
+      if (Array.isArray(r.items) && r.items.length) {
+        clientCell = r.items.map(it => {
+          const c = Store.state.clients.find(x => x.id === it.accountId);
+          if (!c) return `<span class="account-tag">— <span class="account-tag__amt">${fmtMoney(it.amount)}</span></span>`;
+          return `<span class="account-tag" title="${escapeAttr(c.name || '')}">${escapeHtml(c.code || c.name)} <span class="account-tag__amt">${fmtMoney(it.amount)}</span></span>`;
+        }).join('');
+      } else {
+        clientCell = `<span data-field="client">${escapeHtml(r.client||'')}</span>`;
+      }
+
+      // amount: read-only если есть items, иначе редактируемая
+      const hasItems = Array.isArray(r.items) && r.items.length;
+      const amountCell = hasItems
+        ? `<td class="num pos" title="Сумма посчитана из привязанных анкет"><strong>${fmtMoney(r.amount||0)}</strong></td>`
+        : `<td class="num pos" data-field="amount" data-type="number">${r.amount||0}</td>`;
+
       return `
         <tr data-id="${r.id}">
           <td><input type="date" class="input" style="padding:4px 6px;background:transparent;border:1px solid transparent" data-field="date" value="${r.date||''}"/></td>
-          <td data-field="client">${escapeHtml(r.client||'')}</td>
+          <td>${clientCell}</td>
           <td>
             <select class="select" style="padding:4px 8px" data-field="service">
               ${SERVICES.map(s => `<option value="${s}" ${r.service===s?'selected':''}>${s}</option>`).join('')}
             </select>
           </td>
-          <td class="num pos" data-field="amount" data-type="number">${r.amount||0}</td>
+          ${amountCell}
           <td data-field="comment">${escapeHtml(r.comment||'')}</td>
           <td class="actions">
             <button class="btn--icon" data-act="del" title="Удалить">${trashIco()}</button>
@@ -500,8 +549,16 @@
         document.getElementById('iAmount').value = '0';
         document.getElementById('iComment').value = '';
         refreshClientDatalist();
+        // сбрасываем items и сразу добавляем одну пустую строку
+        paymentItems = [];
+        addPaymentItemRow();
+        renderPaymentItems();
+        document.getElementById('iManualBlock').open = false;
         Modal.open('incomeModal');
-        setTimeout(() => document.getElementById('iClient').focus(), 60);
+        setTimeout(() => {
+          const firstSel = document.querySelector('#iItems .payment-item select');
+          if (firstSel) firstSel.focus();
+        }, 60);
       } else {
         document.getElementById('eDate').value = todayISO();
         document.getElementById('eCategory').value = EXPENSE_CATEGORIES[0];
@@ -512,19 +569,109 @@
       }
     });
 
+    /* ---- Payment items: динамические строки «анкета + сумма» ---- */
+    let paymentItems = [];   // [{ accountId, amount }]
+
+    function addPaymentItemRow(prefill = {}) {
+      paymentItems.push({ accountId: prefill.accountId || '', amount: prefill.amount || 0 });
+      renderPaymentItems();
+    }
+
+    function renderPaymentItems() {
+      const root = document.getElementById('iItems');
+      const clients = (Store.state.clients || []).slice()
+        .sort((a, b) => (a.code || '').localeCompare(b.code || ''));
+
+      if (paymentItems.length === 0) {
+        root.innerHTML = `<div class="payment-items--empty">Нет анкет — нажмите «Добавить анкету» или используйте ручной ввод ниже.</div>`;
+      } else {
+        root.innerHTML = paymentItems.map((it, idx) => {
+          const opts = ['<option value="">— выберите анкету —</option>']
+            .concat(clients.map(c => {
+              const label = `${c.code ? c.code + ' · ' : ''}${c.name || '—'}` +
+                            (c.remain > 0 ? ` (долг ${c.remain.toLocaleString('ru-RU')} ₽)` : '');
+              return `<option value="${c.id}" ${c.id === it.accountId ? 'selected' : ''}>${escapeHtml(label)}</option>`;
+            })).join('');
+          return `
+            <div class="payment-item" data-idx="${idx}">
+              <select class="select" data-role="account">${opts}</select>
+              <input type="number" class="input" data-role="amount" min="0" step="100" value="${it.amount || 0}" placeholder="Сумма ₽"/>
+              <button class="btn--icon" data-role="remove" title="Убрать">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>`;
+        }).join('');
+
+        // bind
+        root.querySelectorAll('.payment-item').forEach(row => {
+          const idx = Number(row.dataset.idx);
+          row.querySelector('[data-role="account"]').addEventListener('change', e => {
+            paymentItems[idx].accountId = e.target.value;
+            // если сумма 0 — подставить остаток долга по выбранной анкете
+            if (!paymentItems[idx].amount) {
+              const c = Store.state.clients.find(x => x.id === e.target.value);
+              if (c && c.remain > 0) {
+                paymentItems[idx].amount = c.remain;
+                renderPaymentItems();
+                updateIncomeTotal();
+                return;
+              }
+            }
+            updateIncomeTotal();
+          });
+          row.querySelector('[data-role="amount"]').addEventListener('input', e => {
+            paymentItems[idx].amount = Number(e.target.value) || 0;
+            updateIncomeTotal();
+          });
+          row.querySelector('[data-role="remove"]').addEventListener('click', () => {
+            paymentItems.splice(idx, 1);
+            renderPaymentItems();
+            updateIncomeTotal();
+          });
+        });
+      }
+      updateIncomeTotal();
+    }
+
+    function updateIncomeTotal() {
+      const itemsSum = paymentItems.reduce((s, it) => s + (Number(it.amount) || 0), 0);
+      const manualSum = Number(document.getElementById('iAmount').value) || 0;
+      const total = itemsSum > 0 ? itemsSum : manualSum;
+      document.getElementById('iTotalVal').textContent = fmtMoney(total);
+    }
+
+    document.getElementById('iAddItem').addEventListener('click', () => addPaymentItemRow());
+    document.getElementById('iAmount').addEventListener('input', updateIncomeTotal);
+
     document.getElementById('iSave').addEventListener('click', () => {
+      const validItems = paymentItems
+        .filter(it => it.accountId && Number(it.amount) > 0)
+        .map(it => ({ accountId: it.accountId, amount: Number(it.amount) }));
+
       const rec = {
         date: document.getElementById('iDate').value || todayISO(),
-        client: document.getElementById('iClient').value.trim(),
-        service: document.getElementById('iService').value,
-        amount: Number(document.getElementById('iAmount').value) || 0,
-        comment: document.getElementById('iComment').value.trim()
+        service: document.getElementById('iService').value
       };
-      if (!rec.client) { toast('Укажите клиента', 'error'); return; }
-      if (rec.amount <= 0) { toast('Укажите сумму', 'error'); return; }
+
+      if (validItems.length > 0) {
+        // Режим items: сумма и client заполнятся в Store автоматически
+        rec.items = validItems;
+        rec.comment = document.getElementById('iComment').value.trim();
+      } else {
+        // Ручной ввод (без привязки)
+        rec.client  = document.getElementById('iClient').value.trim();
+        rec.amount  = Number(document.getElementById('iAmount').value) || 0;
+        rec.comment = document.getElementById('iComment').value.trim();
+        rec.items   = null;
+        if (!rec.client) { toast('Выберите анкету или укажите клиента вручную', 'error'); return; }
+        if (rec.amount <= 0) { toast('Укажите сумму', 'error'); return; }
+      }
+
       Store.addIncome(rec);
       Modal.close('incomeModal');
-      toast('Доход добавлен');
+      toast(validItems.length > 0
+        ? `Доход добавлен · оплата распределена по ${validItems.length} ${pluralRu(validItems.length,'анкете','анкетам','анкетам')}`
+        : 'Доход добавлен');
       renderAll();
     });
 
