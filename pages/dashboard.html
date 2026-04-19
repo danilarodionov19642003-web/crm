@@ -24,6 +24,9 @@
 
         <section class="cards" id="kpiCards"></section>
 
+        <h2 class="section-title">Текущий месяц</h2>
+        <section class="cards cards--compact" id="monthKpiCards"></section>
+
         <div class="grid-2">
           <div class="panel">
             <div class="panel__header">
@@ -145,6 +148,30 @@
         <div class="card__label"><span class="icon">${k.icon}</span>${k.label}</div>
         <div class="card__value">${k.value}</div>
         <div class="card__trend ${k.tone}">${k.trend}</div>
+      </div>
+    `).join('');
+
+    /* ---- KPI: Текущий месяц ---- */
+    const currMonthKey = todayISO().slice(0, 7);
+    const monthIncome  = state.income.filter(r => (r.date||'').startsWith(currMonthKey))
+                                     .reduce((s, r) => s + (Number(r.amount) || 0), 0);
+    const monthExpense = state.expenses.filter(r => (r.date||'').startsWith(currMonthKey))
+                                       .reduce((s, r) => s + (Number(r.amount) || 0), 0);
+    const monthProfit  = monthIncome - monthExpense;
+    const salaryDebt   = state.employees
+        .filter(e => e.status === 'active')
+        .reduce((s, e) => s + Math.max(0, (+e.reviewsDone||0) * (+e.ratePerReview||0) - (+e.paid||0)), 0);
+    const nastyaName = (state.employees.find(e => e.status === 'active') || {}).name || 'сотруднику';
+    const monthKpis = [
+      { label: 'Доход за месяц',    value: fmtMoney(monthIncome),  tone: 'up'   },
+      { label: 'Расход за месяц',   value: fmtMoney(monthExpense), tone: 'down' },
+      { label: 'Прибыль за месяц',  value: fmtMoney(monthProfit),  tone: monthProfit >= 0 ? 'up' : 'down' },
+      { label: `ЗП ${nastyaName}`,  value: fmtMoney(salaryDebt),   tone: salaryDebt > 0 ? 'down' : '' }
+    ];
+    document.getElementById('monthKpiCards').innerHTML = monthKpis.map(k => `
+      <div class="card card--compact">
+        <div class="card__label">${k.label}</div>
+        <div class="card__value ${k.tone}">${k.value}</div>
       </div>
     `).join('');
 

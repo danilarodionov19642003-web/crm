@@ -152,7 +152,7 @@
      Сотрудники: счётчик +/− для отзывов, авто-расчёт зарплаты
      ======================================================================== */
   document.addEventListener('DOMContentLoaded', () => {
-    const { Store, Modal, Counter, toast, fmtMoney, fmtDate, todayISO, tomorrowISO } = window.App;
+    const { Store, Modal, Counter, toast, fmtMoney, fmtDate, todayISO, tomorrowISO, monthLabel } = window.App;
     const { makeEditable, confirmDelete } = window.TableUtils;
 
     Store.load();
@@ -237,6 +237,12 @@
             </select>
           </td>
           <td class="actions">
+            ${debt > 0 ? `
+              <button class="btn btn--primary btn--sm" data-act="payout" data-debt="${debt}" title="Выплатить весь долг">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;vertical-align:middle"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                <span class="btn-label">Выплатить ${fmtMoney(debt)}</span>
+              </button>
+            ` : ''}
             <button class="btn btn--ghost btn--sm" data-act="history" title="История выплат">
               История (${(r.payments || []).length})
             </button>
@@ -292,6 +298,25 @@
         });
         // payments
         tr.querySelector('[data-act="history"]').addEventListener('click', () => openPayments(id));
+
+        // быстрая выплата всего долга
+        const payoutBtn = tr.querySelector('[data-act="payout"]');
+        if (payoutBtn) {
+          payoutBtn.addEventListener('click', () => {
+            const debt = Number(payoutBtn.dataset.debt) || 0;
+            const emp = Store.state.employees.find(x => x.id === id);
+            if (!emp || debt <= 0) return;
+            const ok = confirm(`Выплатить «${emp.name}» ${fmtMoney(debt)} и обнулить долг?`);
+            if (!ok) return;
+            Store.addPayment(id, {
+              date: todayISO(),
+              amount: debt,
+              note: `Выплата ЗП за ${monthLabel(todayISO().slice(0,7))}`
+            });
+            toast(`Выплачено ${fmtMoney(debt)}`);
+            render();
+          });
+        }
       });
     }
 

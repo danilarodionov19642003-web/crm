@@ -272,6 +272,21 @@ input, select, textarea { font-family: inherit; font-size: inherit; }
 }
 .card__trend.up { color: var(--green); }
 .card__trend.down { color: var(--red); }
+.card__value.up   { color: var(--green); }
+.card__value.down { color: var(--red); }
+
+/* --- Compact KPI strip (текущий месяц на дашборде) --- */
+.cards--compact { grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 22px; }
+.card--compact { padding: 12px 14px; }
+.card--compact .card__label { font-size: 10px; letter-spacing: .04em; }
+.card--compact .card__value { font-size: 18px; margin-top: 4px; }
+
+/* --- Section title above card group --- */
+.section-title {
+  font-size: 13px; font-weight: 600;
+  color: var(--text-mute); text-transform: uppercase; letter-spacing: .08em;
+  margin: 4px 0 12px;
+}
 
 /* --- Panel (generic container) --- */
 .panel {
@@ -614,19 +629,99 @@ input, select, textarea { font-family: inherit; font-size: inherit; }
    RESPONSIVE
    ========================================================================== */
 @media (max-width: 768px) {
-  .sidebar {
-    transform: translateX(-100%);
-    box-shadow: var(--shadow);
-  }
+  /* Сайдбар: выезжает по тогглу */
+  .sidebar { transform: translateX(-100%); box-shadow: var(--shadow); }
   .sidebar.open { transform: translateX(0); }
   .main { margin-left: 0; }
   .menu-toggle { display: inline-flex; }
-  .header { padding: 0 16px; }
-  .content { padding: 20px 16px 60px; }
-  .header__search { max-width: 100%; }
-  .page-title h1 { font-size: 20px; }
-  .card__value { font-size: 20px; }
-  .field-row { grid-template-columns: 1fr; }
+
+  /* Header: компактнее, поиск убираем (есть на самих страницах) */
+  .header { padding: 0 12px; height: 52px; gap: 8px; }
+  .header__title { font-size: 14px; font-weight: 600; }
+  .header__search { display: none; }
+  .header__actions { gap: 6px; }
+  .avatar { width: 30px; height: 30px; font-size: 12px; }
+
+  /* Cloud-status: только цветная точка, без текста */
+  .cloud-status { padding: 4px 6px; }
+  .cloud-status__text { display: none; }
+
+  /* Контент: меньше отступы */
+  .content { padding: 14px 12px 80px; }
+
+  /* Заголовок страницы — кнопка в одну строку с заголовком, описание мельче */
+  .page-title { flex-wrap: wrap; gap: 10px; margin-bottom: 14px; align-items: flex-start; }
+  .page-title h1 { font-size: 18px; line-height: 1.2; margin-bottom: 2px; }
+  .page-title p { font-size: 12px; line-height: 1.35; margin-top: 2px; }
+  .page-title .btn { padding: 8px 12px; font-size: 13px; }
+  .page-title .btn svg { width: 16px; height: 16px; }
+
+  /* KPI карточки — 2 в ряд, компактные */
+  .cards { grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 16px; }
+  .card { padding: 10px 12px; border-radius: 10px; }
+  .card__label { font-size: 10px; letter-spacing: .03em; gap: 6px; margin-bottom: 4px; }
+  .card__label .icon { width: 22px; height: 22px; border-radius: 6px; }
+  .card__label .icon svg { width: 12px; height: 12px; }
+  .card__value { font-size: 16px; }
+  .card__trend { font-size: 10px; margin-top: 3px; }
+
+  /* Compact-вариант (Текущий месяц) — тоже 2 в ряд */
+  .cards--compact { grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 14px; }
+  .card--compact .card__value { font-size: 16px; }
+  .section-title { font-size: 11px; margin: 0 0 8px; }
+
+  /* Фильтры: всё на новой строке вертикально, поиск во всю ширину */
+  .filters { gap: 6px; padding: 10px; margin-bottom: 12px; }
+  .filters .select, .filters .input, .filters .btn { font-size: 13px; padding: 8px 10px; }
+  .filters .input[type="text"] { width: 100%; flex-basis: 100%; }
+
+  /* Графики — два в ряд → один */
+  .grid-2 { grid-template-columns: 1fr; gap: 12px; }
+  .chart-wrap { height: 220px; }
+
+  /* Панели */
+  .panel { border-radius: 10px; }
+  .panel__header { padding: 10px 12px; }
+  .panel__header h3 { font-size: 13px; }
+  .panel__body { padding: 10px 12px; }
+
+  /* Таблицы: горизонтальный скролл, мелкий шрифт */
+  .table { font-size: 12px; }
+  .table th, .table td { padding: 8px 10px; }
+  .table th { font-size: 10px; }
+
+  /* Кнопки в строках таблиц */
+  .actions { gap: 4px; }
+  .btn--sm { padding: 5px 8px; font-size: 11px; }
+  .btn--sm .btn-label { display: none; }     /* скрываем длинные подписи */
+
+  /* Модалки — фул-скрин */
+  .modal { max-width: 100%; margin: 0; max-height: 100vh; border-radius: 0; }
+  .modal__body { padding: 14px; }
+  .field-row { grid-template-columns: 1fr; gap: 10px; }
+
+  /* Tabs (финансы) */
+  .tabs { display: flex; width: 100%; }
+  .tab { flex: 1; justify-content: center; font-size: 12px; padding: 8px 6px; }
+
+  /* Аккордеон месяцев */
+  .month-summary { padding: 10px 12px; gap: 10px; flex-wrap: wrap; }
+  .month-summary__title { font-size: 13px; }
+  .month-summary__count { font-size: 11px; }
+  .month-summary__sum { font-size: 13px; }
+  .cat-block > summary { padding: 8px 10px 8px 22px; }
+
+  /* Тосты */
+  .toast { left: 12px; right: 12px; bottom: 12px; max-width: none; }
+}
+
+/* === Очень узкие экраны (320–360px) === */
+@media (max-width: 380px) {
+  .cards, .cards--compact { grid-template-columns: 1fr 1fr; gap: 6px; }
+  .card { padding: 8px 10px; }
+  .card__value { font-size: 14px; }
+  .page-title h1 { font-size: 16px; }
+  .page-title p { display: none; }   /* совсем мало места */
 }
 
 .backdrop-sidebar {
