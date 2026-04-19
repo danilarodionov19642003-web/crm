@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Отзывы — Mentori CRM</title>
+  <link rel="stylesheet" href="../css/styles.css"/>
+</head>
+<body>
+  <div class="app">
+    <div data-component="sidebar" data-active="reviews"></div>
+
+    <div class="main">
+      <div data-component="header" data-title="Отзывы"></div>
+
+      <main class="content">
+        <div class="page-title">
+          <div>
+            <h1>Модерация отзывов</h1>
+            <p>Сотрудники добавляют отзывы — здесь вы их проверяете и переводите в статус «проверено».</p>
+          </div>
+          <button class="btn btn--ghost" id="btnRefresh">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><polyline points="21 3 21 9 15 9"/></svg>
+            Обновить
+          </button>
+        </div>
+
+        <section class="cards" id="rKpis"></section>
+
+        <div class="filters">
+          <select id="fStatus" class="select">
+            <option value="">Все статусы</option>
+            <option value="новый">Новые</option>
+            <option value="проверено">Проверенные</option>
+          </select>
+          <select id="fEmployee" class="select">
+            <option value="">Все сотрудники</option>
+          </select>
+          <input type="text" id="fSearch" class="input" placeholder="Поиск по тексту, анкете..." style="flex:1;min-width:200px"/>
+        </div>
+
+        <div class="panel">
+          <div class="table-wrap">
+            <table class="table" id="rTable">
+              <thead>
+                <tr>
+                  <th>Дата</th>
+                  <th>Анкета</th>
+                  <th>Сотрудник</th>
+                  <th>Текст отзыва</th>
+                  <th>Статус</th>
+                  <th class="actions"></th>
+                </tr>
+              </thead>
+              <tbody id="rRows">
+                <tr><td colspan="6" class="empty">Загружаем…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <script src="../data/seed.js"></script>
+  <script src="../js/app.js"></script>
+  <script src="../js/supabase-client.js"></script>
+  <script src="../js/cloud-sync.js"></script>
+  <script src="../js/accounts-sync.js"></script>
+  <script src="../components/sidebar.js"></script>
+  <script src="../components/header.js"></script>
+
+  <script>
+  document.addEventListener('DOMContentLoaded', async () => {
+    const { Tbl } = window.Supabase;
+    const { Store, fmtDate, toast } = window.App;
+    Store.load();
+
+    const filters = { status: '', employee: '', q: '' };
+    let tasks = [];
+    let accounts = [];
+
+    function escapeHtml(s) {
+      return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
+    async function loadAll() {
+      document.getElementById('rRows').innerHTML =
+        `<tr><td colspan="6" class="empty">Загружаем…</td></tr>`;
+      try {
+        [tasks, accounts] = await Promise.all([
+          Tbl.select('tasks', 'select=*&order=created_at.desc'),
+          Tbl.select('accounts', 'select=id,code,name')
+        ]);
+        refreshFilterOptions();
+        render();
+      } catch (e) {
+        document.getElementById('rRows').innerHTML =
+          `<tr><td colspan="6" class="empty" style="color:var(--red)">Ошибка: ${escapeHtml(e.message)}</td></tr>`;
+      }
+    }
+
+    function refreshFilterOptions() {
+      const sel = document.getElementById('fEmployee');
+      const emails = Array.from(new Set(tasks.map(t => t.employee_email))).sort();
+      const cur = sel.value;
+      sel.innerHTML = '<option value="">Все сотрудники</option>' +
+        emails.map(e => `<option value="${escapeHtml(e)}">${escapeHtml(e)}</option>`).join('');
+      sel.value = cur;
+    }
+
+    function getFiltered() {
+      return tasks.filter(t => {
+        if (filters.status && t.status !== filters.status) return false;
+        if (filters.employee && t.employee_email !== filters.employee) return false;
+        if (filters.q) {
+          const acc = accounts.find(a => a.id === t.account_id);
+          const s = ((t.text || '') + ' ' + (acc?.code || '') + ' ' + (acc?.name || '') + ' ' + t.employee_email).toLowerCase();
+          if (!s.includes(filters.q)) return false;
+        }
+        return true;
+      });
+    }
+
+    function render() {
+      const rows = getFiltered();
+
+      // KPI
+      const newCount = tasks.filter(t => t.status === 'новый').length;
+      const okCount  = tasks.filter(t => t.status === 'проверено').length;
+      document.getElementById('rKpis').innerHTML = `
+        <article class="card"><div class="card__label">Всего отзывов</div><div class="card__value">${tasks.length}</div></article>
+        <article class="card"><div class="card__label">Новые</div><div class="card__value" style="color:var(--accent)">${newCount}</div></article>
+        <article class="card"><div class="card__label">Проверенные</div><div class="card__value pos">${okCount}</div></article>
+      `;
+
+      const tbody = document.getElementById('rRows');
+      if (rows.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" class="empty">Под фильтр ничего не попало.</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = rows.map(t => {
+        const acc = accounts.find(a => a.id === t.account_id);
+        const accLabel = acc
+          ? `<span class="badge badge--gray">${escapeHtml(acc.code || '—')}</span> ${escapeHtml(acc.name || '')}`
+          : `<span style="color:var(--text-mute)">— ${escapeHtml(t.account_id)} —</span>`;
+        const statusBadge = t.status === 'проверено'
+          ? `<span class="badge badge--green"><span class="dot"></span>проверено</span>`
+          : `<span class="badge badge--orange"><span class="dot"></span>новый</span>`;
+        const actions = t.status === 'новый'
+          ? `<button class="btn btn--primary btn--sm" data-act="ok" data-id="${t.id}">Проверено</button>`
+          : `<button class="btn btn--ghost btn--sm"   data-act="undo" data-id="${t.id}">Вернуть</button>`;
+        return `
+          <tr>
+            <td>${fmtDate(t.published_at)}</td>
+            <td>${accLabel}</td>
+            <td><span style="font-size:12px;color:var(--text-mute)">${escapeHtml(t.employee_email)}</span></td>
+            <td><div style="max-width:520px;white-space:pre-wrap;font-size:13px;line-height:1.4">${escapeHtml(t.text)}</div></td>
+            <td>${statusBadge}</td>
+            <td class="actions">
+              ${actions}
+              <button class="btn--icon" data-act="del" data-id="${t.id}" title="Удалить">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+              </button>
+            </td>
+          </tr>`;
+      }).join('');
+
+      tbody.querySelectorAll('button[data-act]').forEach(btn => {
+        btn.addEventListener('click', () => act(btn.dataset.act, btn.dataset.id));
+      });
+    }
+
+    async function act(action, id) {
+      try {
+        if (action === 'ok') {
+          await Tbl.update('tasks', `id=eq.${id}`, { status: 'проверено' });
+        } else if (action === 'undo') {
+          await Tbl.update('tasks', `id=eq.${id}`, { status: 'новый' });
+        } else if (action === 'del') {
+          if (!confirm('Удалить отзыв? Счётчик «Сделано» по анкете уменьшится.')) return;
+          await Tbl.remove('tasks', `id=eq.${id}`);
+          if (window.AccountsSync) await window.AccountsSync.pull();
+        }
+        await loadAll();
+        toast('Готово');
+      } catch (e) {
+        toast('Ошибка: ' + e.message, 'error');
+      }
+    }
+
+    document.getElementById('fStatus').addEventListener('change',  e => { filters.status = e.target.value; render(); });
+    document.getElementById('fEmployee').addEventListener('change', e => { filters.employee = e.target.value; render(); });
+    document.getElementById('fSearch').addEventListener('input',    e => { filters.q = e.target.value.trim().toLowerCase(); render(); });
+    document.getElementById('btnRefresh').addEventListener('click', loadAll);
+    window.onGlobalSearch = q => { filters.q = q; document.getElementById('fSearch').value = q; render(); };
+
+    loadAll();
+    setInterval(loadAll, 60_000);  // авто-обновление раз в минуту
+  });
+  </script>
+</body>
+</html>

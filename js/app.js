@@ -344,8 +344,11 @@
         platform: '', name: '', code: '', tariff: TARIFF_NAMES[0],
         ordered: 0, done: 0,
         paid: 0, remain: 0, total: 0,
-        date: todayISO(), deadline: '', overdueDays: 0
+        date: todayISO(), deadline: '', overdueDays: 0,
+        assignedEmail: '', avatarUrl: ''
       }, rec);
+      // нормализация email
+      if (item.assignedEmail) item.assignedEmail = String(item.assignedEmail).toLowerCase().trim();
       this.state.clients.push(item);
       this.save();
       return item;
@@ -353,6 +356,9 @@
     updateClient(id, patch) {
       const i = this.state.clients.findIndex(x => x.id === id);
       if (i < 0) return;
+      if (patch && typeof patch.assignedEmail === 'string') {
+        patch.assignedEmail = patch.assignedEmail.toLowerCase().trim();
+      }
       this.state.clients[i] = Object.assign({}, this.state.clients[i], patch);
       this.save();
     },
