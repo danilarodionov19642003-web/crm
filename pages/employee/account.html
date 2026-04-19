@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Анкета — Mentori</title>
+  <link rel="stylesheet" href="../../css/styles.css"/>
+  <link rel="stylesheet" href="employee.css"/>
+</head>
+<body class="emp-body">
+  <header class="emp-header">
+    <a href="./index.html" class="btn btn--ghost btn--sm">← Назад</a>
+    <div style="flex:1"></div>
+    <button class="btn btn--ghost btn--sm" id="btnLogout">Выйти</button>
+  </header>
+
+  <main class="emp-main" id="root">
+    <div class="emp-empty">Загружаем…</div>
+  </main>
+
+  <!-- Модалка нового отзыва -->
+  <div class="modal-backdrop" id="addModal">
+    <div class="modal" style="max-width:520px">
+      <div class="modal__header">
+        <h3>Новый отзыв</h3>
+        <button class="btn--icon" data-close>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal__body">
+        <div class="field">
+          <label for="rDate">Дата публикации</label>
+          <input type="date" id="rDate" class="input"/>
+        </div>
+        <div class="field">
+          <label for="rText">Текст отзыва</label>
+          <textarea id="rText" class="input" rows="6" placeholder="Скопируйте сюда текст опубликованного отзыва..."></textarea>
+        </div>
+      </div>
+      <div class="modal__footer">
+        <button class="btn btn--ghost" data-close>Отмена</button>
+        <button class="btn btn--primary" id="rSave">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="../../js/supabase-client.js"></script>
+  <script>
+  (async () => {
+    const { Auth, Tbl } = window.Supabase;
+    if (!Auth.isLogged()) await Auth.refresh();
+    Auth.requireLogin('./login.html');
+
+    const me = Auth.email();
+    const accountId = new URLSearchParams(location.search).get('id');
+    if (!accountId) { location.replace('./index.html'); return; }
+
+    document.getElementById('btnLogout').addEventListener('click', () => {
+      Auth.signOut();
+      location.replace('./login.html');
+    });
+
+    function escapeHtml(s) {
+      return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+    function fmtDate(iso) {
+      if (!iso) return '—';
+      const d = new Date(iso); return d.toLocaleDateString('ru-RU', { day:'2-digit', month:'short', year:'numeric' });
+    }
+
+    let account = null;
+    let tasks   = [];
+
+    async function load() {
+      const accs = await Tbl.select('accounts',
+        `select=*&id=eq.${encodeURIComponent(accountId)}`);
+      account = accs[0];
+      if (!account) {
+        document.getElementById('root').innerHTML = `<div class="emp-empty">Анкета не найдена.</div>`;
+        return;
+      }
+      // безопасность: показываем только свои анкеты
+      if (account.assigned_email !== me) {
+        document.getElementById('root').innerHTML = `<div class="emp-empty">Эта анкета не назначена вам.</div>`;
+        return;
+      }
+      tasks = await Tbl.select('tasks',
+        `select=*&account_id=eq.${encodeURIComponent(accountId)}&order=published_at.desc,created_at.desc`);
+      render();
+    }
+
+    function render() {
+      const ordered = account.ordered || 0;
+      const done    = account.done || 0;
+      const remain  = Math.max(0, ordered - done);
+      const pct     = ordered ? Math.min(100, Math.round(done/ordered*100)) : 0;
+      const canAdd  = remain > 0;
+
+      document.getElementById('root').innerHTML = `
+        <section class="emp-account">
+          <div class="emp-account__head">
+            <div class="emp-account__avatar">
+              ${account.avatar_url
+                ? `<img src="${escapeHtml(account.avatar_url)}" alt=""/>`
+                : (account.name || '?')[0].toUpperCase()}
+            </div>
+            <div class="emp-account__title">
+              <div class="emp-account__code">${escapeHtml(account.code || account.id)}</div>
+              <h1>${escapeHtml(account.name || '—')}</h1>
+            </div>
+          </div>
+
+          <div class="emp-kpis">
+            <div class="emp-kpi"><div class="emp-kpi__label">Заказано</div><div class="emp-kpi__value">${ordered}</div></div>
+            <div class="emp-kpi"><div class="emp-kpi__label">Сделано</div><div class="emp-kpi__value pos">${done}</div></div>
+            <div class="emp-kpi"><div class="emp-kpi__label">Осталось</div><div class="emp-kpi__value ${remain>0?'':'neg'}">${remain}</div></div>
+          </div>
+          <div class="emp-progress" style="margin-bottom:14px"><span style="width:${pct}%"></span></div>
+
+          <button id="btnAdd" class="btn btn--primary" style="width:100%" ${canAdd?'':'disabled'}>
+            ${canAdd ? '+ Добавить отзыв' : 'Заказ полностью выполнен'}
+          </button>
+
+          <h2 class="emp-section-title" style="margin-top:24px">История отзывов (${tasks.length})</h2>
+          <div class="emp-reviews">
+            ${tasks.length === 0
+              ? '<div class="emp-empty" style="padding:20px">Отзывов пока нет.</div>'
+              : tasks.map(t => `
+                <div class="emp-review">
+                  <div class="emp-review__top">
+                    <span class="emp-review__date">${fmtDate(t.published_at)}</span>
+                    <span class="badge badge--${t.status==='проверено'?'green':'orange'}">${escapeHtml(t.status)}</span>
+                  </div>
+                  <div class="emp-review__text">${escapeHtml(t.text)}</div>
+                </div>`).join('')}
+          </div>
+        </section>
+      `;
+
+      const btn = document.getElementById('btnAdd');
+      if (btn && canAdd) btn.addEventListener('click', openAdd);
+    }
+
+    /* ---- Modal ---- */
+    function openAdd() {
+      document.getElementById('rDate').value = new Date().toISOString().slice(0,10);
+      document.getElementById('rText').value = '';
+      document.getElementById('addModal').classList.add('open');
+      setTimeout(() => document.getElementById('rText').focus(), 50);
+    }
+    function closeAdd() { document.getElementById('addModal').classList.remove('open'); }
+
+    document.querySelectorAll('#addModal [data-close]').forEach(b => b.addEventListener('click', closeAdd));
+    document.getElementById('addModal').addEventListener('click', e => {
+      if (e.target.id === 'addModal') closeAdd();
+    });
+
+    document.getElementById('rSave').addEventListener('click', async () => {
+      const text = document.getElementById('rText').value.trim();
+      const date = document.getElementById('rDate').value;
+      if (!text)  { alert('Введите текст отзыва'); return; }
+      if (!date)  { alert('Укажите дату'); return; }
+
+      const btn = document.getElementById('rSave');
+      btn.disabled = true; btn.textContent = 'Сохраняем…';
+      try {
+        await Tbl.insert('tasks', {
+          account_id: accountId,
+          employee_email: me,
+          text,
+          published_at: date
+        });
+        closeAdd();
+        await load();
+      } catch (e) {
+        // Триггер вернёт ошибку, если лимит исчерпан
+        alert(e.message.includes('Лимит исчерпан')
+          ? 'Заказ уже полностью выполнен — нельзя добавить ещё один отзыв.'
+          : ('Ошибка сохранения: ' + e.message));
+      } finally {
+        btn.disabled = false; btn.textContent = 'Сохранить';
+      }
+    });
+
+    try { await load(); }
+    catch (e) {
+      document.getElementById('root').innerHTML = `<div class="emp-empty" style="color:var(--red)">Ошибка: ${escapeHtml(e.message)}</div>`;
+    }
+  })();
+  </script>
+</body>
+</html>

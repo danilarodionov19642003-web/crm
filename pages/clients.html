@@ -57,6 +57,7 @@
                   <th class="num">Оплачено</th>
                   <th class="num">Остаток</th>
                   <th>Дедлайн</th>
+                  <th>Сотрудник</th>
                   <th>Статус</th>
                   <th class="actions"></th>
                 </tr>
@@ -128,6 +129,10 @@
             <label for="mDeadline">Дедлайн</label>
             <input type="date" id="mDeadline" class="input"/>
           </div>
+        </div>
+        <div class="field">
+          <label for="mAssigned">Email сотрудника</label>
+          <input type="email" id="mAssigned" class="input" placeholder="nastya@mentori.local — кому назначить анкету"/>
         </div>
       </div>
       <div class="modal__footer">
@@ -238,7 +243,7 @@
       const tfoot = document.getElementById('clFoot');
 
       if (rows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="12" class="empty">Нет клиентов под фильтр.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="13" class="empty">Нет клиентов под фильтр.</td></tr>`;
         tfoot.innerHTML = '';
       } else {
         tbody.innerHTML = rows.map(r => rowHtml(r)).join('');
@@ -255,7 +260,7 @@
             <td class="num">${totalOrdered ? Math.round(totalDone/totalOrdered*100) : 0}%</td>
             <td class="num pos">${fmtMoney(totalPaid)}</td>
             <td class="num ${totalRemain>0?'neg':''}">${fmtMoney(totalRemain)}</td>
-            <td colspan="3"></td>
+            <td colspan="4"></td>
           </tr>`;
         bindRowEditors();
       }
@@ -299,6 +304,7 @@
             <input type="date" class="input" style="padding:4px 6px;background:transparent;border:1px solid transparent" data-field="deadline" value="${r.deadline || ''}"/>
             ${overdue > 0 ? `<div style="font-size:11px;color:var(--red);margin-top:2px">−${overdue} дн.</div>` : ''}
           </td>
+          <td data-field="assignedEmail" data-type="email">${escapeHtml(r.assignedEmail || '')}</td>
           <td>${statusBadge(r)}</td>
           <td class="actions">
             <button class="btn btn--ghost btn--sm" data-act="payments" title="История платежей">
@@ -451,7 +457,7 @@
 
     /* ---- Модалка ---- */
     document.getElementById('btnAdd').addEventListener('click', () => {
-      ['mName','mCode'].forEach(id => document.getElementById(id).value = '');
+      ['mName','mCode','mAssigned'].forEach(id => document.getElementById(id).value = '');
       ['mOrdered','mDone','mPaid','mTotal'].forEach(id => document.getElementById(id).value = '0');
       document.getElementById('mPlatform').value = '';
       document.getElementById('mTariff').value = TARIFF_NAMES[0];
@@ -477,6 +483,7 @@
         remain:   Math.max(0, total - paid),
         date:     document.getElementById('mDate').value,
         deadline: document.getElementById('mDeadline').value,
+        assignedEmail: document.getElementById('mAssigned').value.trim().toLowerCase(),
         overdueDays: 0
       });
       Modal.close('addModal');

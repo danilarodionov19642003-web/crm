@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Мои анкеты — Mentori</title>
+  <link rel="stylesheet" href="../../css/styles.css"/>
+  <link rel="stylesheet" href="employee.css"/>
+</head>
+<body class="emp-body">
+  <header class="emp-header">
+    <div class="emp-header__brand">
+      <div class="emp-login__logo">M</div>
+      <div>
+        <div class="emp-header__hello" id="hello">Привет!</div>
+        <div class="emp-header__sub">Mentori · кабинет сотрудника</div>
+      </div>
+    </div>
+    <button class="btn btn--ghost btn--sm" id="btnLogout">Выйти</button>
+  </header>
+
+  <main class="emp-main">
+    <!-- KPI -->
+    <section class="emp-kpis" id="kpis">
+      <div class="emp-kpi"><div class="emp-kpi__label">Отзывов сделано</div><div class="emp-kpi__value" id="kReviews">0</div></div>
+      <div class="emp-kpi"><div class="emp-kpi__label">Заработано</div><div class="emp-kpi__value pos" id="kEarned">0 ₽</div></div>
+      <div class="emp-kpi"><div class="emp-kpi__label">Можно ещё</div><div class="emp-kpi__value" id="kPotential">0 ₽</div></div>
+    </section>
+
+    <h2 class="emp-section-title">Мои анкеты</h2>
+
+    <div class="emp-list" id="accounts">
+      <div class="emp-empty">Загружаем…</div>
+    </div>
+  </main>
+
+  <script src="../../js/supabase-client.js"></script>
+  <script>
+  (async () => {
+    const { Auth, Tbl } = window.Supabase;
+
+    // refresh попытаемся, потом гард
+    if (!Auth.isLogged()) await Auth.refresh();
+    Auth.requireLogin('./login.html');
+
+    const me   = Auth.email();
+    const rate = Auth.rate();
+
+    document.getElementById('hello').textContent = `Привет, ${Auth.name()}!`;
+    document.getElementById('btnLogout').addEventListener('click', () => {
+      Auth.signOut();
+      location.replace('./login.html');
+    });
+
+    function fmtMoney(v) {
+      return new Intl.NumberFormat('ru-RU', { style:'currency', currency:'RUB', maximumFractionDigits:0 }).format(v || 0);
+    }
+    function escapeHtml(s) {
+      return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
+    async function load() {
+      // только мои анкеты
+      const accounts = await Tbl.select('accounts',
+        `select=*&assigned_email=eq.${encodeURIComponent(me)}&order=code.asc`);
+      // мои таски (для счётчика отзывов)
+      const tasks = await Tbl.select('tasks',
+        `select=id&employee_email=eq.${encodeURIComponent(me)}`);
+
+      // KPI
+      const reviewsCount = tasks.length;
+      const remainSum = accounts.reduce((s, a) => s + Math.max(0, (a.ordered||0) - (a.done||0)), 0);
+
+      document.getElementById('kReviews').textContent   = reviewsCount;
+      document.getElementById('kEarned').textContent    = fmtMoney(reviewsCount * rate);
+      document.getElementById('kPotential').textContent = fmtMoney(remainSum * rate);
+
+      // список анкет
+      const root = document.getElementById('accounts');
+      if (accounts.length === 0) {
+        root.innerHTML = `<div class="emp-empty">
+          У вас пока нет назначенных анкет.<br/>
+          <span style="font-size:12px;color:var(--text-mute)">Попросите администратора привязать анкеты к вашему email.</span>
+        </div>`;
+        return;
+      }
+
+      root.innerHTML = accounts.map(a => {
+        const ordered = a.ordered || 0;
+        const done    = a.done || 0;
+        const remain  = Math.max(0, ordered - done);
+        const pct     = ordered ? Math.min(100, Math.round(done/ordered*100)) : 0;
+        const status  = remain === 0 ? 'green' : 'orange';
+        const statusText = remain === 0 ? 'Завершено' : `Осталось ${remain}`;
+
+        return `
+          <a class="emp-card" href="./account.html?id=${encodeURIComponent(a.id)}">
+            <div class="emp-card__top">
+              <div class="emp-card__code">${escapeHtml(a.code || a.id)}</div>
+              <div class="emp-card__name">${escapeHtml(a.name || '—')}</div>
+              <span class="badge badge--${status}"><span class="dot"></span>${statusText}</span>
+            </div>
+            <div class="emp-card__stats">
+              <div><span>Заказано</span><strong>${ordered}</strong></div>
+              <div><span>Сделано</span><strong>${done}</strong></div>
+              <div><span>Осталось</span><strong class="${remain>0?'pos':''}">${remain}</strong></div>
+            </div>
+            <div class="emp-progress"><span style="width:${pct}%"></span></div>
+          </a>`;
+      }).join('');
+    }
+
+    try {
+      await load();
+    } catch (e) {
+      console.error(e);
+      document.getElementById('accounts').innerHTML = `<div class="emp-empty" style="color:var(--red)">
+        Ошибка загрузки: ${escapeHtml(e.message)}
+      </div>`;
+    }
+  })();
+  </script>
+</body>
+</html>

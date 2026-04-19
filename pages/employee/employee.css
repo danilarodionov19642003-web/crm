@@ -1,0 +1,215 @@
+/* ==========================================================================
+   Employee CRM — стили только для /pages/employee/*
+   Подключается ПОСЛЕ ../../css/styles.css.
+   Mobile-first: рассчитан в первую очередь на телефон.
+   ========================================================================== */
+
+.emp-body {
+  background: var(--bg);
+  color: var(--text);
+  margin: 0;
+  min-height: 100vh;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* ---------- header ---------- */
+.emp-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--bg-2);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+.emp-header__brand { display: flex; align-items: center; gap: 10px; flex: 1; }
+.emp-header__hello { font-size: 14px; font-weight: 600; color: var(--text); line-height: 1.1; }
+.emp-header__sub   { font-size: 11px; color: var(--text-mute); margin-top: 2px; }
+
+/* ---------- main ---------- */
+.emp-main { padding: 16px; max-width: 720px; margin: 0 auto; }
+
+.emp-section-title {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-mute);
+  margin: 18px 0 10px;
+  font-weight: 600;
+}
+
+/* ---------- KPI cards ---------- */
+.emp-kpis {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.emp-kpi {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 12px;
+  text-align: center;
+}
+.emp-kpi__label { font-size: 10px; text-transform: uppercase; color: var(--text-mute); margin-bottom: 4px; letter-spacing: .5px; }
+.emp-kpi__value { font-size: 18px; font-weight: 700; color: var(--text); }
+.emp-kpi__value.pos { color: var(--green, #4caf50); }
+.emp-kpi__value.neg { color: var(--red,   #ef4444); }
+
+/* ---------- список анкет ---------- */
+.emp-list { display: flex; flex-direction: column; gap: 10px; }
+
+.emp-card {
+  display: block;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px;
+  text-decoration: none;
+  color: inherit;
+  transition: transform .12s ease, border-color .12s ease;
+}
+.emp-card:active { transform: scale(.985); }
+.emp-card:hover  { border-color: var(--accent); }
+
+.emp-card__top {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 10px;
+}
+.emp-card__code {
+  background: rgba(255,122,0,.12);
+  color: var(--accent);
+  font-weight: 700; font-size: 12px;
+  padding: 3px 8px; border-radius: 6px;
+  letter-spacing: .5px;
+}
+.emp-card__name {
+  flex: 1;
+  font-weight: 600;
+  font-size: 15px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.emp-card__stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.emp-card__stats > div {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 6px; background: var(--bg); border-radius: 8px; text-align: center;
+}
+.emp-card__stats span { font-size: 10px; text-transform: uppercase; color: var(--text-mute); letter-spacing: .4px; }
+.emp-card__stats strong { font-size: 16px; color: var(--text); }
+.emp-card__stats strong.pos { color: var(--accent); }
+
+.emp-progress {
+  height: 6px;
+  background: var(--bg);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.emp-progress > span {
+  display: block; height: 100%;
+  background: linear-gradient(90deg, var(--accent), #ffb066);
+  transition: width .3s ease;
+}
+
+/* ---------- экран анкеты ---------- */
+.emp-account__head {
+  display: flex; align-items: center; gap: 14px;
+  margin-bottom: 14px;
+}
+.emp-account__avatar {
+  width: 60px; height: 60px; border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), #ff9d4d);
+  color: #fff; font-size: 24px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden; flex-shrink: 0;
+}
+.emp-account__avatar img { width: 100%; height: 100%; object-fit: cover; }
+.emp-account__title h1 { margin: 0; font-size: 20px; }
+.emp-account__code {
+  display: inline-block;
+  background: rgba(255,122,0,.12);
+  color: var(--accent);
+  font-weight: 700; font-size: 11px;
+  padding: 3px 8px; border-radius: 6px;
+  letter-spacing: .5px; margin-bottom: 4px;
+}
+
+/* ---------- история отзывов ---------- */
+.emp-reviews { display: flex; flex-direction: column; gap: 10px; }
+.emp-review {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+}
+.emp-review__top {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; margin-bottom: 8px;
+}
+.emp-review__date { font-size: 12px; color: var(--text-mute); }
+.emp-review__text {
+  font-size: 14px; line-height: 1.45;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ---------- empty / error ---------- */
+.emp-empty {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-mute);
+  background: var(--bg-2);
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+}
+
+/* ---------- login ---------- */
+.emp-login {
+  min-height: 100vh;
+  display: flex; align-items: center; justify-content: center;
+  padding: 16px;
+}
+.emp-login__card {
+  width: 100%; max-width: 380px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 24px;
+}
+.emp-login__brand {
+  display: flex; align-items: center; gap: 12px; margin-bottom: 20px;
+}
+.emp-login__brand h1 { margin: 0; font-size: 22px; }
+.emp-login__brand p  { margin: 2px 0 0; font-size: 12px; color: var(--text-mute); }
+.emp-login__logo {
+  width: 44px; height: 44px;
+  background: linear-gradient(135deg, var(--accent), #ff9d4d);
+  border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-weight: 800; font-size: 22px;
+}
+.emp-login__err {
+  margin-top: 12px;
+  background: rgba(239,68,68,.12);
+  color: var(--red, #ef4444);
+  border: 1px solid rgba(239,68,68,.4);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+/* ---------- desktop tweaks ---------- */
+@media (min-width: 720px) {
+  .emp-kpis { gap: 12px; }
+  .emp-kpi { padding: 14px 16px; }
+  .emp-kpi__value { font-size: 22px; }
+  .emp-list { gap: 12px; }
+}
