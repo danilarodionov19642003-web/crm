@@ -372,13 +372,15 @@
       const item = Object.assign({
         id: uid(),
         name: '', role: 'Ревьюер',
+        email: '',                  // привязка к Supabase Auth (lowercase)
         ratePerReview: 300,
-        reviewsDone: 0,
+        reviewsDone: 0,             // авто-считается reviews-sync.js
         paid: 0,
         status: 'active',
         hired: tomorrowISO(),
         payments: []
       }, rec);
+      if (item.email) item.email = String(item.email).toLowerCase().trim();
       this.state.employees.push(item);
       this.save();
       return item;
@@ -386,6 +388,9 @@
     updateEmployee(id, patch) {
       const i = this.state.employees.findIndex(x => x.id === id);
       if (i < 0) return;
+      if (patch && typeof patch.email === 'string') {
+        patch.email = patch.email.toLowerCase().trim();
+      }
       this.state.employees[i] = Object.assign({}, this.state.employees[i], patch);
       this.save();
     },

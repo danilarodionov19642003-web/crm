@@ -123,6 +123,7 @@
   <script src="../js/supabase-client.js"></script>
   <script src="../js/cloud-sync.js"></script>
   <script src="../js/accounts-sync.js"></script>
+  <script src="../js/reviews-sync.js"></script>
   <script src="../components/sidebar.js"></script>
   <script src="../components/header.js"></script>
   <script src="../components/table.js"></script>
@@ -154,28 +155,35 @@
     `).join('');
 
     /* ---- KPI: Текущий месяц ---- */
-    const currMonthKey = todayISO().slice(0, 7);
-    const monthIncome  = state.income.filter(r => (r.date||'').startsWith(currMonthKey))
-                                     .reduce((s, r) => s + (Number(r.amount) || 0), 0);
-    const monthExpense = state.expenses.filter(r => (r.date||'').startsWith(currMonthKey))
+    function renderMonthKpis() {
+      const st = Store.state;
+      const currMonthKey = todayISO().slice(0, 7);
+      const monthIncome  = st.income.filter(r => (r.date||'').startsWith(currMonthKey))
                                        .reduce((s, r) => s + (Number(r.amount) || 0), 0);
-    const monthProfit  = monthIncome - monthExpense;
-    const salaryDebt   = state.employees
-        .filter(e => e.status === 'active')
-        .reduce((s, e) => s + Math.max(0, (+e.reviewsDone||0) * (+e.ratePerReview||0) - (+e.paid||0)), 0);
-    const nastyaName = (state.employees.find(e => e.status === 'active') || {}).name || 'сотруднику';
-    const monthKpis = [
-      { label: 'Доход за месяц',    value: fmtMoney(monthIncome),  tone: 'up'   },
-      { label: 'Расход за месяц',   value: fmtMoney(monthExpense), tone: 'down' },
-      { label: 'Прибыль за месяц',  value: fmtMoney(monthProfit),  tone: monthProfit >= 0 ? 'up' : 'down' },
-      { label: `ЗП ${nastyaName}`,  value: fmtMoney(salaryDebt),   tone: salaryDebt > 0 ? 'down' : '' }
-    ];
-    document.getElementById('monthKpiCards').innerHTML = monthKpis.map(k => `
-      <div class="card card--compact">
-        <div class="card__label">${k.label}</div>
-        <div class="card__value ${k.tone}">${k.value}</div>
-      </div>
-    `).join('');
+      const monthExpense = st.expenses.filter(r => (r.date||'').startsWith(currMonthKey))
+                                         .reduce((s, r) => s + (Number(r.amount) || 0), 0);
+      const monthProfit  = monthIncome - monthExpense;
+      const salaryDebt   = st.employees
+          .filter(e => e.status === 'active')
+          .reduce((s, e) => s + Math.max(0, (+e.reviewsDone||0) * (+e.ratePerReview||0) - (+e.paid||0)), 0);
+      const nastyaName = (st.employees.find(e => e.status === 'active') || {}).name || 'сотруднику';
+      const monthKpis = [
+        { label: 'Доход за месяц',    value: fmtMoney(monthIncome),  tone: 'up'   },
+        { label: 'Расход за месяц',   value: fmtMoney(monthExpense), tone: 'down' },
+        { label: 'Прибыль за месяц',  value: fmtMoney(monthProfit),  tone: monthProfit >= 0 ? 'up' : 'down' },
+        { label: `ЗП ${nastyaName}`,  value: fmtMoney(salaryDebt),   tone: salaryDebt > 0 ? 'down' : '' }
+      ];
+      document.getElementById('monthKpiCards').innerHTML = monthKpis.map(k => `
+        <div class="card card--compact">
+          <div class="card__label">${k.label}</div>
+          <div class="card__value ${k.tone}">${k.value}</div>
+        </div>
+      `).join('');
+    }
+    renderMonthKpis();
+    // авто-перерисовка после одобрения отзыва (или прихода свежего state)
+    window.addEventListener('reviews:updated', renderMonthKpis);
+    window.addEventListener('cloudstate:updated', renderMonthKpis);
 
     /* ---- График по месяцам ---- */
     const monthly = Store.monthlyStats();

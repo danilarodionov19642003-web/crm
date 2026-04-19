@@ -17,6 +17,17 @@
     cell.classList.add('editable');
     cell.setAttribute('contenteditable', 'true');
 
+    // Если передано opts.initial — заменяем текст ячейки сразу при focus
+    // (используется когда DOM содержит подсказку типа "— не привязан —",
+    // а реальное значение надо взять из state)
+    if (typeof opts.initial !== 'undefined') {
+      cell.addEventListener('focus', () => {
+        if (cell.dataset.editingStarted) return;
+        cell.dataset.editingStarted = '1';
+        cell.textContent = opts.initial;
+      }, { once: true });
+    }
+
     cell.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') { e.preventDefault(); cell.blur(); }
       if (e.key === 'Escape') { e.preventDefault(); cell.blur(); }
