@@ -727,7 +727,32 @@
       };
     },
 
-    /* ---------- Phones ---------- */
+    /* ---------- Phones ----------
+       Каждая запись телефона может хранить полные регистрационные данные
+       (см. PHONE_META_FIELDS). Эти поля приходят из Excel «Регистрации».
+       profileId — ручная привязка телефона к аккаунту (не путать с
+       автоматическим определением аккаунта по совпадению с accountRegs.phone). */
+    PHONE_META_FIELDS: [
+      'ownerName',       // имя владельца номера
+      'tgInfo',          // где Telegram ("сам 2 телега" / "есть" / "нет")
+      'city',            // город
+      'section',         // раздел из xlsx (стационарные / мобильные / 4 группа)
+      'yandexLogin',
+      'yandexPassword',
+      'profiEmail',
+      'cloudPassword',
+      'recoveryEmail',
+      'twoGis',
+      'avitoEmail',
+      'avitoPassword',
+      'lat',
+      'lon'
+    ],
+    _emptyPhoneMeta() {
+      const o = {};
+      this.PHONE_META_FIELDS.forEach(k => o[k] = '');
+      return o;
+    },
     addPhone(rec) {
       const item = Object.assign({
         id: uid(),
@@ -735,7 +760,7 @@
         note: '',
         profileId: '',
         createdAt: todayISO()
-      }, rec);
+      }, this._emptyPhoneMeta(), rec);
       item.number = this._normalizePhone(item.number);
       this.state.phones.push(item);
       this.save();
@@ -745,7 +770,7 @@
       const i = this.state.phones.findIndex(x => x.id === id);
       if (i < 0) return;
       if (patch && typeof patch.number === 'string') patch.number = this._normalizePhone(patch.number);
-      this.state.phones[i] = Object.assign({}, this.state.phones[i], patch);
+      this.state.phones[i] = Object.assign({}, this.state.phones[i], patch, { updatedAt: todayISO() });
       this.save();
     },
     deletePhone(id) {

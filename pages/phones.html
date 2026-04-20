@@ -5,6 +5,77 @@
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>Номера — Mentori CRM</title>
   <link rel="stylesheet" href="../css/styles.css"/>
+  <style>
+    /* Кликабельная строка */
+    #phRows tr { cursor: pointer; }
+    #phRows tr:hover td { background: rgba(255,255,255,0.03); }
+    #phRows tr td.actions { cursor: default; }
+
+    /* Карточка номера */
+    .ph-card .modal { max-width: 760px; }
+    .ph-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px 16px;
+    }
+    .ph-grid .field { margin: 0; }
+    .ph-grid .field--full { grid-column: 1 / -1; }
+    .ph-grid .field label {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 12px; color: var(--text-mute); margin-bottom: 4px;
+    }
+    .ph-grid .field .label-icon { font-size: 14px; }
+    .ph-grid .input, .ph-grid .select {
+      width: 100%;
+    }
+
+    .ph-input-row { position: relative; display: flex; align-items: stretch; gap: 0; }
+    .ph-input-row .input { padding-right: 36px; }
+    .ph-copy {
+      position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+      background: transparent; border: none; cursor: pointer; padding: 6px;
+      color: var(--text-mute); border-radius: 6px;
+    }
+    .ph-copy:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+
+    .ph-card-head {
+      display: flex; align-items: center; gap: 12px;
+      padding: 12px 14px; margin-bottom: 14px;
+      background: rgba(99,102,241,0.08); border: 1px solid rgba(99,102,241,0.18);
+      border-radius: 10px;
+    }
+    .ph-card-head .num {
+      font-family: ui-monospace, monospace; font-size: 18px; font-weight: 600; color: var(--text);
+    }
+    .ph-card-head .acc { color: var(--text-mute); font-size: 13px; }
+
+    .ph-section-divider {
+      grid-column: 1 / -1;
+      font-size: 11px; font-weight: 600; text-transform: uppercase;
+      color: var(--text-mute); letter-spacing: .5px;
+      margin: 6px 0 -4px 0;
+      padding-top: 8px;
+      border-top: 1px solid var(--border);
+    }
+    .ph-section-divider:first-child { border-top: none; padding-top: 0; }
+
+    .ph-warn-dup {
+      grid-column: 1 / -1;
+      padding: 8px 12px; border-radius: 8px;
+      background: rgba(239,68,68,0.1);
+      border: 1px solid rgba(239,68,68,0.3);
+      color: var(--red); font-size: 12px;
+    }
+
+    /* В таблице: имя владельца тонким шрифтом под номером */
+    .ph-num-cell { display: flex; flex-direction: column; gap: 2px; }
+    .ph-num-cell .num { font-family: ui-monospace, monospace; font-size: 13px; }
+    .ph-num-cell .who { color: var(--text-mute); font-size: 11px; }
+
+    @media (max-width: 720px) {
+      .ph-grid { grid-template-columns: 1fr; }
+    }
+  </style>
 </head>
 <body>
   <div class="app">
@@ -17,7 +88,7 @@
         <div class="page-title">
           <div>
             <h1>Номера телефонов</h1>
-            <p>Все номера, что использовались для аккаунтов / СМС / регистраций. Если ты добавишь номер, который уже есть — увидишь предупреждение.</p>
+            <p>Каждый номер — кликабельная карточка с полными данными регистрации (TG / Яндекс / Авито / Профи / 2ГИС). Дубли подсвечены красным.</p>
           </div>
           <button class="btn btn--primary" id="btnAdd">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -32,11 +103,16 @@
             <option value="">Все</option>
             <option value="dupe">⚠ Только дубли</option>
             <option value="unique">Уникальные</option>
+            <option value="filled">С данными регистрации</option>
+            <option value="empty">Без данных</option>
           </select>
           <select id="fProfile" class="select">
             <option value="">Все аккаунты</option>
           </select>
-          <input type="text" id="fSearch" class="input" placeholder="Поиск номера..." style="flex:1;min-width:200px"/>
+          <select id="fSection" class="select">
+            <option value="">Все разделы</option>
+          </select>
+          <input type="text" id="fSearch" class="input" placeholder="Поиск: номер / имя / почта..." style="flex:1;min-width:220px"/>
           <button class="btn btn--ghost" id="btnReset">Сбросить</button>
         </div>
 
@@ -45,10 +121,10 @@
             <table class="table" id="phTable">
               <thead>
                 <tr>
-                  <th>Номер</th>
+                  <th>Номер / владелец</th>
                   <th>Аккаунт</th>
+                  <th>Город</th>
                   <th>Заметка</th>
-                  <th>Дата</th>
                   <th>Статус</th>
                   <th class="actions"></th>
                 </tr>
@@ -95,6 +171,29 @@
     </div>
   </div>
 
+  <!-- Модалка редактирования карточки -->
+  <div class="modal-backdrop ph-card" id="cardModal">
+    <div class="modal">
+      <div class="modal__header">
+        <h3>Карточка номера</h3>
+        <button class="btn--icon" data-close>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal__body" id="cardBody"></div>
+      <div class="modal__footer" style="justify-content:space-between">
+        <button class="btn btn--ghost" id="cardDel" style="color:var(--red)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;vertical-align:middle"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+          Удалить номер
+        </button>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn--ghost" data-close>Отмена</button>
+          <button class="btn btn--primary" id="cardSave">Сохранить</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script src="../data/seed.js"></script>
   <script src="../js/app.js"></script>
   <script src="../js/supabase-client.js"></script>
@@ -111,16 +210,29 @@
     const { confirmDelete } = window.TableUtils;
 
     Store.load();
-    const filters = { state: '', profileId: '', q: '' };
+    const filters = { state: '', profileId: '', section: '', q: '' };
+    let editingId = null;
 
     function profileById(id) { return Store.state.profiles.find(p => p.id === id); }
     function profileLabel(p) { return p ? `${p.code || '—'} (${p.city || '—'})` : '—'; }
 
-    function fillProfileSelect(sel, includeAll = false) {
-      const profs = (Store.state.profiles || []).slice().sort((a,b) => (a.code || '').localeCompare(b.code || '', 'ru', {numeric:true}));
-      sel.innerHTML = (includeAll ? '<option value="">Все аккаунты</option>' : '<option value="">— без привязки —</option>')
+    function fillProfileSelect(sel, includeAll = false, firstLabel = '— без привязки —') {
+      const profs = (Store.state.profiles || []).slice()
+        .sort((a,b) => (a.code || '').localeCompare(b.code || '', 'ru', {numeric:true}));
+      sel.innerHTML = (includeAll ? '<option value="">Все аккаунты</option>' : `<option value="">${firstLabel}</option>`)
         + profs.map(p => `<option value="${p.id}">${escapeHtml(profileLabel(p))}</option>`).join('');
     }
+
+    function fillSectionSelect() {
+      const sections = [...new Set((Store.state.phones || []).map(p => p.section).filter(Boolean))].sort();
+      const sel = document.getElementById('fSection');
+      const cur = sel.value;
+      sel.innerHTML = '<option value="">Все разделы</option>'
+        + sections.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(stripEmoji(s))}</option>`).join('');
+      sel.value = cur;
+    }
+
+    function stripEmoji(s) { return String(s||'').replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu,'').trim(); }
 
     function formatPhone(n) {
       const s = String(n || '');
@@ -134,49 +246,100 @@
       return m;
     }
 
+    /** Найти аккаунт для телефона: сначала по profileId, затем по совпадению с accountRegs */
+    function findAccountFor(ph) {
+      if (ph.profileId) {
+        const p = profileById(ph.profileId);
+        if (p) return { profile: p, source: 'manual' };
+      }
+      const reg = (Store.state.accountRegs || []).find(r => r.phone === ph.number || r.avitoPhone === ph.number);
+      if (reg) {
+        const p = profileById(reg.profileId);
+        if (p) return { profile: p, source: 'auto' };
+      }
+      return null;
+    }
+
+    function hasMeta(p) {
+      return !!(p.ownerName || p.tgInfo || p.yandexLogin || p.profiEmail
+             || p.cloudPassword || p.recoveryEmail || p.avitoEmail || p.avitoPassword
+             || p.twoGis || p.lat || p.lon);
+    }
+
     function renderKpis() {
       const all = Store.state.phones || [];
       const c = counts();
       let dupes = 0;
       c.forEach(v => { if (v > 1) dupes++; });
+      const filled = all.filter(hasMeta).length;
       document.getElementById('phKpis').innerHTML = `
-        <div class="card"><div class="card__label">Записей</div><div class="card__value">${all.length}</div></div>
-        <div class="card"><div class="card__label">Уникальных номеров</div><div class="card__value">${c.size}</div></div>
+        <div class="card"><div class="card__label">Всего номеров</div><div class="card__value">${all.length}</div></div>
+        <div class="card"><div class="card__label">С данными</div><div class="card__value">${filled}</div><div class="card__trend">из ${all.length}</div></div>
         <div class="card"><div class="card__label">Дубликатов</div><div class="card__value ${dupes>0?'neg':''}">${dupes}</div><div class="card__trend">номеров повторяется</div></div>
-        <div class="card"><div class="card__label">Без аккаунта</div><div class="card__value">${all.filter(x => !x.profileId).length}</div></div>
+        <div class="card"><div class="card__label">Без аккаунта</div><div class="card__value">${all.filter(x => !findAccountFor(x)).length}</div></div>
       `;
     }
 
     function render() {
       renderKpis();
+      fillSectionSelect();
       const c = counts();
-      const list = (Store.state.phones || []).slice().sort((a,b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+      const list = (Store.state.phones || []).slice().sort((a,b) => {
+        // сортировка: сначала с аккаунтами по коду, потом без
+        const aa = findAccountFor(a)?.profile?.code || 'я';
+        const bb = findAccountFor(b)?.profile?.code || 'я';
+        return aa.localeCompare(bb, 'ru', {numeric:true});
+      });
       const filtered = list.filter(r => {
         const cnt = c.get(r.number) || 0;
         if (filters.state === 'dupe' && cnt <= 1) return false;
         if (filters.state === 'unique' && cnt > 1) return false;
-        if (filters.profileId && r.profileId !== filters.profileId) return false;
-        if (filters.q && !r.number.includes(filters.q.replace(/\D+/g,''))) return false;
+        if (filters.state === 'filled' && !hasMeta(r)) return false;
+        if (filters.state === 'empty' && hasMeta(r)) return false;
+        if (filters.section && r.section !== filters.section) return false;
+        if (filters.profileId) {
+          const acc = findAccountFor(r);
+          if (!acc || acc.profile.id !== filters.profileId) return false;
+        }
+        if (filters.q) {
+          const q = filters.q;
+          const hay = [r.number, r.ownerName, r.profiEmail, r.yandexLogin,
+                       r.recoveryEmail, r.avitoEmail, r.note, r.city]
+            .filter(Boolean).join(' ').toLowerCase();
+          const numQ = q.replace(/\D+/g,'');
+          if (!hay.includes(q) && !(numQ && r.number.includes(numQ))) return false;
+        }
         return true;
       });
+
       const tb = document.getElementById('phRows');
       if (filtered.length === 0) {
-        tb.innerHTML = `<tr><td colspan="6" class="empty">Номеров нет.</td></tr>`;
+        tb.innerHTML = `<tr><td colspan="6" class="empty">Номеров не найдено.</td></tr>`;
         return;
       }
       tb.innerHTML = filtered.map(r => {
         const cnt = c.get(r.number) || 0;
         const dupe = cnt > 1;
+        const acc = findAccountFor(r);
         const status = dupe
           ? `<span class="badge badge--red"><span class="dot"></span>Дубль ×${cnt}</span>`
-          : '<span class="badge badge--green">Уникальный</span>';
+          : (hasMeta(r) ? '<span class="badge badge--green">Заполнен</span>'
+                       : '<span class="badge badge--orange">Пустой</span>');
         const rowStyle = dupe ? ' style="background:rgba(239,68,68,0.06)"' : '';
-        const p = profileById(r.profileId);
+        const accCell = acc
+          ? `<span class="badge badge--orange">${escapeHtml(acc.profile.code)}</span>` +
+            (acc.source === 'auto' ? ' <span style="color:var(--text-mute);font-size:11px">(авто)</span>' : '')
+          : '<span style="color:var(--text-mute);font-size:12px">— нет —</span>';
         return `<tr data-id="${r.id}"${rowStyle}>
-          <td><span style="font-family:ui-monospace,monospace;font-size:13px">${escapeHtml(formatPhone(r.number))}</span></td>
-          <td>${p ? '<span class="badge badge--orange">' + escapeHtml(p.code) + '</span>' : '<span style="color:var(--text-mute);font-size:12px">— нет —</span>'}</td>
+          <td>
+            <div class="ph-num-cell">
+              <span class="num">${escapeHtml(formatPhone(r.number))}</span>
+              ${r.ownerName ? `<span class="who">${escapeHtml(r.ownerName)}${r.tgInfo?` · ${escapeHtml(r.tgInfo)}`:''}</span>` : ''}
+            </div>
+          </td>
+          <td>${accCell}</td>
+          <td>${escapeHtml(r.city || '')}</td>
           <td>${escapeHtml(r.note || '')}</td>
-          <td>${escapeHtml(fmtDate(r.createdAt))}</td>
           <td>${status}</td>
           <td class="actions">
             <button class="btn--icon" data-act="del" data-id="${r.id}" title="Удалить">
@@ -186,14 +349,157 @@
         </tr>`;
       }).join('');
 
-      tb.querySelectorAll('[data-act="del"]').forEach(b => b.addEventListener('click', () => {
+      // Клик по строке (кроме корзины) → открыть карточку
+      tb.querySelectorAll('tr[data-id]').forEach(tr => {
+        tr.addEventListener('click', e => {
+          if (e.target.closest('[data-act="del"]')) return;
+          openCard(tr.dataset.id);
+        });
+      });
+      tb.querySelectorAll('[data-act="del"]').forEach(b => b.addEventListener('click', e => {
+        e.stopPropagation();
         if (!confirmDelete('Удалить номер?')) return;
         Store.deletePhone(b.dataset.id);
         render();
       }));
     }
 
-    /* ---- Модалка ---- */
+    /* ---------- Карточка ---------- */
+    function fld(id, label, icon, value, opts = {}) {
+      const type = opts.type || 'text';
+      const copy = opts.copy !== false;
+      const full = opts.full ? ' field--full' : '';
+      const extraInputAttrs = opts.attrs || '';
+      return `<div class="field${full}">
+        <label for="c_${id}"><span class="label-icon">${icon||''}</span>${escapeHtml(label)}</label>
+        <div class="ph-input-row">
+          <input type="${type}" id="c_${id}" class="input" value="${escapeHtml(value||'')}" ${extraInputAttrs}/>
+          ${copy ? `<button type="button" class="ph-copy" data-copy="c_${id}" title="Скопировать">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          </button>` : ''}
+        </div>
+      </div>`;
+    }
+
+    function openCard(id) {
+      const ph = (Store.state.phones || []).find(p => p.id === id);
+      if (!ph) return;
+      editingId = id;
+      const acc = findAccountFor(ph);
+      const accLabel = acc ? `${acc.profile.code} · ${acc.profile.city || ''} ${acc.source==='auto'?'(автоматически)':''}` : 'не привязан';
+
+      // Список аккаунтов для select-привязки
+      const profs = (Store.state.profiles || []).slice()
+        .sort((a,b) => (a.code || '').localeCompare(b.code || '', 'ru', {numeric:true}));
+      const profOpts = '<option value="">— без привязки —</option>'
+        + profs.map(p => `<option value="${p.id}" ${p.id===ph.profileId?'selected':''}>${escapeHtml(profileLabel(p))}</option>`).join('');
+
+      const dups = (Store.state.phones || []).filter(p => p.number === ph.number && p.id !== id);
+      const dupWarn = dups.length > 0
+        ? `<div class="ph-warn-dup">⚠ Этот номер встречается ещё ${dups.length} раз — возможный дубль.</div>`
+        : '';
+
+      document.getElementById('cardBody').innerHTML = `
+        <div class="ph-card-head">
+          <div style="flex:1;min-width:0">
+            <div class="num">${escapeHtml(formatPhone(ph.number))}</div>
+            <div class="acc">Аккаунт: <strong style="color:var(--text)">${escapeHtml(accLabel)}</strong></div>
+          </div>
+          <button class="ph-copy" data-copy-text="${escapeHtml(ph.number)}" title="Скопировать номер" style="position:static;transform:none">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          </button>
+        </div>
+        <div class="ph-grid">
+          ${dupWarn}
+
+          <div class="ph-section-divider">Основное</div>
+          ${fld('number','Номер','📞', ph.number)}
+          <div class="field">
+            <label for="c_profileId"><span class="label-icon">👤</span>Аккаунт (ручная привязка)</label>
+            <select id="c_profileId" class="select">${profOpts}</select>
+          </div>
+          ${fld('ownerName','Имя владельца','🪪', ph.ownerName)}
+          ${fld('city','Город','🏙', ph.city)}
+          ${fld('tgInfo','Где Telegram','✈️', ph.tgInfo)}
+          ${fld('section','Раздел (стационарный / мобильный …)','📁', ph.section, { full:true })}
+
+          <div class="ph-section-divider">Яндекс</div>
+          ${fld('yandexLogin','Логин','🟡', ph.yandexLogin)}
+          ${fld('yandexPassword','Пароль','🔑', ph.yandexPassword)}
+
+          <div class="ph-section-divider">Профи.ру / Облако</div>
+          ${fld('profiEmail','Профи / Mail','📧', ph.profiEmail)}
+          ${fld('cloudPassword','Облачный пароль','🔐', ph.cloudPassword)}
+          ${fld('recoveryEmail','Почта восстановления','♻️', ph.recoveryEmail, { full:true })}
+
+          <div class="ph-section-divider">Авито · 2ГИС</div>
+          ${fld('avitoEmail','Авито — почта','🟢', ph.avitoEmail)}
+          ${fld('avitoPassword','Авито — пароль','🔑', ph.avitoPassword)}
+          ${fld('twoGis','2ГИС','🗺', ph.twoGis, { full:true })}
+
+          <div class="ph-section-divider">Координаты · заметка</div>
+          ${fld('lat','Широта','📍', ph.lat)}
+          ${fld('lon','Долгота','📍', ph.lon)}
+          ${fld('note','Заметка','📝', ph.note, { full:true })}
+        </div>
+      `;
+
+      // copy-кнопки
+      document.getElementById('cardBody').querySelectorAll('[data-copy]').forEach(b => {
+        b.addEventListener('click', () => {
+          const inp = document.getElementById(b.dataset.copy);
+          if (!inp || !inp.value) return;
+          navigator.clipboard.writeText(inp.value).then(() => toast('Скопировано'));
+        });
+      });
+      document.getElementById('cardBody').querySelectorAll('[data-copy-text]').forEach(b => {
+        b.addEventListener('click', () => {
+          navigator.clipboard.writeText(b.dataset.copyText).then(() => toast('Скопировано'));
+        });
+      });
+
+      Modal.open('cardModal');
+    }
+
+    document.getElementById('cardSave').addEventListener('click', () => {
+      if (!editingId) return;
+      const get = id => (document.getElementById(id)?.value || '').trim();
+      const number = get('c_number');
+      if (!number) { toast('Номер не может быть пустым', 'error'); return; }
+      const patch = {
+        number,
+        profileId: document.getElementById('c_profileId').value || '',
+        ownerName: get('c_ownerName'),
+        city: get('c_city'),
+        tgInfo: get('c_tgInfo'),
+        section: get('c_section'),
+        yandexLogin: get('c_yandexLogin'),
+        yandexPassword: get('c_yandexPassword'),
+        profiEmail: get('c_profiEmail'),
+        cloudPassword: get('c_cloudPassword'),
+        recoveryEmail: get('c_recoveryEmail'),
+        avitoEmail: get('c_avitoEmail'),
+        avitoPassword: get('c_avitoPassword'),
+        twoGis: get('c_twoGis'),
+        lat: get('c_lat'),
+        lon: get('c_lon'),
+        note: get('c_note'),
+      };
+      Store.updatePhone(editingId, patch);
+      Modal.close('cardModal');
+      toast('Сохранено');
+      render();
+    });
+
+    document.getElementById('cardDel').addEventListener('click', () => {
+      if (!editingId) return;
+      if (!confirmDelete('Удалить номер целиком?')) return;
+      Store.deletePhone(editingId);
+      Modal.close('cardModal');
+      render();
+    });
+
+    /* ---------- Добавление номера ---------- */
     document.getElementById('btnAdd').addEventListener('click', () => {
       fillProfileSelect(document.getElementById('mProfile'));
       document.getElementById('mNumber').value = '';
@@ -209,7 +515,7 @@
       if (dups.length === 0) { w.style.display = 'none'; return; }
       const labels = dups.map(d => {
         const p = profileById(d.profileId);
-        return p ? p.code : 'без аккаунта';
+        return p ? p.code : (d.ownerName || 'без аккаунта');
       }).join(', ');
       w.innerHTML = `⚠ Этот номер уже есть (${dups.length}): <strong>${escapeHtml(labels)}</strong>`;
       w.style.display = 'block';
@@ -219,20 +525,22 @@
       const profileId = document.getElementById('mProfile').value;
       const note = document.getElementById('mNote').value.trim();
       if (!number) { toast('Введите номер', 'error'); return; }
-      Store.addPhone({ number, profileId, note });
+      const created = Store.addPhone({ number, profileId, note });
       Modal.close('addModal');
       toast('Номер добавлен');
       render();
+      if (created) openCard(created.id);
     });
 
-    /* ---- фильтры ---- */
+    /* ---- Фильтры ---- */
     fillProfileSelect(document.getElementById('fProfile'), true);
     document.getElementById('fState').addEventListener('change', e => { filters.state = e.target.value; render(); });
     document.getElementById('fProfile').addEventListener('change', e => { filters.profileId = e.target.value; render(); });
+    document.getElementById('fSection').addEventListener('change', e => { filters.section = e.target.value; render(); });
     document.getElementById('fSearch').addEventListener('input', e => { filters.q = e.target.value.trim().toLowerCase(); render(); });
     document.getElementById('btnReset').addEventListener('click', () => {
-      filters.state = filters.profileId = filters.q = '';
-      ['fState','fProfile','fSearch'].forEach(id => document.getElementById(id).value = '');
+      filters.state = filters.profileId = filters.section = filters.q = '';
+      ['fState','fProfile','fSection','fSearch'].forEach(id => document.getElementById(id).value = '');
       render();
     });
     window.onGlobalSearch = q => { filters.q = q; document.getElementById('fSearch').value = q; render(); };
