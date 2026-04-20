@@ -177,7 +177,9 @@
         (this.state.phones || []).forEach(p => {
           if (!p.profileId && idx.has(p.number)) p.profileId = idx.get(p.number);
         });
-        this.save();
+        // ⚠️ только локально — push отложим до первого действия пользователя,
+        // чтобы не гоняться с pull в cloud-sync.
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state)); } catch (_) {}
       }
     },
 
@@ -269,7 +271,12 @@
         employees,
         subscriptions
       };
-      this.save();
+      // ⚠️ НЕ вызываем this.save() здесь: это улетит в облако и затрёт
+      // боевое состояние раньше, чем cloud-sync успеет сделать pull.
+      // Достаточно положить сид в localStorage; дальше pull либо оставит
+      // сид (если облако пустое — cloud-sync сам запушит), либо заменит
+      // сид облачным state.
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state)); } catch (_) {}
     },
 
     /* ---------- Income ---------- */

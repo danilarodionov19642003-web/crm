@@ -88,11 +88,19 @@
       const remote = await fetchRemote();
       if (!remote || !remote.data || Object.keys(remote.data).length === 0) {
         // удалённого state ещё нет — отправим текущий локальный
+        remoteSnapshot = null;
+        pullCompleted = true;
         const local = readLocal();
         if (local) await pushRemote(local);
         setStatus('synced', 'Синхронизировано');
+        if (pendingState) { clearTimeout(pushTimer); pushTimer = setTimeout(flush, 50); }
         return { changed: false };
       }
+      remoteSnapshot = remote.data;
+      pullCompleted = true;
+      // если push ждал окончания pull — запустим его сейчас
+      if (pendingState) { clearTimeout(pushTimer); pushTimer = setTimeout(flush, 50); }
+
       const localRaw = localStorage.getItem(STORAGE_KEY);
       const remoteRaw = JSON.stringify(remote.data);
       const meta = getMeta();
@@ -123,11 +131,35 @@
     }
   }
 
-  /* ---- Push (debounced) ---- */
+  /* ---- Push (debounced) ----
+     ⚠️ SAFETY: push заблокирован до первого успешного pull.
+     Иначе _seed() из app.js может улететь в облако раньше, чем cloud-sync
+     успеет загрузить актуальное состояние — и затереть боевые данные пустым сидом.
+     Снимок этой катастрофы лежал в /tmp/crm_BROKEN_19_37.json (20.04.2026). */
   let pushTimer = null;
   let pendingState = null;
+  let pullCompleted = false;         // true после первого успешного fetchRemote
+  let remoteSnapshot = null;         // последний известный облачный state — для safety-check
+  const BIG_COLLECTIONS = ['mentors','profiles','ipLogs','phones','accountRegs','profileStatuses'];
+
+  /** Возвращает true, если state подозрительно пуст по всем «большим» коллекциям. */
+  function isEffectivelyEmpty(s) {
+    if (!s || typeof s !== 'object') return true;
+    return BIG_COLLECTIONS.every(k => !Array.isArray(s[k]) || s[k].length === 0);
+  }
+  /** Возвращает true, если remote имеет хоть какие-то «большие» данные. */
+  function remoteHasData(s) {
+    if (!s || typeof s !== 'object') return false;
+    return BIG_COLLECTIONS.some(k => Array.isArray(s[k]) && s[k].length > 0);
+  }
+
   function schedulePush(state) {
     pendingState = state;
+    if (!pullCompleted) {
+      // не ставим таймер — flush запустится после первого pull
+      setStatus('syncing', 'Ожидание облака…');
+      return;
+    }
     setStatus('syncing', 'Сохранение…');
     clearTimeout(pushTimer);
     pushTimer = setTimeout(flush, 600);
@@ -135,8 +167,18 @@
 
   async function flush() {
     if (!pendingState) return;
+    if (!pullCompleted) return; // повторная защита
     const state = pendingState;
     pendingState = null;
+    // SAFETY-CHECK: нельзя перезаписывать непустое облако пустым локальным state.
+    if (isEffectivelyEmpty(state) && remoteHasData(remoteSnapshot)) {
+      console.error('[CloudSync] BLOCKED push of empty state over non-empty remote.', {
+        localKeys: Object.keys(state || {}),
+        remoteCounts: BIG_COLLECTIONS.reduce((o,k) => (o[k]=(remoteSnapshot[k]||[]).length, o), {})
+      });
+      setStatus('error', 'Push отклонён (защита)');
+      return;
+    }
     try {
       await pushRemote(state);
       setStatus('synced', 'Сохранено');
