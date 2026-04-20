@@ -25,6 +25,9 @@
             <span class="cloud-status__dot"></span>
             <span class="cloud-status__text">…</span>
           </div>
+          <button class="btn--icon" id="btnForceResync" title="Принудительно загрузить свежие данные из облака (сбросит локальную копию)">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+          </button>
           <button class="btn--icon" title="Уведомления">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
           </button>
@@ -41,6 +44,21 @@
         const bd = document.getElementById('sidebarBackdrop');
         if (sb) sb.classList.toggle('open');
         if (bd) bd.classList.toggle('open');
+      });
+    }
+
+    // Принудительный ресинк: чистит локальную копию и перезагружает страницу,
+    // чтобы точно взять актуальный state из облака (нужно если облако и локалка
+    // расходятся — например, данные правились curl'ом мимо браузера).
+    const btnForce = document.getElementById('btnForceResync');
+    if (btnForce) {
+      btnForce.addEventListener('click', () => {
+        if (!window.confirm('Сбросить локальную копию и загрузить свежие данные из облака? Несохранённые изменения будут потеряны.')) return;
+        try {
+          localStorage.removeItem('mentori-crm-v2');
+          localStorage.removeItem('mentori-crm-meta');
+        } catch (e) {}
+        location.reload();
       });
     }
 

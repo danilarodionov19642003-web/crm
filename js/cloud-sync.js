@@ -17,6 +17,19 @@
   const STORAGE_KEY = 'mentori-crm-v2';
   const META_KEY    = 'mentori-crm-meta';   // { lastPushedAt, lastPulledAt }
 
+  // Принудительный ресинк через URL ?resync=1 — чистим локалку ДО того,
+  // как app.js успеет её прочитать. Параметр после этого убираем из URL.
+  try {
+    const params = new URLSearchParams(location.search);
+    if (params.has('resync')) {
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(META_KEY);
+      params.delete('resync');
+      const clean = location.pathname + (params.toString() ? '?' + params.toString() : '') + location.hash;
+      history.replaceState(null, '', clean);
+    }
+  } catch (e) { console.warn('[CloudSync] resync reset failed', e); }
+
   const headers = {
     'apikey': SUPABASE_KEY,
     'Authorization': `Bearer ${SUPABASE_KEY}`,
