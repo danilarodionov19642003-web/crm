@@ -63,6 +63,16 @@
     .stg__chip__x { color: var(--red); font-weight: 700; opacity: .5; }
     .stg__chip__x:hover { opacity: 1; }
     .stg__empty { font-size: 12px; color: var(--text-mute); font-style: italic; }
+    .stg__chip__date {
+      font-size: 10.5px;
+      color: var(--text-mute);
+      padding: 1px 5px;
+      background: rgba(255,255,255,0.05);
+      border-radius: 8px;
+      font-variant-numeric: tabular-nums;
+      font-weight: 500;
+      margin-left: 2px;
+    }
 
     .reg-row { display:flex; gap:6px; align-items:flex-start; padding:4px 0; border-top:1px dashed var(--border); }
     .reg-row:first-child { border-top:none; }
@@ -188,7 +198,10 @@
       <div class="modal__body">
         <div class="field"><label>Клиент</label><select id="addMentor" class="select"></select></div>
         <div id="addWarn" style="display:none;margin-top:10px;padding:10px;border-radius:8px;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);color:var(--red);font-size:13px"></div>
-        <div class="field" style="margin-top:12px"><label>Статус</label><select id="addStatus" class="select"></select></div>
+        <div class="field-row" style="margin-top:12px">
+          <div class="field"><label>Статус</label><select id="addStatus" class="select"></select></div>
+          <div class="field"><label>Дата статуса</label><input type="date" id="addDate" class="input"/></div>
+        </div>
         <div class="field" style="margin-top:12px"><label>Комментарий</label><input type="text" id="addComment" class="input"/></div>
       </div>
       <div class="modal__footer">
@@ -206,7 +219,10 @@
       </div>
       <div class="modal__body">
         <div class="field"><label>Новый статус</label><select id="chgStatus" class="select"></select></div>
-        <div class="field" style="margin-top:12px"><label>Комментарий</label><input type="text" id="chgComment" class="input"/></div>
+        <div class="field-row" style="margin-top:12px">
+          <div class="field"><label>Дата статуса</label><input type="date" id="chgDate" class="input"/></div>
+          <div class="field" style="flex:2"><label>Комментарий</label><input type="text" id="chgComment" class="input"/></div>
+        </div>
         <div id="chgHist" style="margin-top:14px"></div>
       </div>
       <div class="modal__footer">
@@ -294,6 +310,16 @@
     function profileById(id) { return Store.state.profiles.find(p => p.id === id); }
     function mentorLabel(m) { return m ? `${m.code || '?'}` : '?'; }
     function mentorFull(m) { return m ? `${m.code || '?'} · ${m.name || ''}` : '?'; }
+    /** Короткая дата «5 апр» / «12 мар» — для компактных бейджей в чипе */
+    function shortDate(iso) {
+      if (!iso) return '';
+      const parts = String(iso).split('-');
+      if (parts.length !== 3) return '';
+      const d = parseInt(parts[2], 10);
+      const m = parseInt(parts[1], 10);
+      const names = ['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'];
+      return `${d} ${names[m-1] || ''}`.trim();
+    }
 
     function fillStatusSelect(sel) {
       sel.innerHTML = PROFILE_STATUSES.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
@@ -371,9 +397,16 @@
           const items = byStatus[s];
           if (!items.length) return '';
           const kind = STATUS_KIND[s] || '';
-          const chips = items.map(({ m, st }) =>
-            `<span class="stg__chip" data-st="${kind}" data-act="chgst" data-pid="${p.id}" data-mid="${m.id}" title="${escapeHtml(mentorFull(m) + (st && st.comment ? '\n' + st.comment : ''))}">${escapeHtml(mentorLabel(m))}</span>`
-          ).join('');
+          const chips = items.map(({ m, st }) => {
+            const dateLabel = st && st.date ? shortDate(st.date) : '';
+            const dateBadge = dateLabel
+              ? `<span class="stg__chip__date" title="Дата статуса «${escapeHtml(s)}»: ${escapeHtml(fmtDate(st.date))}">${escapeHtml(dateLabel)}</span>`
+              : '';
+            const titleText = mentorFull(m)
+              + (st && st.date ? '\nДата: ' + fmtDate(st.date) : '')
+              + (st && st.comment ? '\n' + st.comment : '');
+            return `<span class="stg__chip" data-st="${kind}" data-act="chgst" data-pid="${p.id}" data-mid="${m.id}" title="${escapeHtml(titleText)}">${escapeHtml(mentorLabel(m))}${dateBadge}</span>`;
+          }).join('');
           return `<div class="stg__row"><div class="stg__lbl">${escapeHtml(s)}</div><div class="stg__items">${chips}</div></div>`;
         }).filter(Boolean).join('');
 
@@ -523,6 +556,7 @@
       fillStatusSelect(document.getElementById('addStatus'));
       document.getElementById('addStatus').value = PROFILE_STATUSES[0]; // 📋 Запланировано
       document.getElementById('addComment').value = '';
+      document.getElementById('addDate').value = window.App.todayISO();
       checkAddWarn();
       Modal.open('addToAccModal');
     }
@@ -555,7 +589,8 @@
       Store.updateProfile(profile.id, { mentorIds: profile.mentorIds });
       const status = document.getElementById('addStatus').value;
       const comment = document.getElementById('addComment').value.trim();
-      Store.setProfileStatus(mid, addProfileId, status, comment);
+      const date = document.getElementById('addDate').value || window.App.todayISO();
+      Store.setProfileStatus(mid, addProfileId, status, comment, date);
       Modal.close('addToAccModal');
       toast('Привязано');
       renderAll();
@@ -572,6 +607,7 @@
       fillStatusSelect(document.getElementById('chgStatus'));
       document.getElementById('chgStatus').value = cur ? cur.status : PROFILE_STATUSES[0];
       document.getElementById('chgComment').value = cur ? (cur.comment || '') : '';
+      document.getElementById('chgDate').value = (cur && cur.date) ? cur.date : window.App.todayISO();
       const histDiv = document.getElementById('chgHist');
       if (cur && (cur.history || []).length) {
         const items = cur.history.slice().reverse().map(h => `
@@ -585,7 +621,17 @@
     }
     document.getElementById('chgSave').addEventListener('click', () => {
       if (!chgPid || !chgMid) return;
-      Store.setProfileStatus(chgMid, chgPid, document.getElementById('chgStatus').value, document.getElementById('chgComment').value.trim());
+      const newStatus = document.getElementById('chgStatus').value;
+      const newComment = document.getElementById('chgComment').value.trim();
+      const newDate = document.getElementById('chgDate').value || window.App.todayISO();
+      const cur = getStatusFor(chgPid, chgMid);
+      // Если реально ничего не поменялось в статусе/комментарии — просто подправим дату,
+      // чтобы не плодить бессмысленные записи в истории.
+      if (cur && cur.status === newStatus && (cur.comment || '') === newComment && cur.date !== newDate) {
+        Store.setProfileStatusDate(chgMid, chgPid, newDate);
+      } else {
+        Store.setProfileStatus(chgMid, chgPid, newStatus, newComment, newDate);
+      }
       Modal.close('chgStatusModal');
       toast('Статус сохранён');
       renderAll();

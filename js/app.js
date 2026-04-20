@@ -758,27 +758,36 @@
     },
     /**
      * Поставить/обновить статус. Если запись уже есть — апдейт + история.
-     * Если нет — создаём.
+     * Если нет — создаём. date опционально — по умолчанию сегодня.
      */
-    setProfileStatus(mentorId, profileId, status, comment = '') {
+    setProfileStatus(mentorId, profileId, status, comment = '', date = null) {
       const list = this.state.profileStatuses;
       let rec = list.find(s => s.mentorId === mentorId && s.profileId === profileId);
-      const today = todayISO();
+      const stamp = date || todayISO();
       if (rec) {
         rec.history = rec.history || [];
-        rec.history.push({ date: today, status: rec.status, comment: rec.comment || '' });
+        rec.history.push({ date: rec.date || stamp, status: rec.status, comment: rec.comment || '' });
         rec.status = status;
         rec.comment = comment;
-        rec.date = today;
+        rec.date = stamp;
       } else {
         rec = {
           id: uid(),
           mentorId, profileId, status, comment,
-          date: today,
+          date: stamp,
           history: []
         };
         list.push(rec);
       }
+      this.save();
+      return rec;
+    },
+    /** Обновить только дату статуса, не меняя сам статус (inline edit из карточки) */
+    setProfileStatusDate(mentorId, profileId, date) {
+      const rec = (this.state.profileStatuses || [])
+        .find(s => s.mentorId === mentorId && s.profileId === profileId);
+      if (!rec) return null;
+      rec.date = date || todayISO();
       this.save();
       return rec;
     },
