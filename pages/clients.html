@@ -17,7 +17,7 @@
         <div class="page-title">
           <div>
             <h1>Клиентская база</h1>
-            <p>Заказано / сделано — управляем кнопками <span style="color:var(--accent);font-weight:600">+</span> и <span style="color:var(--accent);font-weight:600">−</span>. Тариф меняется в строке.</p>
+            <p>«Заказано» — редактируется в строке (клик по ячейке). «Сделано» подтягивается автоматически по статусу «🎯 Готов» на вкладке «Аккаунты».</p>
           </div>
           <button class="btn btn--primary" id="btnAdd">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -315,7 +315,7 @@
               ${TARIFF_NAMES.map(t => `<option value="${t}" ${r.tariff===t?'selected':''}>${t}</option>`).join('')}
             </select>
           </td>
-          <td class="num">${Counter.html(ordered, { id: r.id + ':ordered' })}</td>
+          <td class="num" data-field="ordered" data-type="number">${ordered}</td>
           <td class="num" title="Рассчитывается автоматически: количество статусов «🎯 Готов» по клиенту ${escapeHtml(r.code || '')} на вкладке «Статусы»">
             <span class="badge ${done >= ordered && ordered > 0 ? 'badge--green' : 'badge--gray'}" style="font-variant-numeric:tabular-nums">${done}</span>
           </td>
@@ -353,19 +353,13 @@
       document.querySelectorAll('#clRows tr').forEach(tr => {
         const id = tr.dataset.id;
 
-        // Counter handlers (только ordered; done — авто из статусов)
-        Counter.bindAll(tr, (cid) => (newVal) => {
-          const [, field] = cid.split(':');
-          Store.updateClient(id, { [field]: newVal });
-          render();
-        });
-
         // text/number cells
         tr.querySelectorAll('td[data-field]').forEach(cell => {
           if (cell.querySelector('input,select')) return;
           const field = cell.dataset.field;
           makeEditable(cell, val => {
-            const patch = { [field]: val };
+            const isNum = cell.dataset.type === 'number';
+            const patch = { [field]: isNum ? (Number(val) || 0) : val };
             if (field === 'paid' || field === 'total') {
               const c = Store.state.clients.find(x => x.id === id);
               const paid = field === 'paid' ? Number(val) : Number(c.paid) || 0;
