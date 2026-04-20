@@ -5,6 +5,74 @@
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>IP контроль — Mentori CRM</title>
   <link rel="stylesheet" href="../css/styles.css"/>
+  <style>
+    .acc-list { display:flex; flex-direction:column; gap:10px; }
+    .acc-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      transition: border-color .15s;
+    }
+    .acc-card.has-conflict { border-color: rgba(239,68,68,0.45); }
+    .acc-card.empty { opacity: .65; }
+
+    .acc-card > summary {
+      list-style: none;
+      cursor: pointer;
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      user-select: none;
+    }
+    .acc-card > summary::-webkit-details-marker { display:none; }
+    .acc-card > summary:hover { background: rgba(255,255,255,0.02); }
+
+    .acc-chev {
+      width: 18px; height: 18px;
+      transition: transform .15s;
+      color: var(--text-mute);
+      flex-shrink: 0;
+    }
+    .acc-card[open] > summary .acc-chev { transform: rotate(90deg); }
+
+    .acc-code {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 10px;
+      background: rgba(249,115,22,0.15);
+      color: var(--orange);
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 13px;
+      min-width: 48px;
+      justify-content: center;
+    }
+    .acc-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+    .acc-city { color: var(--text); font-size: 14px; font-weight: 500; }
+    .acc-sub { color: var(--text-mute); font-size: 12px; }
+
+    .acc-stats { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+    .acc-pill {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 3px 9px; border-radius: 999px; font-size: 12px; font-weight: 600;
+      background: rgba(255,255,255,0.04); color: var(--text-mute);
+    }
+    .acc-pill--cnt { background: rgba(99,102,241,0.15); color: #a5b4fc; }
+    .acc-pill--warn { background: rgba(239,68,68,0.15); color: var(--red); }
+    .acc-pill--ok { background: rgba(34,197,94,0.15); color: var(--green); }
+
+    .acc-body { border-top: 1px solid var(--border); padding: 0; background: rgba(0,0,0,0.15); }
+    .acc-body table.table { margin: 0; }
+    .acc-body table.table th, .acc-body table.table td { font-size: 13px; }
+    .acc-empty { padding: 16px; color: var(--text-mute); font-size: 13px; text-align: center; }
+
+    .ip-row.conflict { background: rgba(239,68,68,0.08); }
+    .ip-mono { font-family: ui-monospace, monospace; font-size: 13px; }
+    .ip-conflict-with { font-size: 11px; color: var(--text-mute); margin-top: 2px; }
+    .ip-conflict-with strong { color: var(--red); font-weight: 600; }
+  </style>
 </head>
 <body>
   <div class="app">
@@ -17,7 +85,7 @@
         <div class="page-title">
           <div>
             <h1>IP-адреса аккаунтов</h1>
-            <p>Каждый IP жёстко привязывается к одному аккаунту. Если этот же IP используется на другом аккаунте — строка подсвечена красным: высокий риск бана.</p>
+            <p>Список аккаунтов — кликни, чтобы развернуть IP. Один и тот же IP на разных аккаунтах подсвечен красным: высокий риск бана.</p>
           </div>
           <button class="btn btn--primary" id="btnAdd">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -28,41 +96,26 @@
         <section class="cards" id="ipKpis"></section>
 
         <div class="filters">
-          <select id="fProfile" class="select">
-            <option value="">Все аккаунты</option>
+          <select id="fCity" class="select">
+            <option value="">Все города</option>
           </select>
           <select id="fState" class="select">
-            <option value="">Все</option>
-            <option value="conflict">⚠ Только конфликты</option>
-            <option value="dupe">Все повторы</option>
-            <option value="unique">Уникальные</option>
+            <option value="">Все аккаунты</option>
+            <option value="conflict">⚠ С конфликтами</option>
+            <option value="hasip">С IP</option>
+            <option value="empty">Без IP</option>
           </select>
-          <input type="text" id="fSearch" class="input" placeholder="Поиск IP..." style="flex:1;min-width:200px"/>
+          <input type="text" id="fSearch" class="input" placeholder="Поиск по аккаунту или IP..." style="flex:1;min-width:220px"/>
+          <button class="btn btn--ghost" id="btnExpand">Развернуть всё</button>
           <button class="btn btn--ghost" id="btnReset">Сбросить</button>
         </div>
 
-        <div class="panel">
-          <div class="table-wrap">
-            <table class="table" id="ipTable">
-              <thead>
-                <tr>
-                  <th>IP</th>
-                  <th>Аккаунт</th>
-                  <th>Дата</th>
-                  <th>Заметка</th>
-                  <th>Статус</th>
-                  <th class="actions"></th>
-                </tr>
-              </thead>
-              <tbody id="ipRows"></tbody>
-            </table>
-          </div>
-        </div>
+        <div class="acc-list" id="accList"></div>
       </main>
     </div>
   </div>
 
-  <!-- Модалка -->
+  <!-- Модалка добавления IP -->
   <div class="modal-backdrop" id="addModal">
     <div class="modal" style="max-width:520px">
       <div class="modal__header">
@@ -115,15 +168,27 @@
     const { confirmDelete } = window.TableUtils;
 
     Store.load();
-    const filters = { profileId: '', state: '', q: '' };
+    const filters = { city: '', state: '', q: '' };
+    const openAccs = new Set(); // запоминаем, какие аккаунты были раскрыты
+    let forceExpandAll = false;
 
     function profileById(id) { return Store.state.profiles.find(p => p.id === id); }
     function profileLabel(p) { return p ? `${p.code || '—'} (${p.city || '—'})` : '—'; }
 
-    function fillProfileSelect(sel, includeAll = false) {
-      const profs = (Store.state.profiles || []).slice().sort((a,b) => (a.code || '').localeCompare(b.code || '', 'ru', {numeric:true}));
-      sel.innerHTML = (includeAll ? '<option value="">Все аккаунты</option>' : '<option value="">— выбрать —</option>')
+    function fillProfileSelect(sel, includeAll = false, firstLabel = '— выбрать —') {
+      const profs = (Store.state.profiles || []).slice()
+        .sort((a,b) => (a.code || '').localeCompare(b.code || '', 'ru', {numeric:true}));
+      sel.innerHTML = (includeAll ? `<option value="">${firstLabel}</option>` : `<option value="">${firstLabel}</option>`)
         + profs.map(p => `<option value="${p.id}">${escapeHtml(profileLabel(p))}</option>`).join('');
+    }
+
+    function fillCitySelect() {
+      const cities = [...new Set((Store.state.profiles || []).map(p => p.city).filter(Boolean))].sort();
+      const sel = document.getElementById('fCity');
+      const cur = sel.value;
+      sel.innerHTML = '<option value="">Все города</option>'
+        + cities.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+      sel.value = cur;
     }
 
     function ipStats() {
@@ -152,71 +217,155 @@
 
     function render() {
       renderKpis();
+      fillCitySelect();
+
       const stats = ipStats();
-      const logs = (Store.state.ipLogs || []).slice().sort((a,b) => (b.date || '').localeCompare(a.date || ''));
-      const filtered = logs.filter(r => {
-        if (filters.profileId && r.profileId !== filters.profileId) return false;
-        if (filters.q && !String(r.ip || '').toLowerCase().includes(filters.q)) return false;
-        const set = stats.get(r.ip) || new Set();
-        if (filters.state === 'conflict' && set.size <= 1) return false;
-        if (filters.state === 'dupe') {
-          const sameIp = (Store.state.ipLogs || []).filter(x => x.ip === r.ip);
-          if (sameIp.length <= 1) return false;
-        }
-        if (filters.state === 'unique') {
-          const sameIp = (Store.state.ipLogs || []).filter(x => x.ip === r.ip);
-          if (sameIp.length > 1) return false;
+      const logsByProfile = new Map();
+      (Store.state.ipLogs || []).forEach(x => {
+        if (!logsByProfile.has(x.profileId)) logsByProfile.set(x.profileId, []);
+        logsByProfile.get(x.profileId).push(x);
+      });
+
+      const profs = (Store.state.profiles || []).slice()
+        .sort((a,b) => (a.code || '').localeCompare(b.code || '', 'ru', {numeric:true}));
+
+      const filtered = profs.filter(p => {
+        if (filters.city && p.city !== filters.city) return false;
+        const ips = logsByProfile.get(p.id) || [];
+        const hasConflict = ips.some(x => (stats.get(x.ip) || new Set()).size > 1);
+        if (filters.state === 'conflict' && !hasConflict) return false;
+        if (filters.state === 'hasip' && ips.length === 0) return false;
+        if (filters.state === 'empty' && ips.length > 0) return false;
+        if (filters.q) {
+          const q = filters.q;
+          const codeM = (p.code || '').toLowerCase().includes(q);
+          const cityM = (p.city || '').toLowerCase().includes(q);
+          const ipM = ips.some(x => String(x.ip || '').toLowerCase().includes(q));
+          if (!codeM && !cityM && !ipM) return false;
         }
         return true;
       });
 
-      const tb = document.getElementById('ipRows');
+      const list = document.getElementById('accList');
       if (filtered.length === 0) {
-        tb.innerHTML = `<tr><td colspan="6" class="empty">IP-записей нет.</td></tr>`;
+        list.innerHTML = `<div class="panel"><div style="padding:32px;text-align:center;color:var(--text-mute)">Аккаунтов не найдено.</div></div>`;
         return;
       }
-      tb.innerHTML = filtered.map(r => {
-        const set = stats.get(r.ip) || new Set();
-        const conflict = set.size > 1;
-        const sameCount = (Store.state.ipLogs || []).filter(x => x.ip === r.ip).length;
-        const status = conflict
-          ? '<span class="badge badge--red"><span class="dot"></span>Конфликт</span>'
-          : (sameCount > 1
-            ? '<span class="badge badge--orange">Повтор ×' + sameCount + '</span>'
-            : '<span class="badge badge--green">OK</span>');
-        const rowStyle = conflict ? ' style="background:rgba(239,68,68,0.06)"' : '';
-        const p = profileById(r.profileId);
-        return `<tr data-id="${r.id}"${rowStyle}>
-          <td><span style="font-family:ui-monospace,monospace;font-size:13px">${escapeHtml(r.ip || '')}</span></td>
-          <td>${p ? '<span class="badge badge--orange">' + escapeHtml(p.code) + '</span> <span style="color:var(--text-mute);font-size:12px">' + escapeHtml(p.city || '') + '</span>' : '<span style="color:var(--text-mute)">— нет —</span>'}</td>
-          <td>${escapeHtml(fmtDate(r.date))}</td>
-          <td>${escapeHtml(r.note || '')}</td>
-          <td>${status}</td>
-          <td class="actions">
-            <button class="btn--icon" data-act="del" data-id="${r.id}" title="Удалить">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
-            </button>
-          </td>
-        </tr>`;
+
+      list.innerHTML = filtered.map(p => {
+        const ips = (logsByProfile.get(p.id) || [])
+          .slice().sort((a,b) => (b.date || '').localeCompare(a.date || ''));
+        const conflictsHere = ips.filter(x => (stats.get(x.ip) || new Set()).size > 1).length;
+        const isOpen = forceExpandAll || openAccs.has(p.id) || (filters.q && ips.length > 0);
+
+        const pillCnt = `<span class="acc-pill acc-pill--cnt">${ips.length} IP</span>`;
+        const pillWarn = conflictsHere > 0
+          ? `<span class="acc-pill acc-pill--warn">⚠ ${conflictsHere} конфликт${ru1(conflictsHere)}</span>`
+          : (ips.length > 0 ? `<span class="acc-pill acc-pill--ok">OK</span>` : '');
+
+        const cardCls = `acc-card${conflictsHere>0?' has-conflict':''}${ips.length===0?' empty':''}`;
+
+        const body = ips.length === 0
+          ? `<div class="acc-empty">IP на этом аккаунте нет. Нажми «Новый IP» сверху.</div>`
+          : `<div class="table-wrap"><table class="table">
+              <thead><tr><th>IP</th><th>Дата</th><th>Заметка</th><th>Статус</th><th class="actions"></th></tr></thead>
+              <tbody>${ips.map(r => {
+                const set = stats.get(r.ip) || new Set();
+                const conflict = set.size > 1;
+                const otherCodes = conflict
+                  ? [...set].filter(pid => pid !== p.id).map(pid => {
+                      const op = profileById(pid); return op ? op.code : '—';
+                    }).join(', ')
+                  : '';
+                const status = conflict
+                  ? '<span class="badge badge--red"><span class="dot"></span>Конфликт</span>'
+                  : '<span class="badge badge--green">OK</span>';
+                return `<tr class="ip-row${conflict?' conflict':''}" data-id="${r.id}">
+                  <td>
+                    <div class="ip-mono">${escapeHtml(r.ip || '')}</div>
+                    ${otherCodes ? `<div class="ip-conflict-with">также на: <strong>${escapeHtml(otherCodes)}</strong></div>` : ''}
+                  </td>
+                  <td>${escapeHtml(fmtDate(r.date))}</td>
+                  <td>${escapeHtml(r.note || '')}</td>
+                  <td>${status}</td>
+                  <td class="actions">
+                    <button class="btn--icon" data-act="del" data-id="${r.id}" title="Удалить">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+                    </button>
+                  </td>
+                </tr>`;
+              }).join('')}</tbody>
+            </table></div>`;
+
+        return `<details class="${cardCls}" data-pid="${p.id}"${isOpen?' open':''}>
+          <summary>
+            <svg class="acc-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+            <span class="acc-code">${escapeHtml(p.code || '—')}</span>
+            <div class="acc-meta">
+              <div class="acc-city">${escapeHtml(p.city || '—')}</div>
+              ${p.code ? `<div class="acc-sub">${escapeHtml(buildOwnerSubtitle(p))}</div>` : ''}
+            </div>
+            <div class="acc-stats">
+              ${pillCnt}
+              ${pillWarn}
+              <button class="btn btn--ghost btn--sm" data-act="quickadd" data-pid="${p.id}" title="Добавить IP сюда">+ IP</button>
+            </div>
+          </summary>
+          <div class="acc-body">${body}</div>
+        </details>`;
       }).join('');
 
-      tb.querySelectorAll('[data-act="del"]').forEach(b => b.addEventListener('click', () => {
+      // Toggle persistence
+      list.querySelectorAll('details.acc-card').forEach(d => {
+        d.addEventListener('toggle', () => {
+          if (d.open) openAccs.add(d.dataset.pid);
+          else openAccs.delete(d.dataset.pid);
+        });
+      });
+      // Delete
+      list.querySelectorAll('[data-act="del"]').forEach(b => b.addEventListener('click', e => {
+        e.preventDefault(); e.stopPropagation();
         if (!confirmDelete('Удалить запись IP?')) return;
         Store.deleteIp(b.dataset.id);
         render();
       }));
+      // Quick add — открывает модалку с уже выбранным аккаунтом
+      list.querySelectorAll('[data-act="quickadd"]').forEach(b => b.addEventListener('click', e => {
+        e.preventDefault(); e.stopPropagation();
+        openAddModal(b.dataset.pid);
+      }));
+    }
+
+    function buildOwnerSubtitle(p) {
+      const reg = (Store.state.accountRegs || []).find(r => r.profileId === p.id);
+      if (!reg) return '';
+      const parts = [];
+      if (reg.ownerName) parts.push(reg.ownerName);
+      if (reg.phone) parts.push(reg.phone);
+      return parts.join(' · ');
+    }
+
+    function ru1(n) {
+      // плюрализация для "конфликт/конфликта/конфликтов"
+      const m10 = n % 10, m100 = n % 100;
+      if (m10 === 1 && m100 !== 11) return '';
+      if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return 'а';
+      return 'ов';
     }
 
     /* ---- Модалка ---- */
-    document.getElementById('btnAdd').addEventListener('click', () => {
-      fillProfileSelect(document.getElementById('mProfile'));
+    function openAddModal(presetProfileId = '') {
+      fillProfileSelect(document.getElementById('mProfile'), false, '— выбрать —');
       document.getElementById('mIp').value = '';
       document.getElementById('mNote').value = '';
       document.getElementById('mDate').value = todayISO();
+      document.getElementById('mProfile').value = presetProfileId || '';
       document.getElementById('mWarn').style.display = 'none';
       Modal.open('addModal');
       setTimeout(() => document.getElementById('mIp').focus(), 50);
-    });
+    }
+    document.getElementById('btnAdd').addEventListener('click', () => openAddModal(''));
+
     function checkIpWarn() {
       const ip = document.getElementById('mIp').value.trim();
       const w = document.getElementById('mWarn');
@@ -240,24 +389,31 @@
       if (!ip) { toast('Укажите IP', 'error'); return; }
       if (!profileId) { toast('Выберите аккаунт', 'error'); return; }
       Store.addIp({ ip, profileId, date, note });
+      openAccs.add(profileId); // раскрыть аккаунт, куда добавили
       Modal.close('addModal');
       toast('IP добавлен');
       render();
     });
 
     /* ---- Фильтры ---- */
-    fillProfileSelect(document.getElementById('fProfile'), true);
-    document.getElementById('fProfile').addEventListener('change', e => { filters.profileId = e.target.value; render(); });
+    document.getElementById('fCity').addEventListener('change', e => { filters.city = e.target.value; render(); });
     document.getElementById('fState').addEventListener('change', e => { filters.state = e.target.value; render(); });
     document.getElementById('fSearch').addEventListener('input', e => { filters.q = e.target.value.trim().toLowerCase(); render(); });
     document.getElementById('btnReset').addEventListener('click', () => {
-      filters.profileId = filters.state = filters.q = '';
-      ['fProfile','fState','fSearch'].forEach(id => document.getElementById(id).value = '');
+      filters.city = filters.state = filters.q = '';
+      ['fCity','fState','fSearch'].forEach(id => document.getElementById(id).value = '');
+      forceExpandAll = false;
+      openAccs.clear();
+      render();
+    });
+    document.getElementById('btnExpand').addEventListener('click', () => {
+      forceExpandAll = !forceExpandAll;
+      document.getElementById('btnExpand').textContent = forceExpandAll ? 'Свернуть всё' : 'Развернуть всё';
       render();
     });
     window.onGlobalSearch = q => { filters.q = q; document.getElementById('fSearch').value = q; render(); };
 
-    window.addEventListener('cloudstate:updated', () => { fillProfileSelect(document.getElementById('fProfile'), true); render(); });
+    window.addEventListener('cloudstate:updated', render);
     window.addEventListener('store:reloaded', render);
     render();
   });
