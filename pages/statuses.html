@@ -255,6 +255,11 @@
       border: 1px solid rgba(239,68,68,0.3);
       color: var(--red); font-size: 12px;
     }
+    .reg-dup-warn--soft {
+      background: rgba(250,204,21,0.08);
+      border-color: rgba(250,204,21,0.3);
+      color: #facc15;
+    }
   </style>
 
   <script src="../data/seed.js"></script>
@@ -688,23 +693,42 @@
     function checkPhoneDup(raw, warnEl) {
       const num = Store._normalizePhone(raw);
       if (!num) { warnEl.style.display = 'none'; return; }
-      const others = Store.profilesUsingPhone(num, regPid);
-      // плюс совпадения с phones[].profileId / phones[].number
+
+      // Кто уже использует этот номер как phone/avitoPhone через accountRegs
+      const othersFromRegs = Store.profilesUsingPhone(num, regPid);
+      // И что в общей базе phones[]
       const phoneRecs = (Store.state.phones || []).filter(p => p.number === num);
-      const extraCodes = new Set();
+
+      const extraCodes = new Set(); // привязки к ДРУГИМ аккаунтам (строгое предупреждение)
       phoneRecs.forEach(pr => {
         if (pr.profileId && pr.profileId !== regPid) {
           const p = profileById(pr.profileId);
-          if (p) extraCodes.add(p.code);
+          if (p) extraCodes.add(p.code + (p.archived ? ' (удалён)' : ''));
         }
       });
-      others.forEach(pid => {
+      othersFromRegs.forEach(pid => {
         const p = profileById(pid);
-        if (p) extraCodes.add(p.code);
+        if (p) extraCodes.add(p.code + (p.archived ? ' (удалён)' : ''));
       });
-      if (extraCodes.size === 0) { warnEl.style.display = 'none'; return; }
-      warnEl.innerHTML = `⚠ Этот номер уже привязан к: <strong>${[...extraCodes].map(escapeHtml).join(', ')}</strong>`;
-      warnEl.style.display = 'block';
+
+      if (extraCodes.size > 0) {
+        warnEl.className = 'reg-dup-warn';
+        warnEl.innerHTML = `⚠ Этот номер уже привязан к: <strong>${[...extraCodes].map(escapeHtml).join(', ')}</strong>`;
+        warnEl.style.display = 'block';
+        return;
+      }
+
+      // Номера нет на других аккаунтах, но он УЖЕ лежит в общей базе phones[] —
+      // значит был когда-то куплен / засвечен. Мягкое предупреждение.
+      const existsInBase = phoneRecs.some(pr => !pr.profileId || pr.profileId === regPid);
+      if (existsInBase && !phoneRecs.some(pr => pr.profileId === regPid)) {
+        warnEl.className = 'reg-dup-warn reg-dup-warn--soft';
+        warnEl.innerHTML = `ℹ Этот номер уже есть в базе номеров (без привязки к аккаунту). Проверь, не использовал ли раньше.`;
+        warnEl.style.display = 'block';
+        return;
+      }
+
+      warnEl.style.display = 'none';
     }
 
     document.getElementById('regToggleEdit').addEventListener('click', () => {
