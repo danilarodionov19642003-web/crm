@@ -220,7 +220,7 @@
 
   <!-- Модалка: регистрация аккаунта -->
   <div class="modal-backdrop" id="regModal">
-    <div class="modal" style="max-width:640px">
+    <div class="modal reg-modal">
       <div class="modal__header"><h3 id="regTitle">🔐 Регистрация</h3>
         <button class="btn--icon" data-close><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
       </div>
@@ -239,6 +239,23 @@
       </div>
     </div>
   </div>
+  <style>
+    .reg-modal {
+      max-width: 640px;
+      max-height: calc(100vh - 60px);
+      display: flex;
+      flex-direction: column;
+    }
+    .reg-modal .modal__header,
+    .reg-modal .modal__footer { flex-shrink: 0; }
+    .reg-modal .modal__body { overflow-y: auto; flex: 1 1 auto; }
+    .reg-dup-warn {
+      margin-top: 4px; padding: 6px 10px; border-radius: 6px;
+      background: rgba(239,68,68,0.1);
+      border: 1px solid rgba(239,68,68,0.3);
+      color: var(--red); font-size: 12px;
+    }
+  </style>
 
   <script src="../data/seed.js"></script>
   <script src="../js/app.js"></script>
@@ -652,9 +669,42 @@
         <div class="field" style="margin-bottom:10px">
           <label style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-mute)">${lbl}</label>
           <input type="text" data-fld="${k}" class="input" value="${escapeAttr(reg[k] || '')}"/>
+          ${(k === 'phone' || k === 'avitoPhone') ? `<div class="reg-dup-warn" data-warn="${k}" style="display:none"></div>` : ''}
         </div>
       `).join('');
       document.getElementById('regEdit').innerHTML = rows;
+
+      // Проверка дубликатов на лету для phone и avitoPhone
+      ['phone','avitoPhone'].forEach(k => {
+        const inp  = document.querySelector(`#regEdit [data-fld="${k}"]`);
+        const warn = document.querySelector(`#regEdit [data-warn="${k}"]`);
+        if (!inp || !warn) return;
+        const check = () => checkPhoneDup(inp.value, warn);
+        inp.addEventListener('input', check);
+        check();   // первая проверка для уже сохранённого значения
+      });
+    }
+
+    function checkPhoneDup(raw, warnEl) {
+      const num = Store._normalizePhone(raw);
+      if (!num) { warnEl.style.display = 'none'; return; }
+      const others = Store.profilesUsingPhone(num, regPid);
+      // плюс совпадения с phones[].profileId / phones[].number
+      const phoneRecs = (Store.state.phones || []).filter(p => p.number === num);
+      const extraCodes = new Set();
+      phoneRecs.forEach(pr => {
+        if (pr.profileId && pr.profileId !== regPid) {
+          const p = profileById(pr.profileId);
+          if (p) extraCodes.add(p.code);
+        }
+      });
+      others.forEach(pid => {
+        const p = profileById(pid);
+        if (p) extraCodes.add(p.code);
+      });
+      if (extraCodes.size === 0) { warnEl.style.display = 'none'; return; }
+      warnEl.innerHTML = `⚠ Этот номер уже привязан к: <strong>${[...extraCodes].map(escapeHtml).join(', ')}</strong>`;
+      warnEl.style.display = 'block';
     }
 
     document.getElementById('regToggleEdit').addEventListener('click', () => {

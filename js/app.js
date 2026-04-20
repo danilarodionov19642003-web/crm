@@ -145,7 +145,39 @@
       this.state.ipLogs ??= [];
       this.state.phones ??= [];
       this.state.accountRegs ??= [];   // регистрации аккаунтов: TG/Яндекс/Авито/2ГИС/почта Профи
+      this._migrateNormalizePhones();
       return this.state;
+    },
+
+    /** Однократная очистка legacy 12-значных номеров (артефакт float-парсинга xlsx).
+     *  Идемпотентно: если всё уже норм — ничего не пишет. */
+    _migrateNormalizePhones() {
+      let changed = false;
+      (this.state.phones || []).forEach(p => {
+        const n = this._normalizePhone(p.number);
+        if (n && n !== p.number) { p.number = n; changed = true; }
+      });
+      (this.state.accountRegs || []).forEach(r => {
+        ['phone','avitoPhone'].forEach(f => {
+          const n = this._normalizePhone(r[f]);
+          if (n !== (r[f] || '') && (r[f] || '').length) {
+            r[f] = n; changed = true;
+          }
+        });
+      });
+      // После нормализации — допривяжем phones[].profileId по совпадению с accountRegs
+      if (changed) {
+        const idx = new Map();
+        (this.state.accountRegs || []).forEach(r => {
+          ['phone','avitoPhone'].forEach(f => {
+            if (r[f]) idx.set(r[f], r.profileId);
+          });
+        });
+        (this.state.phones || []).forEach(p => {
+          if (!p.profileId && idx.has(p.number)) p.profileId = idx.get(p.number);
+        });
+        this.save();
+      }
     },
 
     save() {
@@ -778,9 +810,14 @@
       this.save();
     },
     _normalizePhone(raw) {
-      const s = String(raw || '').replace(/\D+/g, '');
-      // приведение к форме 8XXXXXXXXXX (если начинается с 7 — заменим)
+      // openpyxl/Excel мог сохранить номер как float (89951554507.0),
+      // и старый импорт после удаления нецифр оставлял хвостовой 0.
+      // Защищаемся: режем хвост в любых случаях > 11 цифр, если первая 7/8/9.
+      let s = String(raw || '').replace(/\D+/g, '');
+      if (!s) return '';
+      if (s.length > 11 && /^[789]/.test(s)) s = s.slice(0, 11);
       if (s.length === 11 && s[0] === '7') return '8' + s.slice(1);
+      if (s.length === 10) return '8' + s;
       return s;
     },
     /** Найти дубликаты по номеру — массив phones с тем же number, кроме ignoreId */
