@@ -108,7 +108,7 @@
           <div class="field">
             <label>Сделано</label>
             <div class="input" style="display:flex;align-items:center;color:var(--text-mute);font-size:12px;line-height:1.3">
-              Считается автоматически из вкладки «Статусы» (статус «✅ Диалог Закончен»)
+              Считается автоматически из вкладки «Статусы» (статус «🎯 Готов»)
             </div>
           </div>
         </div>
@@ -187,7 +187,7 @@
     const filters = { tariff: '', state: '', q: '' };
 
     /* ---- Авто-подсчёт «Сделано» из статусов (mentor.code === client.code) ---- */
-    const DONE_STATUS = '✅ Диалог Закончен';
+    const DONE_STATUS = '🎯 Готов';
     function deriveDone(client) {
       const code = String(client.code || '').toLowerCase().trim();
       if (!code) return 0;
@@ -316,7 +316,7 @@
             </select>
           </td>
           <td class="num">${Counter.html(ordered, { id: r.id + ':ordered' })}</td>
-          <td class="num" title="Рассчитывается автоматически: количество статусов «✅ Диалог Закончен» по клиенту ${escapeHtml(r.code || '')} на вкладке «Статусы»">
+          <td class="num" title="Рассчитывается автоматически: количество статусов «🎯 Готов» по клиенту ${escapeHtml(r.code || '')} на вкладке «Статусы»">
             <span class="badge ${done >= ordered && ordered > 0 ? 'badge--green' : 'badge--gray'}" style="font-variant-numeric:tabular-nums">${done}</span>
           </td>
           <td class="num">${progressBar}</td>
