@@ -147,6 +147,14 @@
       this.state.accountRegs ??= [];   // регистрации аккаунтов: TG/Яндекс/Авито/2ГИС/почта Профи
       this.state.archivedProfiles ??= []; // удалённые аккаунты: хранятся чтобы не терять историю IP/связей/номеров
       this._migrateNormalizePhones();
+      // Бэкфилл менторов из клиентов: если клиент был создан на странице
+      // «Клиенты» и не имеет пары в state.mentors — создаём её здесь, чтобы
+      // клиент был доступен в модалке «Добавить в аккаунт» без перезагрузки.
+      // Пишем только локально (без push), чтобы не гоняться с cloud-sync pull.
+      const addedMentors = this._backfillMentorsFromClients();
+      if (addedMentors > 0) {
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state)); } catch (_) {}
+      }
       return this.state;
     },
 
@@ -416,6 +424,9 @@
       // нормализация email
       if (item.assignedEmail) item.assignedEmail = String(item.assignedEmail).toLowerCase().trim();
       this.state.clients.push(item);
+      // Автосинк: создать ментора с тем же кодом, если его ещё нет,
+      // чтобы клиент сразу был доступен в модалке «Добавить в аккаунт».
+      this._ensureMentorForClient(item);
       this.save();
       return item;
     },
@@ -426,11 +437,58 @@
         patch.assignedEmail = patch.assignedEmail.toLowerCase().trim();
       }
       this.state.clients[i] = Object.assign({}, this.state.clients[i], patch);
+      // Синк имени/кода в связанного ментора (если они изменились).
+      this._ensureMentorForClient(this.state.clients[i]);
       this.save();
     },
     deleteClient(id) {
       this.state.clients = this.state.clients.filter(x => x.id !== id);
       this.save();
+    },
+
+    /**
+     * Гарантирует существование ментора с кодом клиента — чтобы клиенты,
+     * заведённые на странице «Клиенты», появлялись в модалке «Добавить в аккаунт»
+     * на странице «Аккаунты/Статусы». Если ментор с таким кодом уже есть —
+     * подсинкаем имя, если оно пустое.
+     */
+    _ensureMentorForClient(client) {
+      if (!client) return;
+      const code = String(client.code || '').toLowerCase().trim();
+      if (!code) return;
+      this.state.mentors = this.state.mentors || [];
+      const existing = this.state.mentors.find(
+        m => String(m.code || '').toLowerCase().trim() === code
+      );
+      if (existing) {
+        if (!existing.name && client.name) existing.name = client.name;
+        return existing;
+      }
+      const mentor = {
+        id: uid(),
+        code,
+        name: client.name || '',
+        notes: '',
+        createdAt: todayISO()
+      };
+      this.state.mentors.push(mentor);
+      return mentor;
+    },
+
+    /**
+     * Одноразовая миграция: для каждого клиента с code, у которого нет
+     * соответствующего ментора, — создаёт ментора. Безопасна при повторных
+     * вызовах (идемпотентна). Используется в Store.load().
+     */
+    _backfillMentorsFromClients() {
+      const clients = this.state.clients || [];
+      let added = 0;
+      clients.forEach(c => {
+        const before = (this.state.mentors || []).length;
+        this._ensureMentorForClient(c);
+        if ((this.state.mentors || []).length > before) added++;
+      });
+      return added;
     },
 
     /* ---------- Employees ---------- */
