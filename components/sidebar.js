@@ -14,9 +14,8 @@
     { id: 'subscriptions', label: 'Подписки',   href: 'subscriptions.html', icon: icoSub() },
     { id: 'employees',     label: 'Сотрудники', href: 'employees.html',     icon: icoUsers() },
     { id: 'reviews',       label: 'Отзывы',     href: 'reviews.html',       icon: icoReviews() },
-    { id: 'profiles',      label: 'Аккаунты',   href: 'profiles.html',      icon: icoProfiles() },
+    { id: 'statuses',      label: 'Аккаунты',   href: 'statuses.html',      icon: icoProfiles() },
     { id: 'links',         label: 'Связи',      href: 'links.html',         icon: icoLinks() },
-    { id: 'statuses',      label: 'Статусы',    href: 'statuses.html',      icon: icoStatuses() },
     { id: 'ips',           label: 'IP-адреса',  href: 'ips.html',           icon: icoIps() },
     { id: 'phones',        label: 'Номера',     href: 'phones.html',        icon: icoPhones() }
   ];
@@ -89,9 +88,6 @@
   }
   function icoLinks() {
     return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 1 0 7.07 7.07l1.5-1.5"/></svg>`;
-  }
-  function icoStatuses() {
-    return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>`;
   }
   function icoIps() {
     return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15 15 0 0 1 4 10 15 15 0 0 1-4 10 15 15 0 0 1-4-10 15 15 0 0 1 4-10z"/></svg>`;

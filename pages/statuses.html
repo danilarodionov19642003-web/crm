@@ -5,106 +5,237 @@
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>Статусы — Mentori CRM</title>
   <link rel="stylesheet" href="../css/styles.css"/>
+  <style>
+    /* Карточки аккаунтов */
+    .acc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 14px; }
+    .acc-card {
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      display: flex; flex-direction: column; gap: 10px;
+      transition: border-color .15s ease;
+    }
+    .acc-card:hover { border-color: var(--border-strong); }
+    .acc-card__head {
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      padding-bottom: 8px; border-bottom: 1px solid var(--border);
+    }
+    .acc-card__title {
+      display: flex; align-items: center; gap: 8px;
+      font-weight: 700; font-size: 16px;
+    }
+    .acc-card__title small { color: var(--text-mute); font-weight: 500; font-size: 12px; }
+    .acc-card__actions { display: flex; gap: 4px; }
+    .acc-card__owner { font-size: 12px; color: var(--text-dim); }
+    .acc-card__owner b { color: var(--text); font-weight: 600; }
+
+    /* Статус-группы */
+    .stg { display: flex; flex-direction: column; gap: 4px; }
+    .stg__row {
+      display: flex; align-items: flex-start; gap: 8px;
+      padding: 6px 0; border-top: 1px dashed var(--border);
+    }
+    .stg__row:first-child { border-top: none; }
+    .stg__lbl {
+      flex-shrink: 0; min-width: 130px;
+      font-size: 12px; color: var(--text-dim);
+      padding-top: 2px;
+    }
+    .stg__items { display: flex; flex-wrap: wrap; gap: 4px; }
+    .stg__chip {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 3px 8px;
+      background: var(--bg-elev-2);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: background .12s ease;
+    }
+    .stg__chip:hover { background: var(--bg-hover); }
+    .stg__chip[data-st="planned"]  { border-color: rgba(160,160,160,.3); }
+    .stg__chip[data-st="started"]  { border-color: rgba(255,122,0,.4); color: var(--accent); }
+    .stg__chip[data-st="finished"] { border-color: rgba(34,197,94,.4); color: var(--green); }
+    .stg__chip[data-st="select"]   { border-color: rgba(255,122,0,.4); color: var(--accent); }
+    .stg__chip[data-st="chosen"]   { border-color: rgba(34,197,94,.4); color: var(--green); background: rgba(34,197,94,0.08); }
+    .stg__chip[data-st="ready"]    { border-color: rgba(34,197,94,.5); color: var(--green); background: rgba(34,197,94,0.12); }
+    .stg__chip__x { color: var(--red); font-weight: 700; opacity: .5; }
+    .stg__chip__x:hover { opacity: 1; }
+    .stg__empty { font-size: 12px; color: var(--text-mute); font-style: italic; }
+
+    .reg-row { display:flex; gap:6px; align-items:flex-start; padding:4px 0; border-top:1px dashed var(--border); }
+    .reg-row:first-child { border-top:none; }
+    .reg-row__k { flex-shrink:0; min-width:120px; font-size:11px; color:var(--text-mute); text-transform:uppercase; letter-spacing:.04em; padding-top:2px; }
+    .reg-row__v { flex:1; font-size:13px; word-break: break-all; font-family: ui-monospace, monospace; }
+    .reg-row__v.empty { color: var(--text-mute); font-style: italic; font-family: var(--font); }
+
+    .copy-btn {
+      background: none; border: none; color: var(--text-mute);
+      cursor: pointer; font-size: 11px; padding: 2px 6px;
+      border-radius: 4px;
+    }
+    .copy-btn:hover { background: var(--bg-hover); color: var(--accent); }
+  </style>
 </head>
 <body>
   <div class="app">
     <div data-component="sidebar" data-active="statuses"></div>
 
     <div class="main">
-      <div data-component="header" data-title="Статусы"></div>
+      <div data-component="header" data-title="Аккаунты и статусы"></div>
 
       <main class="content">
         <div class="page-title">
           <div>
-            <h1>Статусы клиентов на аккаунтах</h1>
-            <p>Каждая пара «клиент × аккаунт» имеет один из шести статусов. История переходов сохраняется автоматически.</p>
+            <h1>Аккаунты и статусы</h1>
+            <p>Каждая карточка — отдельный аккаунт. Внутри клиенты сгруппированы по статусу. Клик по чипу — изменить статус, кнопка «🔐 Регистрация» — все логины/пароли аккаунта.</p>
           </div>
-          <button class="btn btn--primary" id="btnAdd">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            Поставить статус
-          </button>
+          <div style="display:flex; gap:8px">
+            <button class="btn btn--ghost" id="btnNewAcc">+ Аккаунт</button>
+            <button class="btn btn--ghost" id="btnNewMentor">+ Клиент</button>
+          </div>
         </div>
 
         <section class="cards" id="stKpis"></section>
 
         <div class="filters">
-          <select id="fStatus" class="select" style="min-width:180px"><option value="">Все статусы</option></select>
-          <select id="fMentor" class="select" style="min-width:180px"><option value="">Все клиенты</option></select>
-          <select id="fProfile" class="select" style="min-width:160px"><option value="">Все аккаунты</option></select>
-          <input type="text" id="fSearch" class="input" placeholder="Поиск..." style="flex:1;min-width:160px"/>
+          <select id="fCity" class="select">
+            <option value="">Все города</option>
+            <option value="МСК">МСК</option>
+            <option value="СПБ">СПБ</option>
+            <option value="Прочее">Прочее</option>
+          </select>
+          <select id="fStatus" class="select" style="min-width:200px">
+            <option value="">Любой статус</option>
+          </select>
+          <input type="text" id="fSearch" class="input" placeholder="Поиск по аккаунту, клиенту, владельцу..." style="flex:1;min-width:200px"/>
           <button class="btn btn--ghost" id="btnReset">Сбросить</button>
         </div>
 
-        <div class="panel">
-          <div class="table-wrap">
-            <table class="table" id="stTable">
-              <thead>
-                <tr>
-                  <th>Аккаунт</th>
-                  <th>Клиент</th>
-                  <th>Статус</th>
-                  <th>Дата</th>
-                  <th>Комментарий</th>
-                  <th class="num">История</th>
-                  <th class="actions"></th>
-                </tr>
-              </thead>
-              <tbody id="stRows"></tbody>
-            </table>
+        <div class="acc-grid" id="accGrid"></div>
+
+        <details style="margin-top:32px">
+          <summary style="cursor:pointer;font-weight:600;color:var(--text-dim);padding:10px 0">Управление клиентами (a-коды)</summary>
+          <div class="panel" style="margin-top:10px">
+            <div class="table-wrap">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Код</th>
+                    <th>Имя</th>
+                    <th class="num">Аккаунтов</th>
+                    <th>Заметки</th>
+                    <th class="actions"></th>
+                  </tr>
+                </thead>
+                <tbody id="mnRows"></tbody>
+              </table>
+            </div>
           </div>
-        </div>
+        </details>
       </main>
     </div>
   </div>
 
-  <!-- Модалка статуса -->
-  <div class="modal-backdrop" id="addModal">
-    <div class="modal" style="max-width:520px">
-      <div class="modal__header">
-        <h3 id="modalTitle">Поставить статус</h3>
-        <button class="btn--icon" data-close>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        </button>
+  <!-- Модалка: новый аккаунт -->
+  <div class="modal-backdrop" id="accModal">
+    <div class="modal" style="max-width:480px">
+      <div class="modal__header"><h3>Новый аккаунт</h3>
+        <button class="btn--icon" data-close><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
       </div>
       <div class="modal__body">
         <div class="field-row">
-          <div class="field">
-            <label for="mProfile">Аккаунт</label>
-            <select id="mProfile" class="select"></select>
+          <div class="field"><label>Код</label><input type="text" id="accCode" class="input" placeholder="2-5 / 4-18 / S 094"/></div>
+          <div class="field"><label>Город</label>
+            <select id="accCity" class="select"><option>МСК</option><option>СПБ</option><option>Прочее</option></select>
           </div>
-          <div class="field">
-            <label for="mMentor">Клиент</label>
-            <select id="mMentor" class="select"></select>
-          </div>
-        </div>
-        <div class="field" style="margin-top:12px">
-          <label for="mStatus">Статус</label>
-          <select id="mStatus" class="select"></select>
-        </div>
-        <div class="field" style="margin-top:12px">
-          <label for="mComment">Комментарий</label>
-          <input type="text" id="mComment" class="input"/>
         </div>
       </div>
       <div class="modal__footer">
         <button class="btn btn--ghost" data-close>Отмена</button>
-        <button class="btn btn--primary" id="mSave">Сохранить</button>
+        <button class="btn btn--primary" id="accSave">Создать</button>
       </div>
     </div>
   </div>
 
-  <!-- Модалка истории -->
-  <div class="modal-backdrop" id="histModal">
-    <div class="modal" style="max-width:520px">
-      <div class="modal__header">
-        <h3 id="histTitle">История статусов</h3>
-        <button class="btn--icon" data-close>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        </button>
+  <!-- Модалка: новый клиент -->
+  <div class="modal-backdrop" id="mnModal">
+    <div class="modal" style="max-width:480px">
+      <div class="modal__header"><h3>Новый клиент</h3>
+        <button class="btn--icon" data-close><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
       </div>
-      <div class="modal__body" id="histBody"></div>
+      <div class="modal__body">
+        <div class="field-row">
+          <div class="field"><label>Код (a21…)</label><input type="text" id="mnCode" class="input"/></div>
+          <div class="field"><label>Имя</label><input type="text" id="mnName" class="input"/></div>
+        </div>
+        <div class="field"><label>Заметки</label><input type="text" id="mnNotes" class="input"/></div>
+      </div>
+      <div class="modal__footer">
+        <button class="btn btn--ghost" data-close>Отмена</button>
+        <button class="btn btn--primary" id="mnSave">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Модалка: добавить клиента в аккаунт + сразу выбрать статус -->
+  <div class="modal-backdrop" id="addToAccModal">
+    <div class="modal" style="max-width:520px">
+      <div class="modal__header"><h3 id="addToAccTitle">Добавить клиента</h3>
+        <button class="btn--icon" data-close><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+      </div>
+      <div class="modal__body">
+        <div class="field"><label>Клиент</label><select id="addMentor" class="select"></select></div>
+        <div id="addWarn" style="display:none;margin-top:10px;padding:10px;border-radius:8px;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);color:var(--red);font-size:13px"></div>
+        <div class="field" style="margin-top:12px"><label>Статус</label><select id="addStatus" class="select"></select></div>
+        <div class="field" style="margin-top:12px"><label>Комментарий</label><input type="text" id="addComment" class="input"/></div>
+      </div>
+      <div class="modal__footer">
+        <button class="btn btn--ghost" data-close>Отмена</button>
+        <button class="btn btn--primary" id="addSave">Привязать</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Модалка: смена статуса для уже привязанного -->
+  <div class="modal-backdrop" id="chgStatusModal">
+    <div class="modal" style="max-width:480px">
+      <div class="modal__header"><h3 id="chgTitle">Изменить статус</h3>
+        <button class="btn--icon" data-close><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+      </div>
+      <div class="modal__body">
+        <div class="field"><label>Новый статус</label><select id="chgStatus" class="select"></select></div>
+        <div class="field" style="margin-top:12px"><label>Комментарий</label><input type="text" id="chgComment" class="input"/></div>
+        <div id="chgHist" style="margin-top:14px"></div>
+      </div>
+      <div class="modal__footer">
+        <button class="btn btn--ghost" id="chgRemove" style="color:var(--red)">🗑 Отвязать клиента</button>
+        <div style="flex:1"></div>
+        <button class="btn btn--ghost" data-close>Отмена</button>
+        <button class="btn btn--primary" id="chgSave">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Модалка: регистрация аккаунта -->
+  <div class="modal-backdrop" id="regModal">
+    <div class="modal" style="max-width:640px">
+      <div class="modal__header"><h3 id="regTitle">🔐 Регистрация</h3>
+        <button class="btn--icon" data-close><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+      </div>
+      <div class="modal__body">
+        <div style="display:flex;gap:8px;margin-bottom:12px">
+          <button class="btn btn--ghost btn--sm" id="regToggleEdit">✏ Редактировать</button>
+          <div style="flex:1"></div>
+          <span id="regUpdated" style="font-size:11px;color:var(--text-mute);align-self:center"></span>
+        </div>
+        <div id="regView"></div>
+        <div id="regEdit" style="display:none"></div>
+      </div>
       <div class="modal__footer">
         <button class="btn btn--ghost" data-close>Закрыть</button>
+        <button class="btn btn--primary" id="regSave" style="display:none">Сохранить</button>
       </div>
     </div>
   </div>
@@ -121,189 +252,468 @@
 
   <script>
   document.addEventListener('DOMContentLoaded', () => {
-    const { Store, Modal, toast, fmtDate, PROFILE_STATUSES } = window.App;
+    const { Store, Modal, toast, fmtDate, PROFILE_STATUSES, cityFromCode } = window.App;
     const { confirmDelete } = window.TableUtils;
 
     Store.load();
-    const filters = { status: '', mentorId: '', profileId: '', q: '' };
+    const filters = { city: '', status: '', q: '' };
 
-    function profileById(id) { return Store.state.profiles.find(p => p.id === id); }
+    // Стили статусов: подключаем эмодзи к коду состояния (для CSS-оформления чипа)
+    const STATUS_KIND = {
+      '📋 Запланировано':   'planned',
+      '💬 Диалог Начат':    'started',
+      '✅ Диалог Закончен': 'finished',
+      '⭐ Выбрать':          'select',
+      '🏆 Выбран':           'chosen',
+      '🎯 Готов':            'ready'
+    };
+
     function mentorById(id) { return Store.state.mentors.find(m => m.id === id); }
-    function profileLabel(p) { return p ? `${p.code || '—'} · ${p.city || ''}` : '—'; }
-    function mentorLabel(m) { return m ? `${m.code || '—'} · ${m.name || ''}` : '—'; }
+    function profileById(id) { return Store.state.profiles.find(p => p.id === id); }
+    function mentorLabel(m) { return m ? `${m.code || '?'}` : '?'; }
+    function mentorFull(m) { return m ? `${m.code || '?'} · ${m.name || ''}` : '?'; }
 
-    function fillSelects() {
-      const fs = document.getElementById('fStatus');
-      fs.innerHTML = '<option value="">Все статусы</option>' +
-        PROFILE_STATUSES.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
-      const fm = document.getElementById('fMentor');
-      const ms = (Store.state.mentors || []).slice().sort((a,b) => (a.code || '').localeCompare(b.code || '', 'ru', {numeric:true}));
-      fm.innerHTML = '<option value="">Все клиенты</option>' + ms.map(m => `<option value="${m.id}">${escapeHtml(mentorLabel(m))}</option>`).join('');
-      const fp = document.getElementById('fProfile');
-      const ps = (Store.state.profiles || []).slice().sort((a,b) => (a.code || '').localeCompare(b.code || '', 'ru', {numeric:true}));
-      fp.innerHTML = '<option value="">Все аккаунты</option>' + ps.map(p => `<option value="${p.id}">${escapeHtml(profileLabel(p))}</option>`).join('');
+    function fillStatusSelect(sel) {
+      sel.innerHTML = PROFILE_STATUSES.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
     }
 
-    function fillModalSelects(preProfile = '', preMentor = '') {
-      const ps = (Store.state.profiles || []).slice().sort((a,b) => (a.code || '').localeCompare(b.code || '', 'ru', {numeric:true}));
-      const ms = (Store.state.mentors || []).slice().sort((a,b) => (a.code || '').localeCompare(b.code || '', 'ru', {numeric:true}));
-      document.getElementById('mProfile').innerHTML = '<option value="">— выбрать аккаунт —</option>' + ps.map(p => `<option value="${p.id}" ${p.id===preProfile?'selected':''}>${escapeHtml(profileLabel(p))}</option>`).join('');
-      document.getElementById('mMentor').innerHTML = '<option value="">— выбрать клиента —</option>' + ms.map(m => `<option value="${m.id}" ${m.id===preMentor?'selected':''}>${escapeHtml(mentorLabel(m))}</option>`).join('');
-      document.getElementById('mStatus').innerHTML = PROFILE_STATUSES.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
+    function getStatusFor(profileId, mentorId) {
+      return (Store.state.profileStatuses || []).find(s => s.profileId === profileId && s.mentorId === mentorId) || null;
     }
 
-    function statusBadge(s) {
-      // Цвет по эмодзи: 🎯/🏆 = зелёный, ⭐ = оранжевый, ✅ = зелёный, иначе серый
-      let cls = 'badge--gray';
-      if (s && (s.includes('🎯') || s.includes('🏆') || s.includes('✅'))) cls = 'badge--green';
-      else if (s && (s.includes('⭐') || s.includes('💬'))) cls = 'badge--orange';
-      else if (s && s.includes('📋')) cls = 'badge--gray';
-      return `<span class="badge ${cls}">${escapeHtml(s || '—')}</span>`;
-    }
-
+    /* ---- KPI ---- */
     function renderKpis() {
-      const list = Store.state.profileStatuses || [];
+      const profs = Store.state.profiles || [];
+      const mentors = Store.state.mentors || [];
+      const ps = Store.state.profileStatuses || [];
       const counts = {};
       PROFILE_STATUSES.forEach(s => counts[s] = 0);
-      list.forEach(r => { if (counts[r.status] != null) counts[r.status]++; });
-      // top-4
-      const items = PROFILE_STATUSES.map(s => `
-        <div class="card">
-          <div class="card__label">${escapeHtml(s)}</div>
-          <div class="card__value">${counts[s] || 0}</div>
-        </div>
-      `).join('');
-      document.getElementById('stKpis').innerHTML = items;
+      ps.forEach(r => { if (counts[r.status] != null) counts[r.status]++; });
+      const cards = [
+        `<div class="card"><div class="card__label">Аккаунтов</div><div class="card__value">${profs.length}</div></div>`,
+        `<div class="card"><div class="card__label">Клиентов</div><div class="card__value">${mentors.length}</div></div>`,
+      ];
+      PROFILE_STATUSES.forEach(s => {
+        cards.push(`<div class="card"><div class="card__label">${escapeHtml(s)}</div><div class="card__value">${counts[s]}</div></div>`);
+      });
+      document.getElementById('stKpis').innerHTML = cards.join('');
     }
 
-    function render() {
-      renderKpis();
-      const list = (Store.state.profileStatuses || []).slice().sort((a,b) => (b.date || '').localeCompare(a.date || ''));
-      const filtered = list.filter(r => {
-        if (filters.status && r.status !== filters.status) return false;
-        if (filters.mentorId && r.mentorId !== filters.mentorId) return false;
-        if (filters.profileId && r.profileId !== filters.profileId) return false;
+    /* ---- Карточки аккаунтов ---- */
+    function renderAccounts() {
+      const profs = (Store.state.profiles || [])
+        .slice()
+        .sort((a, b) => (a.code || '').localeCompare(b.code || '', 'ru', { numeric: true }));
+
+      const filtered = profs.filter(p => {
+        if (filters.city && p.city !== filters.city) return false;
+        const reg = Store.getAccountReg(p.id);
         if (filters.q) {
-          const m = mentorById(r.mentorId), p = profileById(r.profileId);
-          const s = `${m ? m.code+' '+m.name : ''} ${p ? p.code+' '+p.city : ''} ${r.comment || ''}`.toLowerCase();
-          if (!s.includes(filters.q)) return false;
+          const q = filters.q;
+          const mentorsStr = (p.mentorIds || []).map(id => mentorFull(mentorById(id))).join(' ').toLowerCase();
+          const blob = `${p.code || ''} ${p.city || ''} ${reg ? (reg.ownerName || '') + ' ' + (reg.phone || '') : ''} ${mentorsStr}`.toLowerCase();
+          if (!blob.includes(q)) return false;
+        }
+        if (filters.status) {
+          // показать аккаунт только если хоть у одного клиента есть этот статус
+          const has = (p.mentorIds || []).some(mid => {
+            const st = getStatusFor(p.id, mid);
+            return st && st.status === filters.status;
+          });
+          if (!has) return false;
         }
         return true;
       });
 
-      const tb = document.getElementById('stRows');
+      const grid = document.getElementById('accGrid');
       if (filtered.length === 0) {
-        tb.innerHTML = `<tr><td colspan="7" class="empty">Записей нет.</td></tr>`;
+        grid.innerHTML = `<div class="empty" style="grid-column:1/-1;padding:40px;text-align:center;color:var(--text-mute)">Нет аккаунтов под фильтр.</div>`;
         return;
       }
-      tb.innerHTML = filtered.map(r => {
-        const p = profileById(r.profileId), m = mentorById(r.mentorId);
-        const histLen = (r.history || []).length;
-        return `<tr data-id="${r.id}">
-          <td>${p ? '<span class="badge badge--orange">' + escapeHtml(p.code) + '</span> <span style="color:var(--text-mute);font-size:12px">' + escapeHtml(p.city || '') + '</span>' : '—'}</td>
-          <td>${m ? '<strong>' + escapeHtml(mentorLabel(m)) + '</strong>' : '—'}</td>
-          <td>${statusBadge(r.status)}</td>
-          <td>${escapeHtml(fmtDate(r.date))}</td>
-          <td style="font-size:12px;color:var(--text-dim)">${escapeHtml(r.comment || '')}</td>
-          <td class="num">${histLen > 0 ? '<button class="btn btn--ghost btn--sm" data-act="hist" data-id="'+r.id+'">'+histLen+'</button>' : '0'}</td>
-          <td class="actions">
-            <button class="btn btn--ghost btn--sm" data-act="edit" data-id="${r.id}">Изменить</button>
-            <button class="btn--icon" data-act="del" data-id="${r.id}" title="Удалить">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
-            </button>
-          </td>
-        </tr>`;
+
+      grid.innerHTML = filtered.map(p => {
+        const reg = Store.getAccountReg(p.id);
+        // группируем привязанных клиентов по статусу
+        const byStatus = {};
+        PROFILE_STATUSES.forEach(s => byStatus[s] = []);
+        const noStatus = [];
+        (p.mentorIds || []).forEach(mid => {
+          const m = mentorById(mid);
+          if (!m) return;
+          const st = getStatusFor(p.id, mid);
+          if (st && byStatus[st.status]) byStatus[st.status].push({ m, st });
+          else noStatus.push({ m, st: null });
+        });
+
+        const groupRows = PROFILE_STATUSES.map(s => {
+          const items = byStatus[s];
+          if (!items.length) return '';
+          const kind = STATUS_KIND[s] || '';
+          const chips = items.map(({ m, st }) =>
+            `<span class="stg__chip" data-st="${kind}" data-act="chgst" data-pid="${p.id}" data-mid="${m.id}" title="${escapeHtml(mentorFull(m) + (st && st.comment ? '\n' + st.comment : ''))}">${escapeHtml(mentorLabel(m))}</span>`
+          ).join('');
+          return `<div class="stg__row"><div class="stg__lbl">${escapeHtml(s)}</div><div class="stg__items">${chips}</div></div>`;
+        }).filter(Boolean).join('');
+
+        const noStatusRow = noStatus.length
+          ? `<div class="stg__row"><div class="stg__lbl">— без статуса —</div><div class="stg__items">${noStatus.map(({ m }) => `<span class="stg__chip" data-act="chgst" data-pid="${p.id}" data-mid="${m.id}">${escapeHtml(mentorLabel(m))}</span>`).join('')}</div></div>`
+          : '';
+
+        const innerBody = (groupRows || noStatusRow)
+          ? `<div class="stg">${groupRows}${noStatusRow}</div>`
+          : `<div class="stg__empty" style="padding:8px 0">Нет привязанных клиентов</div>`;
+
+        const ownerLine = reg
+          ? `<div class="acc-card__owner">👤 <b>${escapeHtml(reg.ownerName || '—')}</b>${reg.phone ? ' · ' + escapeHtml(formatPhone(reg.phone)) : ''}</div>`
+          : `<div class="acc-card__owner" style="opacity:.5">— регистрация не заполнена —</div>`;
+
+        return `
+          <div class="acc-card" data-pid="${p.id}">
+            <div class="acc-card__head">
+              <div class="acc-card__title">
+                <span class="badge badge--orange">${escapeHtml(p.code || '?')}</span>
+                <small>${escapeHtml(p.city || '—')}</small>
+              </div>
+              <div class="acc-card__actions">
+                <button class="btn btn--ghost btn--sm" data-act="reg" data-pid="${p.id}" title="Регистрация">🔐</button>
+                <button class="btn btn--ghost btn--sm" data-act="addmen" data-pid="${p.id}" title="Добавить клиента">＋</button>
+                <button class="btn--icon" data-act="delacc" data-pid="${p.id}" title="Удалить аккаунт">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+                </button>
+              </div>
+            </div>
+            ${ownerLine}
+            ${innerBody}
+          </div>
+        `;
       }).join('');
 
-      tb.querySelectorAll('[data-act="edit"]').forEach(b => b.addEventListener('click', () => openEdit(b.dataset.id)));
-      tb.querySelectorAll('[data-act="del"]').forEach(b => b.addEventListener('click', () => {
-        if (!confirmDelete('Удалить запись статуса?')) return;
-        Store.deleteProfileStatus(b.dataset.id);
-        render();
+      // привязка кликов
+      grid.querySelectorAll('[data-act="reg"]').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); openReg(b.dataset.pid); }));
+      grid.querySelectorAll('[data-act="addmen"]').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); openAddMentor(b.dataset.pid); }));
+      grid.querySelectorAll('[data-act="delacc"]').forEach(b => b.addEventListener('click', e => {
+        e.stopPropagation();
+        if (!confirmDelete('Удалить аккаунт целиком? Все статусы и регистрация удалятся.')) return;
+        const pid = b.dataset.pid;
+        Store.deleteAccountReg(pid);
+        Store.deleteProfile(pid);
+        renderAll();
       }));
-      tb.querySelectorAll('[data-act="hist"]').forEach(b => b.addEventListener('click', () => openHist(b.dataset.id)));
+      grid.querySelectorAll('[data-act="chgst"]').forEach(c => c.addEventListener('click', e => {
+        e.stopPropagation();
+        openChangeStatus(c.dataset.pid, c.dataset.mid);
+      }));
     }
 
-    /* ---- модалка add/edit ---- */
-    function openAdd() {
-      document.getElementById('modalTitle').textContent = 'Поставить статус';
-      fillModalSelects();
-      document.getElementById('mComment').value = '';
-      Modal.open('addModal');
+    /* ---- Список клиентов (свёрнутый) ---- */
+    function renderMentors() {
+      const counts = new Map();
+      (Store.state.profiles || []).forEach(p => (p.mentorIds || []).forEach(id => counts.set(id, (counts.get(id) || 0) + 1)));
+      const rows = (Store.state.mentors || []).slice().sort((a, b) => (a.code || '').localeCompare(b.code || '', 'ru', { numeric: true }));
+      const tb = document.getElementById('mnRows');
+      if (rows.length === 0) {
+        tb.innerHTML = `<tr><td colspan="5" class="empty">Клиенты ещё не добавлены.</td></tr>`;
+        return;
+      }
+      tb.innerHTML = rows.map(m => `
+        <tr data-id="${m.id}">
+          <td><span class="badge badge--orange">${escapeHtml(m.code || '—')}</span></td>
+          <td><strong>${escapeHtml(m.name || '—')}</strong></td>
+          <td class="num">${counts.get(m.id) || 0}</td>
+          <td>${escapeHtml(m.notes || '')}</td>
+          <td class="actions">
+            <button class="btn--icon" data-act="del" data-id="${m.id}" title="Удалить">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+            </button>
+          </td>
+        </tr>`).join('');
+      tb.querySelectorAll('[data-act="del"]').forEach(b => b.addEventListener('click', () => {
+        if (!confirmDelete('Удалить клиента? Он будет отвязан от всех аккаунтов и статусов.')) return;
+        Store.deleteMentor(b.dataset.id);
+        renderAll();
+      }));
     }
-    function openEdit(id) {
-      const rec = (Store.state.profileStatuses || []).find(s => s.id === id);
-      if (!rec) return;
-      document.getElementById('modalTitle').textContent = 'Изменить статус';
-      fillModalSelects(rec.profileId, rec.mentorId);
-      document.getElementById('mStatus').value = rec.status;
-      document.getElementById('mComment').value = rec.comment || '';
-      Modal.open('addModal');
+
+    function renderAll() {
+      renderKpis();
+      renderAccounts();
+      renderMentors();
     }
-    document.getElementById('btnAdd').addEventListener('click', openAdd);
-    document.getElementById('mSave').addEventListener('click', () => {
-      const profileId = document.getElementById('mProfile').value;
-      const mentorId  = document.getElementById('mMentor').value;
-      const status    = document.getElementById('mStatus').value;
-      const comment   = document.getElementById('mComment').value.trim();
-      if (!profileId || !mentorId) { toast('Выберите аккаунт и клиента', 'error'); return; }
-      if (!status) { toast('Выберите статус', 'error'); return; }
-      Store.setProfileStatus(mentorId, profileId, status, comment);
-      Modal.close('addModal');
-      toast('Статус сохранён');
-      render();
+
+    /* ====================================================================
+       Модалки
+       ==================================================================== */
+
+    /* --- Новый аккаунт --- */
+    document.getElementById('btnNewAcc').addEventListener('click', () => {
+      document.getElementById('accCode').value = '';
+      document.getElementById('accCity').value = 'МСК';
+      Modal.open('accModal');
+      setTimeout(() => document.getElementById('accCode').focus(), 50);
+    });
+    document.getElementById('accCode').addEventListener('input', e => {
+      document.getElementById('accCity').value = cityFromCode(e.target.value);
+    });
+    document.getElementById('accSave').addEventListener('click', () => {
+      const code = document.getElementById('accCode').value.trim();
+      const city = document.getElementById('accCity').value;
+      if (!code) { toast('Укажите код', 'error'); return; }
+      if ((Store.state.profiles || []).some(p => p.code === code)) { toast('Такой код уже есть', 'error'); return; }
+      Store.addProfile({ code, city });
+      Modal.close('accModal');
+      toast('Аккаунт создан');
+      renderAll();
     });
 
-    /* ---- модалка истории ---- */
-    function openHist(id) {
-      const rec = (Store.state.profileStatuses || []).find(s => s.id === id);
-      if (!rec) return;
-      const m = mentorById(rec.mentorId), p = profileById(rec.profileId);
-      document.getElementById('histTitle').textContent =
-        `История · ${p ? p.code : '?'} × ${m ? m.code : '?'}`;
-      const items = (rec.history || []).slice().reverse().map(h => `
-        <div style="padding:10px 12px;border:1px solid var(--border);border-radius:8px;margin-bottom:8px">
-          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
-            ${statusBadge(h.status)}
-            <span style="font-size:12px;color:var(--text-mute)">${escapeHtml(fmtDate(h.date))}</span>
-          </div>
-          ${h.comment ? `<div style="font-size:12px;color:var(--text-dim);margin-top:4px">${escapeHtml(h.comment)}</div>` : ''}
-        </div>
-      `).join('') || '<div class="empty">История пуста</div>';
-      const current = `
-        <div style="padding:10px 12px;border:1px solid var(--accent);border-radius:8px;margin-bottom:14px;background:var(--accent-soft)">
-          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
-            ${statusBadge(rec.status)}
-            <span style="font-size:12px;color:var(--text-mute)">сейчас · ${escapeHtml(fmtDate(rec.date))}</span>
-          </div>
-          ${rec.comment ? `<div style="font-size:12px;color:var(--text-dim);margin-top:4px">${escapeHtml(rec.comment)}</div>` : ''}
-        </div>`;
-      document.getElementById('histBody').innerHTML = current + items;
-      Modal.open('histModal');
+    /* --- Новый клиент --- */
+    document.getElementById('btnNewMentor').addEventListener('click', () => {
+      document.getElementById('mnCode').value = '';
+      document.getElementById('mnCode').placeholder = Store._nextMentorCode();
+      document.getElementById('mnName').value = '';
+      document.getElementById('mnNotes').value = '';
+      Modal.open('mnModal');
+      setTimeout(() => document.getElementById('mnName').focus(), 50);
+    });
+    document.getElementById('mnSave').addEventListener('click', () => {
+      const name = document.getElementById('mnName').value.trim();
+      if (!name) { toast('Укажите имя', 'error'); return; }
+      const code = document.getElementById('mnCode').value.trim() || Store._nextMentorCode();
+      if ((Store.state.mentors || []).some(m => m.code === code.toLowerCase())) { toast('Такой код уже есть', 'error'); return; }
+      Store.addMentor({ code, name, notes: document.getElementById('mnNotes').value.trim() });
+      Modal.close('mnModal');
+      toast('Клиент добавлен');
+      renderAll();
+    });
+
+    /* --- Привязать клиента к аккаунту --- */
+    let addProfileId = null;
+    function openAddMentor(profileId) {
+      addProfileId = profileId;
+      const p = profileById(profileId);
+      if (!p) return;
+      document.getElementById('addToAccTitle').textContent = `${p.code}: добавить клиента`;
+      const taken = new Set(p.mentorIds || []);
+      const opts = (Store.state.mentors || [])
+        .filter(m => !taken.has(m.id))
+        .sort((a, b) => (a.code || '').localeCompare(b.code || '', 'ru', { numeric: true }))
+        .map(m => `<option value="${m.id}">${escapeHtml(mentorFull(m))}</option>`).join('');
+      document.getElementById('addMentor').innerHTML = opts || '<option value="">— все клиенты уже привязаны —</option>';
+      fillStatusSelect(document.getElementById('addStatus'));
+      document.getElementById('addStatus').value = PROFILE_STATUSES[0]; // 📋 Запланировано
+      document.getElementById('addComment').value = '';
+      checkAddWarn();
+      Modal.open('addToAccModal');
     }
+    document.getElementById('addMentor').addEventListener('change', checkAddWarn);
+
+    function checkAddWarn() {
+      const mid = document.getElementById('addMentor').value;
+      const w = document.getElementById('addWarn');
+      if (!mid || !addProfileId) { w.style.display = 'none'; return; }
+      const res = Store.canAddMentorToProfile(mid, addProfileId);
+      if (res.ok) { w.style.display = 'none'; return; }
+      let extra = '';
+      if (res.conflictMentorId) {
+        const path = Store.findLinkPath(mid, res.conflictMentorId);
+        if (path && path.length > 1) {
+          extra = `<div style="margin-top:6px;font-size:12px;opacity:.85">Цепочка: ${escapeHtml(path.map(id => { const m = mentorById(id); return m ? m.code + ' · ' + m.name : '?'; }).join(' → '))}</div>`;
+        }
+      }
+      w.innerHTML = `⚠️ ${escapeHtml(res.reason)}${extra}`;
+      w.style.display = 'block';
+    }
+
+    document.getElementById('addSave').addEventListener('click', () => {
+      const mid = document.getElementById('addMentor').value;
+      if (!mid || !addProfileId) { toast('Выберите клиента', 'error'); return; }
+      const res = Store.canAddMentorToProfile(mid, addProfileId);
+      if (!res.ok && !window.confirm(`${res.reason}\n\nВсё равно привязать?`)) return;
+      const profile = profileById(addProfileId);
+      profile.mentorIds = [...(profile.mentorIds || []), mid];
+      Store.updateProfile(profile.id, { mentorIds: profile.mentorIds });
+      const status = document.getElementById('addStatus').value;
+      const comment = document.getElementById('addComment').value.trim();
+      Store.setProfileStatus(mid, addProfileId, status, comment);
+      Modal.close('addToAccModal');
+      toast('Привязано');
+      renderAll();
+    });
+
+    /* --- Изменить статус --- */
+    let chgPid = null, chgMid = null;
+    function openChangeStatus(pid, mid) {
+      chgPid = pid; chgMid = mid;
+      const p = profileById(pid), m = mentorById(mid);
+      if (!p || !m) return;
+      document.getElementById('chgTitle').textContent = `${p.code} × ${m.code} · ${m.name || ''}`;
+      const cur = getStatusFor(pid, mid);
+      fillStatusSelect(document.getElementById('chgStatus'));
+      document.getElementById('chgStatus').value = cur ? cur.status : PROFILE_STATUSES[0];
+      document.getElementById('chgComment').value = cur ? (cur.comment || '') : '';
+      const histDiv = document.getElementById('chgHist');
+      if (cur && (cur.history || []).length) {
+        const items = cur.history.slice().reverse().map(h => `
+          <div style="padding:6px 10px;border-left:3px solid var(--border);margin:4px 0;font-size:12px">
+            <div>${escapeHtml(h.status)}</div>
+            <div style="color:var(--text-mute);font-size:11px">${escapeHtml(fmtDate(h.date))}${h.comment ? ' · ' + escapeHtml(h.comment) : ''}</div>
+          </div>`).join('');
+        histDiv.innerHTML = `<div style="font-size:11px;color:var(--text-mute);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">История</div>${items}`;
+      } else { histDiv.innerHTML = ''; }
+      Modal.open('chgStatusModal');
+    }
+    document.getElementById('chgSave').addEventListener('click', () => {
+      if (!chgPid || !chgMid) return;
+      Store.setProfileStatus(chgMid, chgPid, document.getElementById('chgStatus').value, document.getElementById('chgComment').value.trim());
+      Modal.close('chgStatusModal');
+      toast('Статус сохранён');
+      renderAll();
+    });
+    document.getElementById('chgRemove').addEventListener('click', () => {
+      if (!chgPid || !chgMid) return;
+      if (!confirmDelete('Отвязать клиента от аккаунта (статус удалится)?')) return;
+      const profile = profileById(chgPid);
+      profile.mentorIds = (profile.mentorIds || []).filter(id => id !== chgMid);
+      Store.updateProfile(profile.id, { mentorIds: profile.mentorIds });
+      // удалим запись статуса
+      const st = getStatusFor(chgPid, chgMid);
+      if (st) Store.deleteProfileStatus(st.id);
+      Modal.close('chgStatusModal');
+      toast('Клиент отвязан');
+      renderAll();
+    });
+
+    /* --- Регистрация --- */
+    let regPid = null;
+    let regEditing = false;
+    const REG_FIELDS_LAYOUT = [
+      ['ownerName',     '👤 Имя владельца'],
+      ['phone',         '📱 Телефон'],
+      ['city',          '🏙 Город'],
+      ['tg',            '✈️ Telegram'],
+      ['profiEmail',    '📧 Профи / mail'],
+      ['cloudPassword', '☁️ Облачный пароль'],
+      ['recoveryEmail', '🛟 Почта восстановления'],
+      ['yandexLogin',   '🔵 Яндекс логин'],
+      ['yandexPassword','🔵 Яндекс пароль'],
+      ['avitoPhone',    '🟢 Авито — номер'],
+      ['avitoEmail',    '🟢 Авито — почта'],
+      ['avitoPassword', '🟢 Авито — пароль'],
+      ['twoGis',        '🗺 2ГИС'],
+      ['lat',           '📍 Широта'],
+      ['lon',           '📍 Долгота'],
+      ['notes',         '📝 Заметки']
+    ];
+
+    function openReg(profileId) {
+      regPid = profileId;
+      regEditing = false;
+      const p = profileById(profileId);
+      if (!p) return;
+      const reg = Store.getAccountReg(profileId) || {};
+      document.getElementById('regTitle').textContent = `🔐 Аккаунт ${p.code} · ${p.city || ''}`;
+      document.getElementById('regUpdated').textContent = reg.updatedAt ? `обновлено ${fmtDate(reg.updatedAt)}` : '';
+      renderRegView(reg);
+      renderRegEdit(reg);
+      document.getElementById('regView').style.display = '';
+      document.getElementById('regEdit').style.display = 'none';
+      document.getElementById('regSave').style.display = 'none';
+      document.getElementById('regToggleEdit').textContent = '✏ Редактировать';
+      Modal.open('regModal');
+    }
+
+    function renderRegView(reg) {
+      const rows = REG_FIELDS_LAYOUT.map(([k, lbl]) => {
+        const val = reg[k] || '';
+        const valHtml = val
+          ? `<span class="reg-row__v">${escapeHtml(k.includes('hone') ? formatPhone(val) : val)}</span>
+             <button class="copy-btn" data-copy="${escapeHtml(val)}">⎘ копир.</button>`
+          : `<span class="reg-row__v empty">— нет —</span>`;
+        return `<div class="reg-row"><div class="reg-row__k">${lbl}</div>${valHtml}</div>`;
+      }).join('');
+      // Дополнительно: на каких ещё аккаунтах используется этот номер
+      let phoneInfo = '';
+      if (reg.phone) {
+        const others = Store.profilesUsingPhone(reg.phone, reg.profileId);
+        if (others.length) {
+          const codes = others.map(pid => { const p = profileById(pid); return p ? p.code : '?'; }).join(', ');
+          phoneInfo = `<div style="margin-top:10px;padding:8px 10px;border-radius:8px;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);color:var(--red);font-size:12px">⚠ Этот номер также есть на: <b>${escapeHtml(codes)}</b></div>`;
+        }
+      }
+      document.getElementById('regView').innerHTML = rows + phoneInfo;
+      document.getElementById('regView').querySelectorAll('[data-copy]').forEach(b => {
+        b.addEventListener('click', () => {
+          navigator.clipboard.writeText(b.dataset.copy).then(() => toast('Скопировано')).catch(() => {});
+        });
+      });
+    }
+
+    function renderRegEdit(reg) {
+      const rows = REG_FIELDS_LAYOUT.map(([k, lbl]) => `
+        <div class="field" style="margin-bottom:10px">
+          <label style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-mute)">${lbl}</label>
+          <input type="text" data-fld="${k}" class="input" value="${escapeAttr(reg[k] || '')}"/>
+        </div>
+      `).join('');
+      document.getElementById('regEdit').innerHTML = rows;
+    }
+
+    document.getElementById('regToggleEdit').addEventListener('click', () => {
+      regEditing = !regEditing;
+      document.getElementById('regView').style.display = regEditing ? 'none' : '';
+      document.getElementById('regEdit').style.display = regEditing ? '' : 'none';
+      document.getElementById('regSave').style.display = regEditing ? '' : 'none';
+      document.getElementById('regToggleEdit').textContent = regEditing ? '👁 Просмотр' : '✏ Редактировать';
+    });
+
+    document.getElementById('regSave').addEventListener('click', () => {
+      if (!regPid) return;
+      const patch = {};
+      document.querySelectorAll('#regEdit [data-fld]').forEach(inp => {
+        patch[inp.dataset.fld] = inp.value.trim();
+      });
+      Store.upsertAccountReg(regPid, patch);
+      toast('Сохранено');
+      renderAll();
+      // обновим модалку
+      const reg = Store.getAccountReg(regPid) || {};
+      renderRegView(reg);
+      document.getElementById('regUpdated').textContent = reg.updatedAt ? `обновлено ${fmtDate(reg.updatedAt)}` : '';
+      // переключимся в просмотр
+      regEditing = false;
+      document.getElementById('regView').style.display = '';
+      document.getElementById('regEdit').style.display = 'none';
+      document.getElementById('regSave').style.display = 'none';
+      document.getElementById('regToggleEdit').textContent = '✏ Редактировать';
+    });
 
     /* ---- фильтры ---- */
-    document.getElementById('fStatus').addEventListener('change', e => { filters.status = e.target.value; render(); });
-    document.getElementById('fMentor').addEventListener('change', e => { filters.mentorId = e.target.value; render(); });
-    document.getElementById('fProfile').addEventListener('change', e => { filters.profileId = e.target.value; render(); });
-    document.getElementById('fSearch').addEventListener('input', e => { filters.q = e.target.value.trim().toLowerCase(); render(); });
+    document.getElementById('fStatus').innerHTML = '<option value="">Любой статус</option>' +
+      PROFILE_STATUSES.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
+    document.getElementById('fCity').addEventListener('change', e => { filters.city = e.target.value; renderAccounts(); });
+    document.getElementById('fStatus').addEventListener('change', e => { filters.status = e.target.value; renderAccounts(); });
+    document.getElementById('fSearch').addEventListener('input', e => { filters.q = e.target.value.trim().toLowerCase(); renderAccounts(); });
     document.getElementById('btnReset').addEventListener('click', () => {
-      filters.status = filters.mentorId = filters.profileId = filters.q = '';
-      ['fStatus','fMentor','fProfile','fSearch'].forEach(id => document.getElementById(id).value = '');
-      render();
+      filters.city = filters.status = filters.q = '';
+      ['fCity','fStatus','fSearch'].forEach(id => document.getElementById(id).value = '');
+      renderAccounts();
     });
-    window.onGlobalSearch = q => { filters.q = q; document.getElementById('fSearch').value = q; render(); };
+    window.onGlobalSearch = q => { filters.q = q; document.getElementById('fSearch').value = q; renderAccounts(); };
 
-    fillSelects();
-    render();
+    window.addEventListener('cloudstate:updated', renderAll);
+    window.addEventListener('store:reloaded', renderAll);
 
-    window.addEventListener('cloudstate:updated', () => { fillSelects(); render(); });
-    window.addEventListener('store:reloaded', render);
+    renderAll();
   });
 
+  function formatPhone(n) {
+    const s = String(n || '').replace(/\D+/g, '');
+    if (s.length === 11) return `${s[0]} (${s.slice(1,4)}) ${s.slice(4,7)}-${s.slice(7,9)}-${s.slice(9,11)}`;
+    return n || '';
+  }
   function escapeHtml(s) {
     return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   }
+  function escapeAttr(s) { return escapeHtml(s); }
   </script>
 </body>
 </html>

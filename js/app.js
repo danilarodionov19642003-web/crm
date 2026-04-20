@@ -144,6 +144,7 @@
       this.state.profileStatuses ??= [];
       this.state.ipLogs ??= [];
       this.state.phones ??= [];
+      this.state.accountRegs ??= [];   // регистрации аккаунтов: TG/Яндекс/Авито/2ГИС/почта Профи
       return this.state;
     },
 
@@ -762,6 +763,66 @@
       const n = this._normalizePhone(number);
       if (!n) return [];
       return (this.state.phones || []).filter(p => p.number === n && p.id !== ignoreId);
+    },
+
+    /* ---------- Account registrations (TG / Яндекс / Авито / 2ГИС / почта Профи) ----------
+       Одна запись = регистрационные данные одного аккаунта. Один аккаунт = одна запись.
+       Хранится как объект полей; пустые строки допустимы (часть данных может отсутствовать). */
+    REG_FIELDS: [
+      'ownerName',       // имя владельца (Евгения сидоркина)
+      'phone',           // номер телефона аккаунта (нормализуем)
+      'tg',              // статус регистрации в Telegram ("сам 2 телега" / "есть" / "нет")
+      'city',            // город
+      'yandexLogin',
+      'yandexPassword',
+      'profiEmail',      // почта на Профи.ру (главный логин)
+      'cloudPassword',   // пароль iCloud / резервный
+      'recoveryEmail',
+      'avitoPhone',      // номер на Авито (или 2ГИС в 4-й группе)
+      'avitoEmail',
+      'avitoPassword',
+      'twoGis',          // отметка 2ГИС
+      'lat', 'lon',
+      'notes'
+    ],
+    getAccountReg(profileId) {
+      return (this.state.accountRegs || []).find(r => r.profileId === profileId) || null;
+    },
+    /** Создать или обновить регистрацию по profileId */
+    upsertAccountReg(profileId, patch) {
+      const list = this.state.accountRegs;
+      const i = list.findIndex(r => r.profileId === profileId);
+      if (i >= 0) {
+        if (patch && typeof patch.phone === 'string') patch.phone = this._normalizePhone(patch.phone);
+        if (patch && typeof patch.avitoPhone === 'string') patch.avitoPhone = this._normalizePhone(patch.avitoPhone);
+        list[i] = Object.assign({}, list[i], patch, { updatedAt: todayISO() });
+      } else {
+        const rec = Object.assign({
+          id: uid(), profileId,
+          ownerName: '', phone: '', tg: '', city: '',
+          yandexLogin: '', yandexPassword: '',
+          profiEmail: '', cloudPassword: '', recoveryEmail: '',
+          avitoPhone: '', avitoEmail: '', avitoPassword: '',
+          twoGis: '', lat: '', lon: '', notes: '',
+          createdAt: todayISO(), updatedAt: todayISO()
+        }, patch);
+        rec.phone = this._normalizePhone(rec.phone);
+        rec.avitoPhone = this._normalizePhone(rec.avitoPhone);
+        list.push(rec);
+      }
+      this.save();
+    },
+    deleteAccountReg(profileId) {
+      this.state.accountRegs = (this.state.accountRegs || []).filter(r => r.profileId !== profileId);
+      this.save();
+    },
+    /** На каком(их) аккаунте(ах) уже используется этот номер (по основному phone + avitoPhone) */
+    profilesUsingPhone(number, ignoreProfileId = null) {
+      const n = this._normalizePhone(number);
+      if (!n) return [];
+      return (this.state.accountRegs || [])
+        .filter(r => r.profileId !== ignoreProfileId && (r.phone === n || r.avitoPhone === n))
+        .map(r => r.profileId);
     },
 
     /* ---------- Сводки ---------- */
