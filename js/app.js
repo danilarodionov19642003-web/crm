@@ -42,6 +42,25 @@
   const TARIFF_NAMES = TARIFFS.map(t => t.name);
 
   /* ------------------------------------------------------------------ */
+  /* Справочники для новых модулей (статусы, города)                    */
+  /* ------------------------------------------------------------------ */
+  const PROFILE_STATUSES = [
+    '📋 Запланировано',
+    '💬 Диалог Начат',
+    '✅ Диалог Закончен',
+    '⭐ Выбрать',
+    '🏆 Выбран',
+    '🎯 Готов'
+  ];
+  const CITIES = ['МСК', 'СПБ', 'Прочее'];
+
+  /** Извлекает город из кода аккаунта вида "2-1" (2=МСК, 3=СПБ, иначе — Прочее) */
+  function cityFromCode(code) {
+    const prefix = String(code || '').split('-')[0];
+    return ({ '2': 'МСК', '3': 'СПБ' }[prefix]) || 'Прочее';
+  }
+
+  /* ------------------------------------------------------------------ */
   /* Утилиты                                                            */
   /* ------------------------------------------------------------------ */
   const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
@@ -119,6 +138,12 @@
       this.state.clients ??= [];
       this.state.employees ??= [];
       this.state.subscriptions ??= [];
+      // новые коллекции (модуль связи / IP / статусы / номера)
+      this.state.mentors ??= [];
+      this.state.profiles ??= [];
+      this.state.profileStatuses ??= [];
+      this.state.ipLogs ??= [];
+      this.state.phones ??= [];
       return this.state;
     },
 
@@ -433,6 +458,312 @@
       this.save();
     },
 
+    /* ====================================================================
+       НОВЫЕ МОДУЛИ: mentors / profiles / statuses / ipLogs / phones
+       ==================================================================== */
+
+    /* ---------- Mentors (a1..aN — клиенты в новой модели) ---------- */
+    addMentor(rec) {
+      const item = Object.assign({
+        id: uid(),
+        code: this._nextMentorCode(),
+        name: '',
+        notes: '',
+        createdAt: todayISO()
+      }, rec);
+      item.code = String(item.code || '').toLowerCase().trim();
+      this.state.mentors.push(item);
+      this.save();
+      return item;
+    },
+    updateMentor(id, patch) {
+      const i = this.state.mentors.findIndex(x => x.id === id);
+      if (i < 0) return;
+      if (patch && typeof patch.code === 'string') patch.code = patch.code.toLowerCase().trim();
+      this.state.mentors[i] = Object.assign({}, this.state.mentors[i], patch);
+      this.save();
+    },
+    deleteMentor(id) {
+      // также удалить из profiles.mentorIds и из profileStatuses
+      this.state.profiles.forEach(p => {
+        if (Array.isArray(p.mentorIds)) p.mentorIds = p.mentorIds.filter(x => x !== id);
+      });
+      this.state.profileStatuses = (this.state.profileStatuses || []).filter(s => s.mentorId !== id);
+      this.state.mentors = this.state.mentors.filter(x => x.id !== id);
+      this.save();
+    },
+    _nextMentorCode() {
+      const nums = (this.state.mentors || [])
+        .map(m => /^a(\d+)$/.exec(m.code || ''))
+        .filter(Boolean)
+        .map(m => Number(m[1]));
+      const next = (nums.length ? Math.max(...nums) : 0) + 1;
+      return `a${next}`;
+    },
+
+    /* ---------- Profiles (аккаунты 2-1, 3-1 ...) ---------- */
+    addProfile(rec) {
+      const item = Object.assign({
+        id: uid(),
+        code: '',
+        city: '',
+        mentorIds: [],
+        createdAt: todayISO()
+      }, rec);
+      item.code = String(item.code || '').trim();
+      if (!item.city) item.city = cityFromCode(item.code);
+      this.state.profiles.push(item);
+      this.save();
+      return item;
+    },
+    updateProfile(id, patch) {
+      const i = this.state.profiles.findIndex(x => x.id === id);
+      if (i < 0) return;
+      if (patch && typeof patch.code === 'string') {
+        patch.code = patch.code.trim();
+        patch.city = patch.city || cityFromCode(patch.code);
+      }
+      this.state.profiles[i] = Object.assign({}, this.state.profiles[i], patch);
+      this.save();
+    },
+    deleteProfile(id) {
+      this.state.profiles = this.state.profiles.filter(x => x.id !== id);
+      this.state.profileStatuses = (this.state.profileStatuses || []).filter(s => s.profileId !== id);
+      this.state.ipLogs = (this.state.ipLogs || []).filter(ip => ip.profileId !== id);
+      this.save();
+    },
+
+    /* ====================================================================
+       ГРАФ СВЯЗЕЙ + DFS — антипересечения клиентов
+       --------------------------------------------------------------------
+       Граф строится из profiles: если два mentor оказались в одном profile,
+       то между ними рёбра в обе стороны. canAddMentorToProfile проверяет:
+       не появится ли путь в графе после добавления нового клиента.
+       ==================================================================== */
+
+    /** Возвращает Map<mentorId, Set<mentorId>> — рёбра графа */
+    buildMentorGraph(extraEdges = []) {
+      const g = new Map();
+      const link = (a, b) => {
+        if (!g.has(a)) g.set(a, new Set());
+        g.get(a).add(b);
+      };
+      (this.state.profiles || []).forEach(p => {
+        const ms = (p.mentorIds || []).filter(Boolean);
+        for (let i = 0; i < ms.length; i++) {
+          for (let j = i + 1; j < ms.length; j++) {
+            link(ms[i], ms[j]);
+            link(ms[j], ms[i]);
+          }
+        }
+      });
+      extraEdges.forEach(([a, b]) => { link(a, b); link(b, a); });
+      return g;
+    },
+
+    /** Проверка: есть ли в графе путь любой длины между двумя клиентами */
+    hasPath(graph, start, target) {
+      if (start === target) return true;
+      const visited = new Set([start]);
+      const stack = [start];
+      while (stack.length) {
+        const node = stack.pop();
+        const nbrs = graph.get(node) || new Set();
+        for (const n of nbrs) {
+          if (n === target) return true;
+          if (!visited.has(n)) {
+            visited.add(n);
+            stack.push(n);
+          }
+        }
+      }
+      return false;
+    },
+
+    /**
+     * Можно ли добавить клиента mentorId в аккаунт profileId.
+     * Возвращает { ok: bool, reason?: string, conflictMentorId?: string }
+     */
+    canAddMentorToProfile(mentorId, profileId) {
+      const profile = this.state.profiles.find(p => p.id === profileId);
+      if (!profile) return { ok: false, reason: 'Аккаунт не найден' };
+      const current = (profile.mentorIds || []).filter(Boolean);
+      if (current.includes(mentorId)) return { ok: false, reason: 'Уже привязан к этому аккаунту' };
+
+      // Граф БЕЗ нового ребра — ищем существующие пути между новым и теми, кто уже в аккаунте
+      const g = this.buildMentorGraph();
+      for (const other of current) {
+        if (this.hasPath(g, mentorId, other)) {
+          return {
+            ok: false,
+            reason: 'Риск пересечения клиентов. Возможен бан аккаунтов.',
+            conflictMentorId: other
+          };
+        }
+      }
+      return { ok: true };
+    },
+
+    /** Связи между конкретной парой клиентов: через какие аккаунты */
+    findLinkPath(mentorAId, mentorBId) {
+      const g = this.buildMentorGraph();
+      // BFS чтобы найти кратчайший путь
+      const prev = new Map();
+      const visited = new Set([mentorAId]);
+      const queue = [mentorAId];
+      let found = false;
+      while (queue.length) {
+        const node = queue.shift();
+        if (node === mentorBId) { found = true; break; }
+        for (const n of (g.get(node) || [])) {
+          if (!visited.has(n)) {
+            visited.add(n);
+            prev.set(n, node);
+            queue.push(n);
+          }
+        }
+      }
+      if (!found) return null;
+      // восстановить путь
+      const path = [mentorBId];
+      let cur = mentorBId;
+      while (prev.has(cur)) { cur = prev.get(cur); path.unshift(cur); }
+      return path;
+    },
+
+    /** Все прямые связи (pairs) с указанием через какие profile они */
+    listDirectLinks() {
+      const links = []; // { aId, bId, profileId }
+      (this.state.profiles || []).forEach(p => {
+        const ms = (p.mentorIds || []).filter(Boolean);
+        for (let i = 0; i < ms.length; i++) {
+          for (let j = i + 1; j < ms.length; j++) {
+            links.push({ aId: ms[i], bId: ms[j], profileId: p.id });
+          }
+        }
+      });
+      return links;
+    },
+
+    /* ---------- Profile statuses ---------- */
+    /** Получить статус по паре (mentorId, profileId), или null */
+    getProfileStatus(mentorId, profileId) {
+      return (this.state.profileStatuses || [])
+        .find(s => s.mentorId === mentorId && s.profileId === profileId) || null;
+    },
+    /**
+     * Поставить/обновить статус. Если запись уже есть — апдейт + история.
+     * Если нет — создаём.
+     */
+    setProfileStatus(mentorId, profileId, status, comment = '') {
+      const list = this.state.profileStatuses;
+      let rec = list.find(s => s.mentorId === mentorId && s.profileId === profileId);
+      const today = todayISO();
+      if (rec) {
+        rec.history = rec.history || [];
+        rec.history.push({ date: today, status: rec.status, comment: rec.comment || '' });
+        rec.status = status;
+        rec.comment = comment;
+        rec.date = today;
+      } else {
+        rec = {
+          id: uid(),
+          mentorId, profileId, status, comment,
+          date: today,
+          history: []
+        };
+        list.push(rec);
+      }
+      this.save();
+      return rec;
+    },
+    deleteProfileStatus(id) {
+      this.state.profileStatuses = (this.state.profileStatuses || []).filter(s => s.id !== id);
+      this.save();
+    },
+
+    /* ---------- IP logs ---------- */
+    addIp(rec) {
+      const item = Object.assign({
+        id: uid(),
+        ip: '',
+        profileId: '',
+        date: todayISO(),
+        note: ''
+      }, rec);
+      item.ip = String(item.ip || '').trim();
+      this.state.ipLogs.push(item);
+      this.save();
+      return item;
+    },
+    updateIp(id, patch) {
+      const i = this.state.ipLogs.findIndex(x => x.id === id);
+      if (i < 0) return;
+      if (patch && typeof patch.ip === 'string') patch.ip = patch.ip.trim();
+      this.state.ipLogs[i] = Object.assign({}, this.state.ipLogs[i], patch);
+      this.save();
+    },
+    deleteIp(id) {
+      this.state.ipLogs = this.state.ipLogs.filter(x => x.id !== id);
+      this.save();
+    },
+    /**
+     * Проверка: где ещё используется IP.
+     * Возвращает { ok: bool, conflicts: [{profileId, ip, count}] }
+     * conflict если IP используется в РАЗНЫХ profiles.
+     */
+    checkIpConflict(ip, ignoreId = null) {
+      const ipNorm = String(ip || '').trim();
+      if (!ipNorm) return { ok: true, conflicts: [] };
+      const matches = (this.state.ipLogs || [])
+        .filter(x => x.ip === ipNorm && x.id !== ignoreId);
+      const profileSet = new Set(matches.map(m => m.profileId));
+      const conflicts = matches.filter(m => true);
+      return {
+        ok: profileSet.size <= 1,
+        conflicts,
+        diffProfiles: profileSet.size > 1
+      };
+    },
+
+    /* ---------- Phones ---------- */
+    addPhone(rec) {
+      const item = Object.assign({
+        id: uid(),
+        number: '',
+        note: '',
+        profileId: '',
+        createdAt: todayISO()
+      }, rec);
+      item.number = this._normalizePhone(item.number);
+      this.state.phones.push(item);
+      this.save();
+      return item;
+    },
+    updatePhone(id, patch) {
+      const i = this.state.phones.findIndex(x => x.id === id);
+      if (i < 0) return;
+      if (patch && typeof patch.number === 'string') patch.number = this._normalizePhone(patch.number);
+      this.state.phones[i] = Object.assign({}, this.state.phones[i], patch);
+      this.save();
+    },
+    deletePhone(id) {
+      this.state.phones = this.state.phones.filter(x => x.id !== id);
+      this.save();
+    },
+    _normalizePhone(raw) {
+      const s = String(raw || '').replace(/\D+/g, '');
+      // приведение к форме 8XXXXXXXXXX (если начинается с 7 — заменим)
+      if (s.length === 11 && s[0] === '7') return '8' + s.slice(1);
+      return s;
+    },
+    /** Найти дубликаты по номеру — массив phones с тем же number, кроме ignoreId */
+    findPhoneDuplicates(number, ignoreId = null) {
+      const n = this._normalizePhone(number);
+      if (!n) return [];
+      return (this.state.phones || []).filter(p => p.number === n && p.id !== ignoreId);
+    },
+
     /* ---------- Сводки ---------- */
     totals() {
       const income = this.state.income.reduce((s, r) => s + (Number(r.amount) || 0), 0);
@@ -589,7 +920,8 @@
     Store, Modal, Counter, toast,
     fmtMoney, fmtDate, monthKey, monthLabel,
     uid, todayISO, tomorrowISO,
-    SERVICES, EXPENSE_CATEGORIES, TARIFFS, TARIFF_NAMES
+    SERVICES, EXPENSE_CATEGORIES, TARIFFS, TARIFF_NAMES,
+    PROFILE_STATUSES, CITIES, cityFromCode
   };
 
   /* ------------------------------------------------------------------ */

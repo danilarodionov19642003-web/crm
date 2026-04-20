@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Номера — Mentori CRM</title>
+  <link rel="stylesheet" href="../css/styles.css"/>
+</head>
+<body>
+  <div class="app">
+    <div data-component="sidebar" data-active="phones"></div>
+
+    <div class="main">
+      <div data-component="header" data-title="Номера"></div>
+
+      <main class="content">
+        <div class="page-title">
+          <div>
+            <h1>Номера телефонов</h1>
+            <p>Все номера, что использовались для аккаунтов / СМС / регистраций. Если ты добавишь номер, который уже есть — увидишь предупреждение.</p>
+          </div>
+          <button class="btn btn--primary" id="btnAdd">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Новый номер
+          </button>
+        </div>
+
+        <section class="cards" id="phKpis"></section>
+
+        <div class="filters">
+          <select id="fState" class="select">
+            <option value="">Все</option>
+            <option value="dupe">⚠ Только дубли</option>
+            <option value="unique">Уникальные</option>
+          </select>
+          <select id="fProfile" class="select">
+            <option value="">Все аккаунты</option>
+          </select>
+          <input type="text" id="fSearch" class="input" placeholder="Поиск номера..." style="flex:1;min-width:200px"/>
+          <button class="btn btn--ghost" id="btnReset">Сбросить</button>
+        </div>
+
+        <div class="panel">
+          <div class="table-wrap">
+            <table class="table" id="phTable">
+              <thead>
+                <tr>
+                  <th>Номер</th>
+                  <th>Аккаунт</th>
+                  <th>Заметка</th>
+                  <th>Дата</th>
+                  <th>Статус</th>
+                  <th class="actions"></th>
+                </tr>
+              </thead>
+              <tbody id="phRows"></tbody>
+            </table>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- Модалка нового номера -->
+  <div class="modal-backdrop" id="addModal">
+    <div class="modal" style="max-width:520px">
+      <div class="modal__header">
+        <h3>Новый номер</h3>
+        <button class="btn--icon" data-close>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal__body">
+        <div class="field">
+          <label for="mNumber">Номер</label>
+          <input type="text" id="mNumber" class="input" placeholder="89991234567"/>
+          <div style="font-size:11px;color:var(--text-mute);margin-top:4px">Будет приведён к виду 8XXXXXXXXXX автоматически</div>
+        </div>
+        <div id="mWarn" style="display:none;margin-top:10px;padding:10px 12px;border-radius:8px;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);color:var(--red);font-size:13px"></div>
+        <div class="field-row" style="margin-top:12px">
+          <div class="field">
+            <label for="mProfile">Аккаунт (необязательно)</label>
+            <select id="mProfile" class="select"></select>
+          </div>
+          <div class="field">
+            <label for="mNote">Заметка</label>
+            <input type="text" id="mNote" class="input"/>
+          </div>
+        </div>
+      </div>
+      <div class="modal__footer">
+        <button class="btn btn--ghost" data-close>Отмена</button>
+        <button class="btn btn--primary" id="mSave">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="../data/seed.js"></script>
+  <script src="../js/app.js"></script>
+  <script src="../js/supabase-client.js"></script>
+  <script src="../js/cloud-sync.js"></script>
+  <script src="../js/accounts-sync.js"></script>
+  <script src="../js/reviews-sync.js"></script>
+  <script src="../components/sidebar.js"></script>
+  <script src="../components/header.js"></script>
+  <script src="../components/table.js"></script>
+
+  <script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const { Store, Modal, toast, todayISO, fmtDate } = window.App;
+    const { confirmDelete } = window.TableUtils;
+
+    Store.load();
+    const filters = { state: '', profileId: '', q: '' };
+
+    function profileById(id) { return Store.state.profiles.find(p => p.id === id); }
+    function profileLabel(p) { return p ? `${p.code || '—'} (${p.city || '—'})` : '—'; }
+
+    function fillProfileSelect(sel, includeAll = false) {
+      const profs = (Store.state.profiles || []).slice().sort((a,b) => (a.code || '').localeCompare(b.code || '', 'ru', {numeric:true}));
+      sel.innerHTML = (includeAll ? '<option value="">Все аккаунты</option>' : '<option value="">— без привязки —</option>')
+        + profs.map(p => `<option value="${p.id}">${escapeHtml(profileLabel(p))}</option>`).join('');
+    }
+
+    function formatPhone(n) {
+      const s = String(n || '');
+      if (s.length === 11) return `${s[0]} (${s.slice(1,4)}) ${s.slice(4,7)}-${s.slice(7,9)}-${s.slice(9,11)}`;
+      return s;
+    }
+
+    function counts() {
+      const m = new Map();
+      (Store.state.phones || []).forEach(p => m.set(p.number, (m.get(p.number) || 0) + 1));
+      return m;
+    }
+
+    function renderKpis() {
+      const all = Store.state.phones || [];
+      const c = counts();
+      let dupes = 0;
+      c.forEach(v => { if (v > 1) dupes++; });
+      document.getElementById('phKpis').innerHTML = `
+        <div class="card"><div class="card__label">Записей</div><div class="card__value">${all.length}</div></div>
+        <div class="card"><div class="card__label">Уникальных номеров</div><div class="card__value">${c.size}</div></div>
+        <div class="card"><div class="card__label">Дубликатов</div><div class="card__value ${dupes>0?'neg':''}">${dupes}</div><div class="card__trend">номеров повторяется</div></div>
+        <div class="card"><div class="card__label">Без аккаунта</div><div class="card__value">${all.filter(x => !x.profileId).length}</div></div>
+      `;
+    }
+
+    function render() {
+      renderKpis();
+      const c = counts();
+      const list = (Store.state.phones || []).slice().sort((a,b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+      const filtered = list.filter(r => {
+        const cnt = c.get(r.number) || 0;
+        if (filters.state === 'dupe' && cnt <= 1) return false;
+        if (filters.state === 'unique' && cnt > 1) return false;
+        if (filters.profileId && r.profileId !== filters.profileId) return false;
+        if (filters.q && !r.number.includes(filters.q.replace(/\D+/g,''))) return false;
+        return true;
+      });
+      const tb = document.getElementById('phRows');
+      if (filtered.length === 0) {
+        tb.innerHTML = `<tr><td colspan="6" class="empty">Номеров нет.</td></tr>`;
+        return;
+      }
+      tb.innerHTML = filtered.map(r => {
+        const cnt = c.get(r.number) || 0;
+        const dupe = cnt > 1;
+        const status = dupe
+          ? `<span class="badge badge--red"><span class="dot"></span>Дубль ×${cnt}</span>`
+          : '<span class="badge badge--green">Уникальный</span>';
+        const rowStyle = dupe ? ' style="background:rgba(239,68,68,0.06)"' : '';
+        const p = profileById(r.profileId);
+        return `<tr data-id="${r.id}"${rowStyle}>
+          <td><span style="font-family:ui-monospace,monospace;font-size:13px">${escapeHtml(formatPhone(r.number))}</span></td>
+          <td>${p ? '<span class="badge badge--orange">' + escapeHtml(p.code) + '</span>' : '<span style="color:var(--text-mute);font-size:12px">— нет —</span>'}</td>
+          <td>${escapeHtml(r.note || '')}</td>
+          <td>${escapeHtml(fmtDate(r.createdAt))}</td>
+          <td>${status}</td>
+          <td class="actions">
+            <button class="btn--icon" data-act="del" data-id="${r.id}" title="Удалить">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+            </button>
+          </td>
+        </tr>`;
+      }).join('');
+
+      tb.querySelectorAll('[data-act="del"]').forEach(b => b.addEventListener('click', () => {
+        if (!confirmDelete('Удалить номер?')) return;
+        Store.deletePhone(b.dataset.id);
+        render();
+      }));
+    }
+
+    /* ---- Модалка ---- */
+    document.getElementById('btnAdd').addEventListener('click', () => {
+      fillProfileSelect(document.getElementById('mProfile'));
+      document.getElementById('mNumber').value = '';
+      document.getElementById('mNote').value = '';
+      document.getElementById('mWarn').style.display = 'none';
+      Modal.open('addModal');
+      setTimeout(() => document.getElementById('mNumber').focus(), 50);
+    });
+    document.getElementById('mNumber').addEventListener('input', () => {
+      const v = document.getElementById('mNumber').value;
+      const dups = Store.findPhoneDuplicates(v);
+      const w = document.getElementById('mWarn');
+      if (dups.length === 0) { w.style.display = 'none'; return; }
+      const labels = dups.map(d => {
+        const p = profileById(d.profileId);
+        return p ? p.code : 'без аккаунта';
+      }).join(', ');
+      w.innerHTML = `⚠ Этот номер уже есть (${dups.length}): <strong>${escapeHtml(labels)}</strong>`;
+      w.style.display = 'block';
+    });
+    document.getElementById('mSave').addEventListener('click', () => {
+      const number = document.getElementById('mNumber').value.trim();
+      const profileId = document.getElementById('mProfile').value;
+      const note = document.getElementById('mNote').value.trim();
+      if (!number) { toast('Введите номер', 'error'); return; }
+      Store.addPhone({ number, profileId, note });
+      Modal.close('addModal');
+      toast('Номер добавлен');
+      render();
+    });
+
+    /* ---- фильтры ---- */
+    fillProfileSelect(document.getElementById('fProfile'), true);
+    document.getElementById('fState').addEventListener('change', e => { filters.state = e.target.value; render(); });
+    document.getElementById('fProfile').addEventListener('change', e => { filters.profileId = e.target.value; render(); });
+    document.getElementById('fSearch').addEventListener('input', e => { filters.q = e.target.value.trim().toLowerCase(); render(); });
+    document.getElementById('btnReset').addEventListener('click', () => {
+      filters.state = filters.profileId = filters.q = '';
+      ['fState','fProfile','fSearch'].forEach(id => document.getElementById(id).value = '');
+      render();
+    });
+    window.onGlobalSearch = q => { filters.q = q; document.getElementById('fSearch').value = q; render(); };
+
+    window.addEventListener('cloudstate:updated', () => { fillProfileSelect(document.getElementById('fProfile'), true); render(); });
+    window.addEventListener('store:reloaded', render);
+    render();
+  });
+
+  function escapeHtml(s) {
+    return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+  </script>
+</body>
+</html>

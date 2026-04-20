@@ -1,0 +1,425 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Аккаунты — Mentori CRM</title>
+  <link rel="stylesheet" href="../css/styles.css"/>
+</head>
+<body>
+  <div class="app">
+    <div data-component="sidebar" data-active="profiles"></div>
+
+    <div class="main">
+      <div data-component="header" data-title="Аккаунты"></div>
+
+      <main class="content">
+        <div class="page-title">
+          <div>
+            <h1>Аккаунты площадок</h1>
+            <p>Каждому аккаунту привязаны клиенты (а1, а2…). Если в одном аккаунте окажутся клиенты, которые уже встречались между собой через цепочку других аккаунтов — будет предупреждение о риске бана.</p>
+          </div>
+          <button class="btn btn--primary" id="btnAdd">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Новый аккаунт
+          </button>
+        </div>
+
+        <section class="cards" id="prKpis"></section>
+
+        <div class="filters">
+          <select id="fCity" class="select">
+            <option value="">Все города</option>
+            <option value="МСК">МСК</option>
+            <option value="СПБ">СПБ</option>
+            <option value="Прочее">Прочее</option>
+          </select>
+          <input type="text" id="fSearch" class="input" placeholder="Поиск по коду или клиенту..." style="flex:1;min-width:200px"/>
+          <button class="btn btn--ghost" id="btnReset">Сбросить</button>
+        </div>
+
+        <div class="panel">
+          <div class="table-wrap">
+            <table class="table" id="prTable">
+              <thead>
+                <tr>
+                  <th>Код</th>
+                  <th>Город</th>
+                  <th>Клиенты на аккаунте</th>
+                  <th class="num">Кол-во</th>
+                  <th class="actions"></th>
+                </tr>
+              </thead>
+              <tbody id="prRows"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div style="margin-top:24px">
+          <h2 style="font-size:16px;font-weight:600;margin-bottom:12px;color:var(--text-dim)">Клиенты (a1…aN)</h2>
+          <div class="panel">
+            <div class="table-wrap">
+              <table class="table" id="mnTable">
+                <thead>
+                  <tr>
+                    <th>Код</th>
+                    <th>Имя клиента</th>
+                    <th class="num">Аккаунтов</th>
+                    <th>Заметки</th>
+                    <th class="actions"></th>
+                  </tr>
+                </thead>
+                <tbody id="mnRows"></tbody>
+              </table>
+            </div>
+          </div>
+          <div style="margin-top:10px">
+            <button class="btn btn--ghost" id="btnAddMentor">+ Новый клиент (a-код)</button>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- Модалка нового аккаунта -->
+  <div class="modal-backdrop" id="addModal">
+    <div class="modal" style="max-width:520px">
+      <div class="modal__header">
+        <h3 id="modalTitle">Новый аккаунт</h3>
+        <button class="btn--icon" data-close>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal__body">
+        <div class="field-row">
+          <div class="field">
+            <label for="mCode">Код аккаунта</label>
+            <input type="text" id="mCode" class="input" placeholder="2-1, 3-4 ..."/>
+            <div style="font-size:11px;color:var(--text-mute);margin-top:4px">Префикс: 2 = МСК, 3 = СПБ</div>
+          </div>
+          <div class="field">
+            <label for="mCity">Город</label>
+            <select id="mCity" class="select">
+              <option value="МСК">МСК</option>
+              <option value="СПБ">СПБ</option>
+              <option value="Прочее">Прочее</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="modal__footer">
+        <button class="btn btn--ghost" data-close>Отмена</button>
+        <button class="btn btn--primary" id="mSave">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Модалка добавления клиента в аккаунт -->
+  <div class="modal-backdrop" id="assignModal">
+    <div class="modal" style="max-width:520px">
+      <div class="modal__header">
+        <h3 id="assignTitle">Добавить клиента в аккаунт</h3>
+        <button class="btn--icon" data-close>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal__body">
+        <div class="field">
+          <label for="aMentor">Клиент</label>
+          <select id="aMentor" class="select"></select>
+        </div>
+        <div id="aWarn" style="display:none;margin-top:12px;padding:10px 12px;border-radius:8px;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);color:var(--red);font-size:13px"></div>
+      </div>
+      <div class="modal__footer">
+        <button class="btn btn--ghost" data-close>Отмена</button>
+        <button class="btn btn--primary" id="aSave">Привязать</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Модалка нового клиента -->
+  <div class="modal-backdrop" id="mentorModal">
+    <div class="modal" style="max-width:480px">
+      <div class="modal__header">
+        <h3>Новый клиент</h3>
+        <button class="btn--icon" data-close>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal__body">
+        <div class="field-row">
+          <div class="field">
+            <label for="nmCode">Код</label>
+            <input type="text" id="nmCode" class="input" placeholder="a21"/>
+          </div>
+          <div class="field">
+            <label for="nmName">Имя</label>
+            <input type="text" id="nmName" class="input" placeholder="Иван Иванов"/>
+          </div>
+        </div>
+        <div class="field">
+          <label for="nmNotes">Заметки</label>
+          <input type="text" id="nmNotes" class="input"/>
+        </div>
+      </div>
+      <div class="modal__footer">
+        <button class="btn btn--ghost" data-close>Отмена</button>
+        <button class="btn btn--primary" id="nmSave">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="../data/seed.js"></script>
+  <script src="../js/app.js"></script>
+  <script src="../js/supabase-client.js"></script>
+  <script src="../js/cloud-sync.js"></script>
+  <script src="../js/accounts-sync.js"></script>
+  <script src="../js/reviews-sync.js"></script>
+  <script src="../components/sidebar.js"></script>
+  <script src="../components/header.js"></script>
+  <script src="../components/table.js"></script>
+
+  <script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const { Store, Modal, toast, cityFromCode } = window.App;
+    const { confirmDelete } = window.TableUtils;
+
+    Store.load();
+    let editingProfileId = null;
+    let assignProfileId = null;
+
+    const filters = { city: '', q: '' };
+
+    function mentorById(id) { return Store.state.mentors.find(m => m.id === id); }
+    function mentorLabel(m) { return m ? `${m.code || '—'} · ${m.name || 'Без имени'}` : '—'; }
+
+    function profilesFiltered() {
+      return (Store.state.profiles || []).filter(p => {
+        if (filters.city && p.city !== filters.city) return false;
+        if (filters.q) {
+          const code = String(p.code || '').toLowerCase();
+          const mentorsStr = (p.mentorIds || []).map(id => mentorLabel(mentorById(id))).join(' ').toLowerCase();
+          if (!code.includes(filters.q) && !mentorsStr.includes(filters.q)) return false;
+        }
+        return true;
+      });
+    }
+
+    function renderKpis() {
+      const profs = Store.state.profiles || [];
+      const mentors = Store.state.mentors || [];
+      const totalLinks = Store.listDirectLinks().length;
+      const cities = {};
+      profs.forEach(p => { cities[p.city || 'Прочее'] = (cities[p.city || 'Прочее'] || 0) + 1; });
+      document.getElementById('prKpis').innerHTML = `
+        <div class="card"><div class="card__label">Аккаунтов</div><div class="card__value">${profs.length}</div></div>
+        <div class="card"><div class="card__label">Клиентов</div><div class="card__value">${mentors.length}</div></div>
+        <div class="card"><div class="card__label">МСК</div><div class="card__value">${cities['МСК'] || 0}</div></div>
+        <div class="card"><div class="card__label">СПБ</div><div class="card__value">${cities['СПБ'] || 0}</div></div>
+        <div class="card"><div class="card__label">Связей</div><div class="card__value">${totalLinks}</div><div class="card__trend">пар клиентов</div></div>
+      `;
+    }
+
+    function renderProfiles() {
+      const rows = profilesFiltered().sort((a,b) => (a.code || '').localeCompare(b.code || '', 'ru', {numeric:true}));
+      const tb = document.getElementById('prRows');
+      if (rows.length === 0) {
+        tb.innerHTML = `<tr><td colspan="5" class="empty">Нет аккаунтов под фильтр.</td></tr>`;
+        return;
+      }
+      tb.innerHTML = rows.map(p => {
+        const tags = (p.mentorIds || []).map(id => {
+          const m = mentorById(id);
+          if (!m) return '';
+          return `<span class="badge badge--gray" style="margin:2px 4px 2px 0;cursor:default" data-mentor="${id}" title="${escapeHtml(m.name || '')}">${escapeHtml(m.code || '?')} · ${escapeHtml(m.name || '')} <button class="badge-x" data-act="unassign" data-pid="${p.id}" data-mid="${id}" style="background:none;border:none;color:var(--red);margin-left:6px;cursor:pointer;font-weight:700">×</button></span>`;
+        }).join('') || '<span style="color:var(--text-mute);font-size:12px">— пусто —</span>';
+        return `
+          <tr data-id="${p.id}">
+            <td><span class="badge badge--orange">${escapeHtml(p.code || '—')}</span></td>
+            <td>${escapeHtml(p.city || '—')}</td>
+            <td>${tags}</td>
+            <td class="num">${(p.mentorIds || []).length}</td>
+            <td class="actions">
+              <button class="btn btn--ghost btn--sm" data-act="assign" data-id="${p.id}">+ клиент</button>
+              <button class="btn--icon" data-act="del" data-id="${p.id}" title="Удалить аккаунт">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+              </button>
+            </td>
+          </tr>`;
+      }).join('');
+
+      tb.querySelectorAll('[data-act="assign"]').forEach(b => b.addEventListener('click', () => openAssign(b.dataset.id)));
+      tb.querySelectorAll('[data-act="del"]').forEach(b => b.addEventListener('click', () => {
+        if (!confirmDelete('Удалить аккаунт? Все статусы и IP к нему тоже удалятся.')) return;
+        Store.deleteProfile(b.dataset.id);
+        renderAll();
+      }));
+      tb.querySelectorAll('[data-act="unassign"]').forEach(b => b.addEventListener('click', () => {
+        const p = Store.state.profiles.find(x => x.id === b.dataset.pid);
+        if (!p) return;
+        p.mentorIds = (p.mentorIds || []).filter(id => id !== b.dataset.mid);
+        Store.updateProfile(p.id, { mentorIds: p.mentorIds });
+        renderAll();
+      }));
+    }
+
+    function renderMentors() {
+      const counts = new Map();
+      (Store.state.profiles || []).forEach(p => (p.mentorIds || []).forEach(id => counts.set(id, (counts.get(id) || 0) + 1)));
+      const rows = (Store.state.mentors || []).slice().sort((a,b) => (a.code || '').localeCompare(b.code || '', 'ru', {numeric:true}));
+      const tb = document.getElementById('mnRows');
+      if (rows.length === 0) {
+        tb.innerHTML = `<tr><td colspan="5" class="empty">Клиенты ещё не добавлены.</td></tr>`;
+        return;
+      }
+      tb.innerHTML = rows.map(m => `
+        <tr data-id="${m.id}">
+          <td><span class="badge badge--orange">${escapeHtml(m.code || '—')}</span></td>
+          <td><strong>${escapeHtml(m.name || '—')}</strong></td>
+          <td class="num">${counts.get(m.id) || 0}</td>
+          <td>${escapeHtml(m.notes || '')}</td>
+          <td class="actions">
+            <button class="btn--icon" data-act="del" data-id="${m.id}" title="Удалить клиента">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+            </button>
+          </td>
+        </tr>
+      `).join('');
+      tb.querySelectorAll('[data-act="del"]').forEach(b => b.addEventListener('click', () => {
+        if (!confirmDelete('Удалить клиента? Он будет отвязан от всех аккаунтов и статусов.')) return;
+        Store.deleteMentor(b.dataset.id);
+        renderAll();
+      }));
+    }
+
+    function renderAll() {
+      renderKpis();
+      renderProfiles();
+      renderMentors();
+    }
+
+    /* ---- модалка профиля ---- */
+    document.getElementById('btnAdd').addEventListener('click', () => {
+      editingProfileId = null;
+      document.getElementById('modalTitle').textContent = 'Новый аккаунт';
+      document.getElementById('mCode').value = '';
+      document.getElementById('mCity').value = 'МСК';
+      Modal.open('addModal');
+      setTimeout(() => document.getElementById('mCode').focus(), 50);
+    });
+    document.getElementById('mCode').addEventListener('input', e => {
+      document.getElementById('mCity').value = cityFromCode(e.target.value);
+    });
+    document.getElementById('mSave').addEventListener('click', () => {
+      const code = document.getElementById('mCode').value.trim();
+      const city = document.getElementById('mCity').value;
+      if (!code) { toast('Укажите код аккаунта', 'error'); return; }
+      const dupe = (Store.state.profiles || []).some(p => p.code === code && p.id !== editingProfileId);
+      if (dupe) { toast('Аккаунт с таким кодом уже есть', 'error'); return; }
+      if (editingProfileId) Store.updateProfile(editingProfileId, { code, city });
+      else Store.addProfile({ code, city });
+      Modal.close('addModal');
+      toast('Сохранено');
+      renderAll();
+    });
+
+    /* ---- модалка assign ---- */
+    function openAssign(profileId) {
+      assignProfileId = profileId;
+      const profile = Store.state.profiles.find(p => p.id === profileId);
+      if (!profile) return;
+      document.getElementById('assignTitle').textContent = `Аккаунт ${profile.code}: добавить клиента`;
+      const sel = document.getElementById('aMentor');
+      const taken = new Set(profile.mentorIds || []);
+      const options = (Store.state.mentors || [])
+        .filter(m => !taken.has(m.id))
+        .sort((a,b) => (a.code || '').localeCompare(b.code || '', 'ru', {numeric:true}))
+        .map(m => `<option value="${m.id}">${escapeHtml(mentorLabel(m))}</option>`).join('');
+      sel.innerHTML = options || '<option value="">— все клиенты уже привязаны —</option>';
+      checkAssignWarn();
+      Modal.open('assignModal');
+    }
+    document.getElementById('aMentor').addEventListener('change', checkAssignWarn);
+
+    function checkAssignWarn() {
+      const mid = document.getElementById('aMentor').value;
+      const warn = document.getElementById('aWarn');
+      if (!mid || !assignProfileId) { warn.style.display = 'none'; return; }
+      const res = Store.canAddMentorToProfile(mid, assignProfileId);
+      if (res.ok) { warn.style.display = 'none'; return; }
+      let extra = '';
+      if (res.conflictMentorId) {
+        const path = Store.findLinkPath(mid, res.conflictMentorId);
+        if (path && path.length > 1) {
+          const labels = path.map(id => {
+            const m = mentorById(id);
+            return m ? (m.code + ' · ' + m.name) : '?';
+          }).join(' → ');
+          extra = `<div style="margin-top:6px;font-size:12px;opacity:.85">Цепочка: ${escapeHtml(labels)}</div>`;
+        }
+      }
+      warn.innerHTML = `⚠️ ${escapeHtml(res.reason)}${extra}`;
+      warn.style.display = 'block';
+    }
+
+    document.getElementById('aSave').addEventListener('click', () => {
+      const mid = document.getElementById('aMentor').value;
+      if (!mid || !assignProfileId) { toast('Выберите клиента', 'error'); return; }
+      const profile = Store.state.profiles.find(p => p.id === assignProfileId);
+      const res = Store.canAddMentorToProfile(mid, assignProfileId);
+      if (!res.ok) {
+        if (!window.confirm(`${res.reason}\n\nВсё равно добавить?`)) return;
+      }
+      profile.mentorIds = [...(profile.mentorIds || []), mid];
+      Store.updateProfile(profile.id, { mentorIds: profile.mentorIds });
+      Modal.close('assignModal');
+      toast('Привязано');
+      renderAll();
+    });
+
+    /* ---- модалка нового клиента ---- */
+    document.getElementById('btnAddMentor').addEventListener('click', () => {
+      document.getElementById('nmCode').value = '';
+      document.getElementById('nmName').value = '';
+      document.getElementById('nmNotes').value = '';
+      // подскажем следующий a-код
+      document.getElementById('nmCode').placeholder = Store._nextMentorCode();
+      Modal.open('mentorModal');
+      setTimeout(() => document.getElementById('nmName').focus(), 50);
+    });
+    document.getElementById('nmSave').addEventListener('click', () => {
+      const name = document.getElementById('nmName').value.trim();
+      if (!name) { toast('Укажите имя', 'error'); return; }
+      const code = document.getElementById('nmCode').value.trim() || Store._nextMentorCode();
+      if ((Store.state.mentors || []).some(m => m.code === code.toLowerCase())) {
+        toast('Клиент с таким кодом уже есть', 'error'); return;
+      }
+      Store.addMentor({ code, name, notes: document.getElementById('nmNotes').value.trim() });
+      Modal.close('mentorModal');
+      toast('Клиент добавлен');
+      renderAll();
+    });
+
+    /* ---- фильтры ---- */
+    document.getElementById('fCity').addEventListener('change', e => { filters.city = e.target.value; renderProfiles(); });
+    document.getElementById('fSearch').addEventListener('input', e => { filters.q = e.target.value.trim().toLowerCase(); renderProfiles(); });
+    document.getElementById('btnReset').addEventListener('click', () => {
+      filters.city = filters.q = '';
+      document.getElementById('fCity').value = '';
+      document.getElementById('fSearch').value = '';
+      renderProfiles();
+    });
+    window.onGlobalSearch = q => { filters.q = q; document.getElementById('fSearch').value = q; renderProfiles(); };
+
+    window.addEventListener('cloudstate:updated', renderAll);
+    window.addEventListener('store:reloaded', renderAll);
+
+    renderAll();
+  });
+
+  function escapeHtml(s) {
+    return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+  </script>
+</body>
+</html>

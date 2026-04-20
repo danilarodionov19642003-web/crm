@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>IP контроль — Mentori CRM</title>
+  <link rel="stylesheet" href="../css/styles.css"/>
+</head>
+<body>
+  <div class="app">
+    <div data-component="sidebar" data-active="ips"></div>
+
+    <div class="main">
+      <div data-component="header" data-title="IP контроль"></div>
+
+      <main class="content">
+        <div class="page-title">
+          <div>
+            <h1>IP-адреса аккаунтов</h1>
+            <p>Каждый IP жёстко привязывается к одному аккаунту. Если этот же IP используется на другом аккаунте — строка подсвечена красным: высокий риск бана.</p>
+          </div>
+          <button class="btn btn--primary" id="btnAdd">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Новый IP
+          </button>
+        </div>
+
+        <section class="cards" id="ipKpis"></section>
+
+        <div class="filters">
+          <select id="fProfile" class="select">
+            <option value="">Все аккаунты</option>
+          </select>
+          <select id="fState" class="select">
+            <option value="">Все</option>
+            <option value="conflict">⚠ Только конфликты</option>
+            <option value="dupe">Все повторы</option>
+            <option value="unique">Уникальные</option>
+          </select>
+          <input type="text" id="fSearch" class="input" placeholder="Поиск IP..." style="flex:1;min-width:200px"/>
+          <button class="btn btn--ghost" id="btnReset">Сбросить</button>
+        </div>
+
+        <div class="panel">
+          <div class="table-wrap">
+            <table class="table" id="ipTable">
+              <thead>
+                <tr>
+                  <th>IP</th>
+                  <th>Аккаунт</th>
+                  <th>Дата</th>
+                  <th>Заметка</th>
+                  <th>Статус</th>
+                  <th class="actions"></th>
+                </tr>
+              </thead>
+              <tbody id="ipRows"></tbody>
+            </table>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- Модалка -->
+  <div class="modal-backdrop" id="addModal">
+    <div class="modal" style="max-width:520px">
+      <div class="modal__header">
+        <h3>Новый IP</h3>
+        <button class="btn--icon" data-close>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal__body">
+        <div class="field">
+          <label for="mIp">IP-адрес</label>
+          <input type="text" id="mIp" class="input" placeholder="178.176.78.182"/>
+        </div>
+        <div id="mWarn" style="display:none;padding:10px 12px;border-radius:8px;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);color:var(--red);font-size:13px;margin-top:6px"></div>
+        <div class="field-row" style="margin-top:12px">
+          <div class="field">
+            <label for="mProfile">Аккаунт</label>
+            <select id="mProfile" class="select"></select>
+          </div>
+          <div class="field">
+            <label for="mDate">Дата</label>
+            <input type="date" id="mDate" class="input"/>
+          </div>
+        </div>
+        <div class="field" style="margin-top:12px">
+          <label for="mNote">Заметка</label>
+          <input type="text" id="mNote" class="input"/>
+        </div>
+      </div>
+      <div class="modal__footer">
+        <button class="btn btn--ghost" data-close>Отмена</button>
+        <button class="btn btn--primary" id="mSave">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="../data/seed.js"></script>
+  <script src="../js/app.js"></script>
+  <script src="../js/supabase-client.js"></script>
+  <script src="../js/cloud-sync.js"></script>
+  <script src="../js/accounts-sync.js"></script>
+  <script src="../js/reviews-sync.js"></script>
+  <script src="../components/sidebar.js"></script>
+  <script src="../components/header.js"></script>
+  <script src="../components/table.js"></script>
+
+  <script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const { Store, Modal, toast, todayISO, fmtDate } = window.App;
+    const { confirmDelete } = window.TableUtils;
+
+    Store.load();
+    const filters = { profileId: '', state: '', q: '' };
+
+    function profileById(id) { return Store.state.profiles.find(p => p.id === id); }
+    function profileLabel(p) { return p ? `${p.code || '—'} (${p.city || '—'})` : '—'; }
+
+    function fillProfileSelect(sel, includeAll = false) {
+      const profs = (Store.state.profiles || []).slice().sort((a,b) => (a.code || '').localeCompare(b.code || '', 'ru', {numeric:true}));
+      sel.innerHTML = (includeAll ? '<option value="">Все аккаунты</option>' : '<option value="">— выбрать —</option>')
+        + profs.map(p => `<option value="${p.id}">${escapeHtml(profileLabel(p))}</option>`).join('');
+    }
+
+    function ipStats() {
+      // Map<ip, Set<profileId>>
+      const m = new Map();
+      (Store.state.ipLogs || []).forEach(x => {
+        if (!m.has(x.ip)) m.set(x.ip, new Set());
+        m.get(x.ip).add(x.profileId);
+      });
+      return m;
+    }
+
+    function renderKpis() {
+      const logs = Store.state.ipLogs || [];
+      const m = ipStats();
+      let conflicts = 0;
+      m.forEach(set => { if (set.size > 1) conflicts++; });
+      const uniques = m.size;
+      document.getElementById('ipKpis').innerHTML = `
+        <div class="card"><div class="card__label">Записей</div><div class="card__value">${logs.length}</div></div>
+        <div class="card"><div class="card__label">Уникальных IP</div><div class="card__value">${uniques}</div></div>
+        <div class="card"><div class="card__label">Конфликтов</div><div class="card__value ${conflicts>0?'neg':''}">${conflicts}</div><div class="card__trend">IP на разных аккаунтах</div></div>
+        <div class="card"><div class="card__label">Аккаунтов с IP</div><div class="card__value">${new Set(logs.map(x=>x.profileId)).size}</div></div>
+      `;
+    }
+
+    function render() {
+      renderKpis();
+      const stats = ipStats();
+      const logs = (Store.state.ipLogs || []).slice().sort((a,b) => (b.date || '').localeCompare(a.date || ''));
+      const filtered = logs.filter(r => {
+        if (filters.profileId && r.profileId !== filters.profileId) return false;
+        if (filters.q && !String(r.ip || '').toLowerCase().includes(filters.q)) return false;
+        const set = stats.get(r.ip) || new Set();
+        if (filters.state === 'conflict' && set.size <= 1) return false;
+        if (filters.state === 'dupe') {
+          const sameIp = (Store.state.ipLogs || []).filter(x => x.ip === r.ip);
+          if (sameIp.length <= 1) return false;
+        }
+        if (filters.state === 'unique') {
+          const sameIp = (Store.state.ipLogs || []).filter(x => x.ip === r.ip);
+          if (sameIp.length > 1) return false;
+        }
+        return true;
+      });
+
+      const tb = document.getElementById('ipRows');
+      if (filtered.length === 0) {
+        tb.innerHTML = `<tr><td colspan="6" class="empty">IP-записей нет.</td></tr>`;
+        return;
+      }
+      tb.innerHTML = filtered.map(r => {
+        const set = stats.get(r.ip) || new Set();
+        const conflict = set.size > 1;
+        const sameCount = (Store.state.ipLogs || []).filter(x => x.ip === r.ip).length;
+        const status = conflict
+          ? '<span class="badge badge--red"><span class="dot"></span>Конфликт</span>'
+          : (sameCount > 1
+            ? '<span class="badge badge--orange">Повтор ×' + sameCount + '</span>'
+            : '<span class="badge badge--green">OK</span>');
+        const rowStyle = conflict ? ' style="background:rgba(239,68,68,0.06)"' : '';
+        const p = profileById(r.profileId);
+        return `<tr data-id="${r.id}"${rowStyle}>
+          <td><span style="font-family:ui-monospace,monospace;font-size:13px">${escapeHtml(r.ip || '')}</span></td>
+          <td>${p ? '<span class="badge badge--orange">' + escapeHtml(p.code) + '</span> <span style="color:var(--text-mute);font-size:12px">' + escapeHtml(p.city || '') + '</span>' : '<span style="color:var(--text-mute)">— нет —</span>'}</td>
+          <td>${escapeHtml(fmtDate(r.date))}</td>
+          <td>${escapeHtml(r.note || '')}</td>
+          <td>${status}</td>
+          <td class="actions">
+            <button class="btn--icon" data-act="del" data-id="${r.id}" title="Удалить">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+            </button>
+          </td>
+        </tr>`;
+      }).join('');
+
+      tb.querySelectorAll('[data-act="del"]').forEach(b => b.addEventListener('click', () => {
+        if (!confirmDelete('Удалить запись IP?')) return;
+        Store.deleteIp(b.dataset.id);
+        render();
+      }));
+    }
+
+    /* ---- Модалка ---- */
+    document.getElementById('btnAdd').addEventListener('click', () => {
+      fillProfileSelect(document.getElementById('mProfile'));
+      document.getElementById('mIp').value = '';
+      document.getElementById('mNote').value = '';
+      document.getElementById('mDate').value = todayISO();
+      document.getElementById('mWarn').style.display = 'none';
+      Modal.open('addModal');
+      setTimeout(() => document.getElementById('mIp').focus(), 50);
+    });
+    function checkIpWarn() {
+      const ip = document.getElementById('mIp').value.trim();
+      const w = document.getElementById('mWarn');
+      if (!ip) { w.style.display = 'none'; return; }
+      const matches = (Store.state.ipLogs || []).filter(x => x.ip === ip);
+      if (matches.length === 0) { w.style.display = 'none'; return; }
+      const profSet = new Set(matches.map(x => x.profileId));
+      const profs = [...profSet].map(id => {
+        const p = profileById(id); return p ? p.code : '—';
+      }).join(', ');
+      w.innerHTML = `⚠ Этот IP уже встречался на аккаунте: <strong>${escapeHtml(profs)}</strong> (${matches.length} запис.)`;
+      w.style.display = 'block';
+    }
+    document.getElementById('mIp').addEventListener('input', checkIpWarn);
+
+    document.getElementById('mSave').addEventListener('click', () => {
+      const ip = document.getElementById('mIp').value.trim();
+      const profileId = document.getElementById('mProfile').value;
+      const date = document.getElementById('mDate').value || todayISO();
+      const note = document.getElementById('mNote').value.trim();
+      if (!ip) { toast('Укажите IP', 'error'); return; }
+      if (!profileId) { toast('Выберите аккаунт', 'error'); return; }
+      Store.addIp({ ip, profileId, date, note });
+      Modal.close('addModal');
+      toast('IP добавлен');
+      render();
+    });
+
+    /* ---- Фильтры ---- */
+    fillProfileSelect(document.getElementById('fProfile'), true);
+    document.getElementById('fProfile').addEventListener('change', e => { filters.profileId = e.target.value; render(); });
+    document.getElementById('fState').addEventListener('change', e => { filters.state = e.target.value; render(); });
+    document.getElementById('fSearch').addEventListener('input', e => { filters.q = e.target.value.trim().toLowerCase(); render(); });
+    document.getElementById('btnReset').addEventListener('click', () => {
+      filters.profileId = filters.state = filters.q = '';
+      ['fProfile','fState','fSearch'].forEach(id => document.getElementById(id).value = '');
+      render();
+    });
+    window.onGlobalSearch = q => { filters.q = q; document.getElementById('fSearch').value = q; render(); };
+
+    window.addEventListener('cloudstate:updated', () => { fillProfileSelect(document.getElementById('fProfile'), true); render(); });
+    window.addEventListener('store:reloaded', render);
+    render();
+  });
+
+  function escapeHtml(s) {
+    return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+  </script>
+</body>
+</html>

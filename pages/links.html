@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Связи клиентов — Mentori CRM</title>
+  <link rel="stylesheet" href="../css/styles.css"/>
+</head>
+<body>
+  <div class="app">
+    <div data-component="sidebar" data-active="links"></div>
+
+    <div class="main">
+      <div data-component="header" data-title="Связи клиентов"></div>
+
+      <main class="content">
+        <div class="page-title">
+          <div>
+            <h1>Связи клиентов</h1>
+            <p>Все пары клиентов, которые уже встречались на одном аккаунте. Если двое связаны (даже через цепочку) — добавлять их в один новый аккаунт нельзя: возможен бан.</p>
+          </div>
+        </div>
+
+        <section class="cards" id="lkKpis"></section>
+
+        <div class="filters">
+          <select id="fMentor" class="select" style="min-width:240px">
+            <option value="">Все клиенты</option>
+          </select>
+          <input type="text" id="fSearch" class="input" placeholder="Поиск по имени или коду..." style="flex:1;min-width:200px"/>
+          <button class="btn btn--ghost" id="btnReset">Сбросить</button>
+        </div>
+
+        <div class="panel">
+          <div class="table-wrap">
+            <table class="table" id="lkTable">
+              <thead>
+                <tr>
+                  <th>Клиент A</th>
+                  <th>Клиент B</th>
+                  <th>Через аккаунт</th>
+                  <th class="num">Длина пути</th>
+                  <th>Тип</th>
+                </tr>
+              </thead>
+              <tbody id="lkRows"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div style="margin-top:24px">
+          <h2 style="font-size:16px;font-weight:600;margin-bottom:12px;color:var(--text-dim)">Проверка пары вручную</h2>
+          <div class="panel" style="padding:16px">
+            <div class="field-row">
+              <div class="field">
+                <label for="checkA">Клиент A</label>
+                <select id="checkA" class="select"></select>
+              </div>
+              <div class="field">
+                <label for="checkB">Клиент B</label>
+                <select id="checkB" class="select"></select>
+              </div>
+            </div>
+            <div id="checkResult" style="margin-top:14px;font-size:13px"></div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <script src="../data/seed.js"></script>
+  <script src="../js/app.js"></script>
+  <script src="../js/supabase-client.js"></script>
+  <script src="../js/cloud-sync.js"></script>
+  <script src="../js/accounts-sync.js"></script>
+  <script src="../js/reviews-sync.js"></script>
+  <script src="../components/sidebar.js"></script>
+  <script src="../components/header.js"></script>
+  <script src="../components/table.js"></script>
+
+  <script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const { Store } = window.App;
+    Store.load();
+
+    const filters = { mentorId: '', q: '' };
+
+    function mentorById(id) { return Store.state.mentors.find(m => m.id === id); }
+    function profileById(id) { return Store.state.profiles.find(p => p.id === id); }
+    function mentorLabel(m) { return m ? `${m.code || '—'} · ${m.name || ''}` : '—'; }
+
+    function fillMentorSelect(sel, includeAll = false) {
+      const all = (Store.state.mentors || []).slice().sort((a,b) => (a.code || '').localeCompare(b.code || '', 'ru', {numeric:true}));
+      const opts = all.map(m => `<option value="${m.id}">${escapeHtml(mentorLabel(m))}</option>`).join('');
+      sel.innerHTML = (includeAll ? '<option value="">Все клиенты</option>' : '') + opts;
+    }
+
+    function renderKpis(direct, indirect, components) {
+      document.getElementById('lkKpis').innerHTML = `
+        <div class="card"><div class="card__label">Прямые связи</div><div class="card__value">${direct}</div><div class="card__trend">пар на одном аккаунте</div></div>
+        <div class="card"><div class="card__label">Косвенные</div><div class="card__value">${indirect}</div><div class="card__trend">через цепочку</div></div>
+        <div class="card"><div class="card__label">Компонент связности</div><div class="card__value">${components}</div><div class="card__trend">отдельных групп</div></div>
+        <div class="card"><div class="card__label">Клиентов всего</div><div class="card__value">${(Store.state.mentors || []).length}</div></div>
+      `;
+    }
+
+    function render() {
+      const mentors = Store.state.mentors || [];
+      const direct = Store.listDirectLinks(); // [{aId,bId,profileId}]
+
+      // Все пары через DFS — сюда же сразу path
+      const indirectPairs = [];
+      const directKey = new Set(direct.map(l => keyPair(l.aId, l.bId)));
+      const seen = new Set();
+      for (let i = 0; i < mentors.length; i++) {
+        for (let j = i + 1; j < mentors.length; j++) {
+          const a = mentors[i].id, b = mentors[j].id;
+          const k = keyPair(a, b);
+          if (directKey.has(k)) continue;
+          const path = Store.findLinkPath(a, b);
+          if (path && path.length > 1) indirectPairs.push({ aId: a, bId: b, path });
+        }
+      }
+
+      // Кол-во компонент
+      const visited = new Set();
+      const g = Store.buildMentorGraph();
+      let components = 0;
+      mentors.forEach(m => {
+        if (visited.has(m.id)) return;
+        if (!g.has(m.id) || g.get(m.id).size === 0) { components++; visited.add(m.id); return; }
+        components++;
+        const stack = [m.id];
+        while (stack.length) {
+          const n = stack.pop();
+          if (visited.has(n)) continue;
+          visited.add(n);
+          for (const nb of (g.get(n) || [])) if (!visited.has(nb)) stack.push(nb);
+        }
+      });
+
+      renderKpis(direct.length, indirectPairs.length, components);
+
+      // Объединить и применить фильтры
+      const all = [];
+      direct.forEach(l => {
+        all.push({
+          aId: l.aId, bId: l.bId,
+          via: 'аккаунт ' + (profileById(l.profileId) ? profileById(l.profileId).code : '—'),
+          length: 1, type: 'direct'
+        });
+      });
+      indirectPairs.forEach(p => {
+        const path = p.path.map(id => {
+          const m = mentorById(id); return m ? m.code : '?';
+        }).join(' → ');
+        all.push({
+          aId: p.aId, bId: p.bId,
+          via: path,
+          length: p.path.length - 1,
+          type: 'indirect'
+        });
+      });
+
+      const filtered = all.filter(r => {
+        if (filters.mentorId && r.aId !== filters.mentorId && r.bId !== filters.mentorId) return false;
+        if (filters.q) {
+          const a = mentorById(r.aId), b = mentorById(r.bId);
+          const s = `${a ? a.code+' '+a.name : ''} ${b ? b.code+' '+b.name : ''}`.toLowerCase();
+          if (!s.includes(filters.q)) return false;
+        }
+        return true;
+      }).sort((x,y) => x.length - y.length || x.aId.localeCompare(y.aId));
+
+      const tb = document.getElementById('lkRows');
+      if (filtered.length === 0) {
+        tb.innerHTML = `<tr><td colspan="5" class="empty">Связей нет.</td></tr>`;
+        return;
+      }
+      tb.innerHTML = filtered.map(r => {
+        const a = mentorById(r.aId), b = mentorById(r.bId);
+        const badge = r.type === 'direct'
+          ? '<span class="badge badge--red">Прямая</span>'
+          : '<span class="badge badge--orange">Косвенная</span>';
+        return `<tr>
+          <td><strong>${escapeHtml(mentorLabel(a))}</strong></td>
+          <td><strong>${escapeHtml(mentorLabel(b))}</strong></td>
+          <td style="font-size:12px;color:var(--text-dim)">${escapeHtml(r.via)}</td>
+          <td class="num">${r.length}</td>
+          <td>${badge}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    function keyPair(a, b) { return a < b ? a + '|' + b : b + '|' + a; }
+
+    /* ---- Ручная проверка пары ---- */
+    function renderCheck() {
+      const a = document.getElementById('checkA').value;
+      const b = document.getElementById('checkB').value;
+      const out = document.getElementById('checkResult');
+      if (!a || !b || a === b) { out.innerHTML = '<span style="color:var(--text-mute)">Выберите двух разных клиентов</span>'; return; }
+      const path = Store.findLinkPath(a, b);
+      if (!path) {
+        out.innerHTML = `<div style="padding:10px 12px;border-radius:8px;background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.3);color:var(--green)">✓ Связи нет — можно безопасно поставить в один аккаунт.</div>`;
+      } else {
+        const labels = path.map(id => {
+          const m = mentorById(id); return m ? (m.code + ' · ' + m.name) : '?';
+        }).join(' → ');
+        out.innerHTML = `<div style="padding:10px 12px;border-radius:8px;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);color:var(--red)">⚠ Связь найдена через ${path.length - 1} шаг(ов): <strong style="color:var(--text)">${escapeHtml(labels)}</strong></div>`;
+      }
+    }
+
+    /* ---- init ---- */
+    fillMentorSelect(document.getElementById('fMentor'), true);
+    fillMentorSelect(document.getElementById('checkA'));
+    fillMentorSelect(document.getElementById('checkB'));
+
+    document.getElementById('fMentor').addEventListener('change', e => { filters.mentorId = e.target.value; render(); });
+    document.getElementById('fSearch').addEventListener('input', e => { filters.q = e.target.value.trim().toLowerCase(); render(); });
+    document.getElementById('btnReset').addEventListener('click', () => {
+      filters.mentorId = ''; filters.q = '';
+      document.getElementById('fMentor').value = '';
+      document.getElementById('fSearch').value = '';
+      render();
+    });
+    window.onGlobalSearch = q => { filters.q = q; document.getElementById('fSearch').value = q; render(); };
+
+    document.getElementById('checkA').addEventListener('change', renderCheck);
+    document.getElementById('checkB').addEventListener('change', renderCheck);
+
+    window.addEventListener('cloudstate:updated', () => { fillMentorSelect(document.getElementById('fMentor'), true); fillMentorSelect(document.getElementById('checkA')); fillMentorSelect(document.getElementById('checkB')); render(); renderCheck(); });
+    window.addEventListener('store:reloaded', () => { render(); renderCheck(); });
+
+    render();
+    renderCheck();
+  });
+
+  function escapeHtml(s) {
+    return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+  </script>
+</body>
+</html>
