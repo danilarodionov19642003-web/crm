@@ -145,6 +145,7 @@
       this.state.ipLogs ??= [];
       this.state.phones ??= [];
       this.state.accountRegs ??= [];   // регистрации аккаунтов: TG/Яндекс/Авито/2ГИС/почта Профи
+      this.state.archivedProfiles ??= []; // удалённые аккаунты: хранятся чтобы не терять историю IP/связей/номеров
       this._migrateNormalizePhones();
       return this.state;
     },
@@ -559,11 +560,43 @@
       this.state.profiles[i] = Object.assign({}, this.state.profiles[i], patch);
       this.save();
     },
+    /**
+     * Удаление аккаунта НЕ безвозвратно: мы архивируем снимок профиля, чтобы
+     * сохранить память о:
+     *   1. связях клиентов (кто уже был вместе на этом аккаунте) — граф связей
+     *      считается из profiles ∪ archivedProfiles, и повторная связка
+     *      по-прежнему ловится предупреждением о риске бана.
+     *   2. IP-адресах — ipLogs НЕ удаляются, чтобы нельзя было случайно
+     *      переиспользовать IP, который уже засвечен на старом аккаунте.
+     *   3. номерах — phones с profileId этого аккаунта остаются как были.
+     * Чистим только profileStatuses (они уже неактуальны).
+     */
     deleteProfile(id) {
+      const profile = this.state.profiles.find(x => x.id === id);
+      if (!profile) return;
+      this.state.archivedProfiles = this.state.archivedProfiles || [];
+      // Защита от повторной архивации одного и того же id
+      if (!this.state.archivedProfiles.some(a => a.id === id)) {
+        this.state.archivedProfiles.push(Object.assign({}, profile, {
+          deletedAt: todayISO(),
+          archived: true
+        }));
+      }
       this.state.profiles = this.state.profiles.filter(x => x.id !== id);
       this.state.profileStatuses = (this.state.profileStatuses || []).filter(s => s.profileId !== id);
-      this.state.ipLogs = (this.state.ipLogs || []).filter(ip => ip.profileId !== id);
+      // ipLogs и phones НЕ трогаем — ссылка profileId продолжает указывать
+      // на архивный профиль, UI резолвит через getProfileOrArchived()
       this.save();
+    },
+
+    /** Вернуть профиль или архивный профиль по id. { profile, archived } */
+    getProfileOrArchived(id) {
+      if (!id) return null;
+      const live = (this.state.profiles || []).find(p => p.id === id);
+      if (live) return { profile: live, archived: false };
+      const dead = (this.state.archivedProfiles || []).find(p => p.id === id);
+      if (dead) return { profile: dead, archived: true };
+      return null;
     },
 
     /* ====================================================================
@@ -574,14 +607,20 @@
        не появится ли путь в графе после добавления нового клиента.
        ==================================================================== */
 
-    /** Возвращает Map<mentorId, Set<mentorId>> — рёбра графа */
+    /** Возвращает Map<mentorId, Set<mentorId>> — рёбра графа.
+     *  Учитывает и живые, и архивные (удалённые) аккаунты, чтобы не дать
+     *  снова собрать двух клиентов, которые уже были вместе в бане. */
     buildMentorGraph(extraEdges = []) {
       const g = new Map();
       const link = (a, b) => {
         if (!g.has(a)) g.set(a, new Set());
         g.get(a).add(b);
       };
-      (this.state.profiles || []).forEach(p => {
+      const sources = [
+        ...(this.state.profiles || []),
+        ...(this.state.archivedProfiles || [])
+      ];
+      sources.forEach(p => {
         const ms = (p.mentorIds || []).filter(Boolean);
         for (let i = 0; i < ms.length; i++) {
           for (let j = i + 1; j < ms.length; j++) {
@@ -592,6 +631,22 @@
       });
       extraEdges.forEach(([a, b]) => { link(a, b); link(b, a); });
       return g;
+    },
+
+    /** Найти аккаунт (живой или архивный), на котором клиенты A и B
+     *  уже были вместе. Возвращает { profile, archived } либо null. */
+    findSharedProfile(mentorAId, mentorBId) {
+      const pool = [
+        ...(this.state.profiles || []).map(p => ({ p, archived: false })),
+        ...(this.state.archivedProfiles || []).map(p => ({ p, archived: true }))
+      ];
+      for (const { p, archived } of pool) {
+        const ms = p.mentorIds || [];
+        if (ms.includes(mentorAId) && ms.includes(mentorBId)) {
+          return { profile: p, archived };
+        }
+      }
+      return null;
     },
 
     /** Проверка: есть ли в графе путь любой длины между двумя клиентами */
@@ -623,14 +678,26 @@
       const current = (profile.mentorIds || []).filter(Boolean);
       if (current.includes(mentorId)) return { ok: false, reason: 'Уже привязан к этому аккаунту' };
 
-      // Граф БЕЗ нового ребра — ищем существующие пути между новым и теми, кто уже в аккаунте
+      // Граф БЕЗ нового ребра — ищем существующие пути между новым и теми, кто уже в аккаунте.
+      // Граф строится по profiles ∪ archivedProfiles, значит учитывается память
+      // об уже удалённых связках (иначе клиенты, которые сидели на одном забаненном
+      // аккаунте, могут незаметно снова оказаться вместе).
       const g = this.buildMentorGraph();
       for (const other of current) {
         if (this.hasPath(g, mentorId, other)) {
+          const shared = this.findSharedProfile(mentorId, other);
+          let reason = 'Риск пересечения клиентов. Возможен бан аккаунтов.';
+          if (shared && shared.archived) {
+            reason = `Клиенты уже были вместе на удалённом аккаунте ${shared.profile.code || ''} — риск бана.`;
+          } else if (shared) {
+            reason = `Клиенты уже связаны через аккаунт ${shared.profile.code || ''} — риск бана.`;
+          }
           return {
             ok: false,
-            reason: 'Риск пересечения клиентов. Возможен бан аккаунтов.',
-            conflictMentorId: other
+            reason,
+            conflictMentorId: other,
+            conflictProfileId: shared ? shared.profile.id : null,
+            conflictArchived: !!(shared && shared.archived)
           };
         }
       }
@@ -664,14 +731,19 @@
       return path;
     },
 
-    /** Все прямые связи (pairs) с указанием через какие profile они */
+    /** Все прямые связи (pairs) с указанием через какие profile они.
+     *  Включает архивные аккаунты с флагом archived:true. */
     listDirectLinks() {
-      const links = []; // { aId, bId, profileId }
-      (this.state.profiles || []).forEach(p => {
+      const links = []; // { aId, bId, profileId, archived }
+      const pool = [
+        ...(this.state.profiles || []).map(p => ({ p, archived: false })),
+        ...(this.state.archivedProfiles || []).map(p => ({ p, archived: true }))
+      ];
+      pool.forEach(({ p, archived }) => {
         const ms = (p.mentorIds || []).filter(Boolean);
         for (let i = 0; i < ms.length; i++) {
           for (let j = i + 1; j < ms.length; j++) {
-            links.push({ aId: ms[i], bId: ms[j], profileId: p.id });
+            links.push({ aId: ms[i], bId: ms[j], profileId: p.id, archived });
           }
         }
       });

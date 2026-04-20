@@ -226,10 +226,20 @@
     const filters = { state: '', profileId: '', section: '', q: '' };
     let editingId = null;
 
-    function profileById(id) { return Store.state.profiles.find(p => p.id === id); }
-    function profileLabel(p) { return p ? `${p.code || '—'} (${p.city || '—'})` : '—'; }
+    function profileById(id) {
+      const live = Store.state.profiles.find(p => p.id === id);
+      if (live) return live;
+      const dead = (Store.state.archivedProfiles || []).find(p => p.id === id);
+      return dead ? Object.assign({}, dead, { archived: true }) : null;
+    }
+    function profileLabel(p) {
+      if (!p) return '—';
+      const base = `${p.code || '—'} (${p.city || '—'})`;
+      return p.archived ? `🗑 ${base} — удалён` : base;
+    }
 
     function fillProfileSelect(sel, includeAll = false, firstLabel = '— без привязки —') {
+      // только живые — для ручной привязки номеров удалённые не нужны
       const profs = (Store.state.profiles || []).slice()
         .sort((a,b) => (a.code || '').localeCompare(b.code || '', 'ru', {numeric:true}));
       sel.innerHTML = (includeAll ? '<option value="">Все аккаунты</option>' : `<option value="">${firstLabel}</option>`)

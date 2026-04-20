@@ -72,6 +72,12 @@
     .ip-mono { font-family: ui-monospace, monospace; font-size: 13px; }
     .ip-conflict-with { font-size: 11px; color: var(--text-mute); margin-top: 2px; }
     .ip-conflict-with strong { color: var(--red); font-weight: 600; }
+
+    /* Архивные аккаунты: приглушены, предупреждают что это удалённый акк */
+    .acc-card.archived { opacity: .78; background: repeating-linear-gradient(
+      135deg, var(--surface) 0 12px, rgba(255,255,255,0.015) 12px 14px); }
+    .acc-card.archived .acc-code { background: rgba(107,114,128,0.18); color: #9ca3af; }
+    .acc-pill--arch { background: rgba(107,114,128,0.18); color: #9ca3af; }
   </style>
 </head>
 <body>
@@ -172,8 +178,18 @@
     const openAccs = new Set(); // запоминаем, какие аккаунты были раскрыты
     let forceExpandAll = false;
 
-    function profileById(id) { return Store.state.profiles.find(p => p.id === id); }
-    function profileLabel(p) { return p ? `${p.code || '—'} (${p.city || '—'})` : '—'; }
+    function profileById(id) {
+      // ищем и в живых, и в архивных — архивные помечены флагом archived
+      const live = Store.state.profiles.find(p => p.id === id);
+      if (live) return live;
+      const dead = (Store.state.archivedProfiles || []).find(p => p.id === id);
+      return dead ? Object.assign({}, dead, { archived: true }) : null;
+    }
+    function profileLabel(p) {
+      if (!p) return '—';
+      const base = `${p.code || '—'} (${p.city || '—'})`;
+      return p.archived ? `🗑 ${base} — удалён` : base;
+    }
 
     function fillProfileSelect(sel, includeAll = false, firstLabel = '— выбрать —') {
       const profs = (Store.state.profiles || []).slice()
@@ -226,8 +242,11 @@
         logsByProfile.get(x.profileId).push(x);
       });
 
-      const profs = (Store.state.profiles || []).slice()
-        .sort((a,b) => (a.code || '').localeCompare(b.code || '', 'ru', {numeric:true}));
+      // Живые + архивные (удалённые) аккаунты — чтобы IP удалённых не терялись
+      const profs = [
+        ...(Store.state.profiles || []).map(p => Object.assign({}, p, { archived: false })),
+        ...(Store.state.archivedProfiles || []).map(p => Object.assign({}, p, { archived: true }))
+      ].sort((a,b) => (a.code || '').localeCompare(b.code || '', 'ru', {numeric:true}));
 
       const filtered = profs.filter(p => {
         if (filters.city && p.city !== filters.city) return false;
@@ -262,8 +281,9 @@
         const pillWarn = conflictsHere > 0
           ? `<span class="acc-pill acc-pill--warn">⚠ ${conflictsHere} конфликт${ru1(conflictsHere)}</span>`
           : (ips.length > 0 ? `<span class="acc-pill acc-pill--ok">OK</span>` : '');
+        const pillArch = p.archived ? `<span class="acc-pill acc-pill--arch" title="Аккаунт удалён, история IP сохранена">🗑 архив</span>` : '';
 
-        const cardCls = `acc-card${conflictsHere>0?' has-conflict':''}${ips.length===0?' empty':''}`;
+        const cardCls = `acc-card${conflictsHere>0?' has-conflict':''}${ips.length===0?' empty':''}${p.archived?' archived':''}`;
 
         const body = ips.length === 0
           ? `<div class="acc-empty">IP на этом аккаунте нет. Нажми «Новый IP» сверху.</div>`
@@ -306,9 +326,10 @@
               ${p.code ? `<div class="acc-sub">${escapeHtml(buildOwnerSubtitle(p))}</div>` : ''}
             </div>
             <div class="acc-stats">
+              ${pillArch}
               ${pillCnt}
               ${pillWarn}
-              <button class="btn btn--ghost btn--sm" data-act="quickadd" data-pid="${p.id}" title="Добавить IP сюда">+ IP</button>
+              ${p.archived ? '' : `<button class="btn btn--ghost btn--sm" data-act="quickadd" data-pid="${p.id}" title="Добавить IP сюда">+ IP</button>`}
             </div>
           </summary>
           <div class="acc-body">${body}</div>
