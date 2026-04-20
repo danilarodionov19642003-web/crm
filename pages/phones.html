@@ -11,12 +11,25 @@
     #phRows tr:hover td { background: rgba(255,255,255,0.03); }
     #phRows tr td.actions { cursor: default; }
 
-    /* Карточка номера */
-    .ph-card .modal { max-width: 760px; }
+    /* Карточка номера — компактная, скроллится только тело */
+    .ph-card .modal {
+      max-width: 640px;
+      max-height: calc(100vh - 60px);
+      display: flex;
+      flex-direction: column;
+    }
+    .ph-card .modal__header,
+    .ph-card .modal__footer { flex-shrink: 0; }
+    .ph-card .modal__body {
+      overflow-y: auto;
+      flex: 1 1 auto;
+      padding: 16px 18px;
+      display: block;
+    }
     .ph-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 14px 16px;
+      gap: 10px 14px;
     }
     .ph-grid .field { margin: 0; }
     .ph-grid .field--full { grid-column: 1 / -1; }
@@ -40,7 +53,7 @@
 
     .ph-card-head {
       display: flex; align-items: center; gap: 12px;
-      padding: 12px 14px; margin-bottom: 14px;
+      padding: 10px 12px; margin-bottom: 12px;
       background: rgba(99,102,241,0.08); border: 1px solid rgba(99,102,241,0.18);
       border-radius: 10px;
     }
