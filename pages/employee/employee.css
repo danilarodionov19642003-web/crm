@@ -205,6 +205,31 @@
   padding: 8px 10px;
   font-size: 13px;
 }
+/* Поля и кнопка в форме входа — единая ширина внутри карточки.
+   Базовый .btn — inline-flex без выравнивания: «width:100%» в инлайне
+   корректно занимало контент-ширину, но визуально кнопка казалась шире
+   полей из-за разной плотности фона. Здесь явно фиксируем размеры,
+   делаем display:flex с justify-content:center и одинаковую плотность. */
+.emp-login .field { width: 100%; margin-top: 12px; }
+.emp-login .field:first-of-type { margin-top: 0; }
+.emp-login .input {
+  width: 100%;
+  display: block;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  font-size: 14px;
+}
+.emp-login .btn {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  margin-top: 16px;
+  font-size: 14px;
+  white-space: nowrap;
+}
 
 /* ---------- desktop tweaks ---------- */
 @media (min-width: 720px) {
