@@ -1,64 +1,72 @@
 /* ==========================================================================
-   Reviews Sync — авто-подсчёт отзывов сотрудников.
+   Reviews Sync — авто-подсчёт одобренных отзывов для зарплаты сотрудников.
    --------------------------------------------------------------------------
-   Тянет из Supabase tasks (status='проверено'), считает количество по
-   employee_email и обновляет state.employees[*].reviewsDone.
-   После каждого изменения шлёт событие 'reviews:updated' — страницы
-   employees.html / dashboard.html слушают и перерисовываются.
+   Считает Store.state.reviews, где moderation==='approved' и authorEmail
+   совпадает с emp.email. Обновляет emp.reviewsDone и шлёт событие
+   'reviews:updated' — страницы employees.html / dashboard.html слушают и
+   перерисовывают KPI.
 
    Подключается ПОСЛЕ supabase-client.js и app.js.
    ========================================================================== */
 (function () {
   'use strict';
 
-  if (!window.Supabase || !window.App) {
-    console.warn('[reviews-sync] Supabase or App not loaded');
+  if (!window.App) {
+    console.warn('[reviews-sync] App not loaded');
     return;
   }
-
-  const { Tbl } = window.Supabase;
   const { Store } = window.App;
 
-  async function pull() {
-    try {
-      // тянем только нужные поля только проверенных тасков
-      const rows = await Tbl.select(
-        'tasks',
-        'select=employee_email&status=eq.%D0%BF%D1%80%D0%BE%D0%B2%D0%B5%D1%80%D0%B5%D0%BD%D0%BE'
-      );
-      // counts by email
-      const counts = new Map();
-      rows.forEach(r => {
-        const e = (r.employee_email || '').toLowerCase();
-        if (!e) return;
-        counts.set(e, (counts.get(e) || 0) + 1);
-      });
+  const STORAGE_KEY = 'mentori-crm-v2';
 
-      let changed = false;
-      (Store.state.employees || []).forEach(emp => {
-        const email = (emp.email || '').toLowerCase();
-        if (!email) return;            // у сотрудника нет привязки — не трогаем
-        const cnt = counts.get(email) || 0;
-        if (Number(emp.reviewsDone || 0) !== cnt) {
-          emp.reviewsDone = cnt;
-          changed = true;
-        }
-      });
+  /** Пересчитать reviewsDone у каждого сотрудника по локальному state.reviews. */
+  function recompute() {
+    if (!Store || !Store.state) return;
+    const reviews = Store.state.reviews || [];
+    // counts by author email (lowercase), только одобренные
+    const counts = new Map();
+    reviews.forEach(r => {
+      if (r.moderation !== 'approved') return;
+      const e = String(r.authorEmail || '').toLowerCase().trim();
+      if (!e) return;
+      counts.set(e, (counts.get(e) || 0) + 1);
+    });
 
-      if (changed) {
-        // тихо записываем без эха в облако
-        localStorage.setItem('mentori-crm-v2', JSON.stringify(Store.state));
-        window.dispatchEvent(new CustomEvent('reviews:updated'));
+    let changed = false;
+    (Store.state.employees || []).forEach(emp => {
+      const email = String(emp.email || '').toLowerCase().trim();
+      if (!email) return;
+      const cnt = counts.get(email) || 0;
+      if (Number(emp.reviewsDone || 0) !== cnt) {
+        emp.reviewsDone = cnt;
+        changed = true;
       }
-    } catch (e) {
-      console.warn('[reviews-sync] pull error', e);
+    });
+
+    if (changed) {
+      // тихо пишем в localStorage без push в облако (Store.save() уже отрабатывал
+      // при approve/reject — нам остаётся только синхронизировать кэш сотрудников).
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(Store.state)); } catch (_) {}
+      window.dispatchEvent(new CustomEvent('reviews:updated'));
     }
   }
 
+  // Первый прогон — после загрузки Store
   document.addEventListener('DOMContentLoaded', () => {
-    setTimeout(pull, 600);                 // первый pull (после accounts-sync)
-    setInterval(pull, 30_000);             // каждые 30 сек
+    setTimeout(recompute, 200);
   });
 
-  window.ReviewsSync = { pull };
+  // Перерасчёт после прихода свежего state из облака
+  window.addEventListener('cloudstate:updated', () => {
+    setTimeout(recompute, 50);
+  });
+  window.addEventListener('store:reloaded', () => {
+    setTimeout(recompute, 50);
+  });
+
+  // Подстраховка — раз в 30 секунд (на случай если кто-то поправил state.reviews
+  // напрямую без события).
+  setInterval(recompute, 30_000);
+
+  window.ReviewsSync = { pull: recompute, recompute };
 })();

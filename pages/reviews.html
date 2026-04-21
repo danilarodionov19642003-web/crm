@@ -61,6 +61,7 @@
   <script src="../js/supabase-client.js"></script>
   <script src="../js/auth-gate.js"></script>
   <script src="../js/cloud-sync.js"></script>
+  <script src="../js/reviews-sync.js"></script>
   <script src="../components/sidebar.js"></script>
   <script src="../components/header.js"></script>
 
@@ -246,6 +247,9 @@
         Store.deleteReview(id);
         toast('Удалён');
       }
+      // Пересчитать зарплату/счётчики у сотрудника прямо сейчас
+      // (иначе придётся ждать тика setInterval / обновления страницы).
+      if (window.ReviewsSync && window.ReviewsSync.recompute) window.ReviewsSync.recompute();
       render();
     }
 

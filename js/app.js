@@ -156,7 +156,40 @@
       if (addedMentors > 0) {
         try { localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state)); } catch (_) {}
       }
+      // Подчистим «осиротевших» менторов: их клиент удалён, и они нигде
+      // не используются (ни в profiles, ни в profileStatuses, ни в reviews).
+      // Иначе a21 и подобные тестовые записи продолжали бы висеть в дропдаунах.
+      const removedOrphans = this._cleanupOrphanMentors();
+      this._lastOrphansRemoved = removedOrphans;
+      if (removedOrphans > 0) {
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state)); } catch (_) {}
+      }
       return this.state;
+    },
+
+    /** Удаляет менторов, у которых нет клиента с таким же code и которые
+     *  нигде не используются. Возвращает количество удалённых. Идемпотентно. */
+    _cleanupOrphanMentors() {
+      const clients = this.state.clients || [];
+      const clientCodes = new Set(
+        clients.map(c => String(c.code || '').toLowerCase().trim()).filter(Boolean)
+      );
+      const usedInProfiles = new Set();
+      [...(this.state.profiles || []), ...(this.state.archivedProfiles || [])]
+        .forEach(p => (p.mentorIds || []).forEach(id => usedInProfiles.add(id)));
+      const usedInStatuses = new Set((this.state.profileStatuses || []).map(s => s.mentorId));
+      const usedInReviews  = new Set((this.state.reviews || []).map(r => r.mentorId));
+
+      const before = (this.state.mentors || []).length;
+      this.state.mentors = (this.state.mentors || []).filter(m => {
+        const code = String(m.code || '').toLowerCase().trim();
+        if (clientCodes.has(code)) return true;          // клиент есть — оставляем
+        if (usedInProfiles.has(m.id)) return true;       // привязан к аккаунту
+        if (usedInStatuses.has(m.id)) return true;       // есть история статуса
+        if (usedInReviews.has(m.id))  return true;       // есть отзывы
+        return false;                                     // полностью осиротел — выпиливаем
+      });
+      return before - this.state.mentors.length;
     },
 
     /** Однократная очистка legacy 12-значных номеров (артефакт float-парсинга xlsx).
@@ -443,7 +476,27 @@
       this.save();
     },
     deleteClient(id) {
+      const client = (this.state.clients || []).find(x => x.id === id);
       this.state.clients = this.state.clients.filter(x => x.id !== id);
+      // Каскад: удалить ассоциированного ментора (по code) — иначе клиент
+      // продолжит появляться в выпадающих списках на страницах «Аккаунты» и
+      // «Связи». deleteMentor сам подчистит profileStatuses и mentorIds.
+      if (client && client.code) {
+        const code = String(client.code).toLowerCase().trim();
+        const mentor = (this.state.mentors || []).find(
+          m => String(m.code || '').toLowerCase().trim() === code
+        );
+        if (mentor) {
+          // удалим связанные отзывы
+          this.state.reviews = (this.state.reviews || []).filter(r => r.mentorId !== mentor.id);
+          // удалим ментора (без save — мы сделаем save один раз ниже)
+          this.state.profiles.forEach(p => {
+            if (Array.isArray(p.mentorIds)) p.mentorIds = p.mentorIds.filter(x => x !== mentor.id);
+          });
+          this.state.profileStatuses = (this.state.profileStatuses || []).filter(s => s.mentorId !== mentor.id);
+          this.state.mentors = this.state.mentors.filter(x => x.id !== mentor.id);
+        }
+      }
       this.save();
     },
 
@@ -584,11 +637,12 @@
       this.save();
     },
     deleteMentor(id) {
-      // также удалить из profiles.mentorIds и из profileStatuses
+      // также удалить из profiles.mentorIds, из profileStatuses и из reviews
       this.state.profiles.forEach(p => {
         if (Array.isArray(p.mentorIds)) p.mentorIds = p.mentorIds.filter(x => x !== id);
       });
       this.state.profileStatuses = (this.state.profileStatuses || []).filter(s => s.mentorId !== id);
+      this.state.reviews = (this.state.reviews || []).filter(r => r.mentorId !== id);
       this.state.mentors = this.state.mentors.filter(x => x.id !== id);
       this.save();
     },
@@ -908,6 +962,19 @@
     deleteReview(id) {
       this.state.reviews = (this.state.reviews || []).filter(x => x.id !== id);
       this.save();
+    },
+    /** Каскадное удаление отзывов по паре (profileId, mentorId).
+     *  Используется при отвязке клиента от аккаунта на странице «Аккаунты»,
+     *  чтобы тестовые/ошибочные отзывы не висели в модерации и не считались
+     *  у клиента в «Сделано». Возвращает кол-во удалённых отзывов. */
+    deleteReviewsForPair(profileId, mentorId) {
+      const before = (this.state.reviews || []).length;
+      this.state.reviews = (this.state.reviews || []).filter(
+        r => !(r.profileId === profileId && r.mentorId === mentorId)
+      );
+      const removed = before - this.state.reviews.length;
+      if (removed > 0) this.save();
+      return removed;
     },
 
     /* ---------- IP logs ---------- */
@@ -1251,9 +1318,17 @@
   });
 
   /* При обновлении состояния из облака — перечитываем localStorage и шлём
-     событие 'store:reloaded', чтобы каждая страница перерендерилась. */
+     событие 'store:reloaded', чтобы каждая страница перерендерилась.
+     Если при загрузке были подчищены осиротевшие менторы — пушим обратно,
+     иначе очистка останется только локальной и на других устройствах a21
+     продолжит висеть. */
   window.addEventListener('cloudstate:updated', () => {
     Store.load();
+    if (Store._lastOrphansRemoved > 0) {
+      // Cleanup что-то выпилил из облачной копии — синхронизируем обратно,
+      // иначе на других устройствах a21 (или подобный сирота) продолжит висеть.
+      try { Store.save(); } catch (_) {}
+    }
     window.dispatchEvent(new CustomEvent('store:reloaded'));
   });
 })();

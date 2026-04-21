@@ -201,8 +201,10 @@
       const reviews = Store.state.reviews || [];
       return reviews.filter(r => ids.has(r.mentorId) && r.moderation === 'approved').length;
     }
-    // Обновляем клиенты при синхронизации облака
+    // Обновляем клиенты при синхронизации облака и при изменении модерации отзывов
     window.addEventListener('cloudstate:updated', () => { Store.load(); render(); });
+    window.addEventListener('store:reloaded', render);
+    window.addEventListener('reviews:updated', render);
 
     /* ---- Заполнение селектов в модалке ---- */
     document.getElementById('mPlatform').innerHTML =

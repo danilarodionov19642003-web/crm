@@ -712,13 +712,25 @@
     });
     document.getElementById('chgRemove').addEventListener('click', () => {
       if (!chgPid || !chgMid) return;
-      if (!confirmDelete('Отвязать клиента от аккаунта (статус удалится)?')) return;
+      // Если у пары уже есть отзыв — предупреждаем, что он тоже исчезнет
+      // (иначе он остался бы в модерации и числился в «Сделано» у клиента).
+      const linkedReview = (Store.state.reviews || []).find(
+        r => r.profileId === chgPid && r.mentorId === chgMid
+      );
+      const msg = linkedReview
+        ? 'Отвязать клиента от аккаунта? Связанный отзыв тоже будет удалён (включая запись на модерации и зачёт в «Сделано»).'
+        : 'Отвязать клиента от аккаунта (статус удалится)?';
+      if (!confirmDelete(msg)) return;
       const profile = profileById(chgPid);
       profile.mentorIds = (profile.mentorIds || []).filter(id => id !== chgMid);
       Store.updateProfile(profile.id, { mentorIds: profile.mentorIds });
       // удалим запись статуса
       const st = getStatusFor(chgPid, chgMid);
       if (st) Store.deleteProfileStatus(st.id);
+      // каскад: удалим связанные отзывы (если были)
+      Store.deleteReviewsForPair(chgPid, chgMid);
+      // сразу пересчитаем зарплаты (если на момент удаления отзыв был approved)
+      if (window.ReviewsSync && window.ReviewsSync.recompute) window.ReviewsSync.recompute();
       Modal.close('chgStatusModal');
       toast('Клиент отвязан');
       renderAll();
