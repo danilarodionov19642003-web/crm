@@ -19,14 +19,26 @@
 
   const STORAGE_KEY = 'mentori-crm-v2';
 
-  /** Пересчитать reviewsDone у каждого сотрудника по локальному state.reviews. */
+  const DONE_STATUS = '🎯 Готов';
+
+  /** Пересчитать reviewsDone у каждого сотрудника по локальному state.reviews.
+   *  Считаем только одобренные отзывы, у пары которых (mentorId, profileId)
+   *  всё ещё стоит статус «Готов» — иначе если Настя/владелец сняли статус
+   *  готовости, зарплата не должна продолжать капать. */
   function recompute() {
     if (!Store || !Store.state) return;
     const reviews = Store.state.reviews || [];
-    // counts by author email (lowercase), только одобренные
+    const statuses = Store.state.profileStatuses || [];
+    // быстрый поиск: есть ли «Готов» для пары
+    const doneSet = new Set();
+    statuses.forEach(s => {
+      if (s.status === DONE_STATUS) doneSet.add(s.mentorId + '::' + s.profileId);
+    });
+    // counts by author email (lowercase), только одобренные + статус «Готов»
     const counts = new Map();
     reviews.forEach(r => {
       if (r.moderation !== 'approved') return;
+      if (!doneSet.has(r.mentorId + '::' + r.profileId)) return;
       const e = String(r.authorEmail || '').toLowerCase().trim();
       if (!e) return;
       counts.set(e, (counts.get(e) || 0) + 1);

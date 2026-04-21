@@ -147,6 +147,22 @@
       this.state.accountRegs ??= [];   // регистрации аккаунтов: TG/Яндекс/Авито/2ГИС/почта Профи
       this.state.archivedProfiles ??= []; // удалённые аккаунты: хранятся чтобы не терять историю IP/связей/номеров
       this.state.reviews ??= [];        // отзывы на модерации: см. Store.addReview / approveReview / rejectReview
+      this.state.proxyLinks ??= [];     // ссылки для смены IP (LTE-Center и др.)
+      this.state.dailyTasks ??= [];     // ежедневные задачи Насте: с какого аккаунта работать с каким клиентом
+      // Сид: первая пара ссылок на смену IP, чтобы Настя могла начать сразу
+      // (владелец потом редактирует/добавляет в модалке «Управлять прокси»).
+      if (!this.state._proxySeeded) {
+        const seedLinks = [
+          { url: 'https://manager.lte-center.ru/api/proxies/20718/reconnect-link/bc887de42323ab9ded0a6be32ea96348', label: 'Прокси 1' },
+          { url: 'https://manager.lte-center.ru/api/proxies/20600/reconnect-link/1f2f07d0315bbcaec634b73ba8b5ecd5', label: 'Прокси 2' }
+        ];
+        seedLinks.forEach(s => {
+          if (!(this.state.proxyLinks || []).some(p => p.url === s.url)) {
+            this.state.proxyLinks.push({ id: uid(), url: s.url, label: s.label, createdAt: todayISO() });
+          }
+        });
+        this.state._proxySeeded = true;
+      }
       this._migrateNormalizePhones();
       // Бэкфилл менторов из клиентов: если клиент был создан на странице
       // «Клиенты» и не имеет пары в state.mentors — создаём её здесь, чтобы
@@ -515,7 +531,11 @@
         m => String(m.code || '').toLowerCase().trim() === code
       );
       if (existing) {
-        if (!existing.name && client.name) existing.name = client.name;
+        // Всегда синхронизируем имя клиента в ментора, чтобы переименование
+        // в разделе «Клиенты» сразу отражалось в выпадающих списках на
+        // страницах «Аккаунты», «Связи», «Задачи» и т.д.
+        const cn = String(client.name || '').trim();
+        if (cn && existing.name !== cn) existing.name = cn;
         return existing;
       }
       const mentor = {
@@ -963,6 +983,77 @@
       this.state.reviews = (this.state.reviews || []).filter(x => x.id !== id);
       this.save();
     },
+    /* ---------- Proxy links (смена IP — LTE-center и пр.) ----------
+       Список ссылок-«пинков», которые при GET-запросе перезагружают модем
+       и выдают новый IP. Кнопка «Сменить IP» вызывает все ссылки разом.
+       Управляет владелец, использует Настя. */
+    addProxyLink(rec) {
+      const item = Object.assign({
+        id: uid(),
+        label: '',
+        url: '',
+        createdAt: todayISO()
+      }, rec);
+      item.url = String(item.url || '').trim();
+      item.label = String(item.label || '').trim();
+      if (!item.url) return null;
+      this.state.proxyLinks ??= [];
+      this.state.proxyLinks.push(item);
+      this.save();
+      return item;
+    },
+    updateProxyLink(id, patch) {
+      const i = (this.state.proxyLinks || []).findIndex(x => x.id === id);
+      if (i < 0) return;
+      if (patch && typeof patch.url === 'string') patch.url = patch.url.trim();
+      if (patch && typeof patch.label === 'string') patch.label = patch.label.trim();
+      this.state.proxyLinks[i] = Object.assign({}, this.state.proxyLinks[i], patch);
+      this.save();
+    },
+    deleteProxyLink(id) {
+      this.state.proxyLinks = (this.state.proxyLinks || []).filter(x => x.id !== id);
+      this.save();
+    },
+
+    /* ---------- Daily tasks (задачи Насте на день) ----------
+       Владелец (Данила) ставит задачу: дата, клиент (mentorId), аккаунт
+       (profileId, опционально), заметка. Настя видит сегодняшние задачи и
+       отмечает их как выполненные. */
+    addDailyTask(rec) {
+      const item = Object.assign({
+        id: uid(),
+        date: todayISO(),
+        mentorId: '',
+        profileId: '',
+        note: '',
+        done: false,
+        createdBy: '',
+        createdAt: new Date().toISOString()
+      }, rec);
+      this.state.dailyTasks ??= [];
+      this.state.dailyTasks.push(item);
+      this.save();
+      return item;
+    },
+    updateDailyTask(id, patch) {
+      const i = (this.state.dailyTasks || []).findIndex(x => x.id === id);
+      if (i < 0) return;
+      this.state.dailyTasks[i] = Object.assign({}, this.state.dailyTasks[i], patch);
+      this.save();
+    },
+    deleteDailyTask(id) {
+      this.state.dailyTasks = (this.state.dailyTasks || []).filter(x => x.id !== id);
+      this.save();
+    },
+    toggleDailyTask(id) {
+      const t = (this.state.dailyTasks || []).find(x => x.id === id);
+      if (!t) return;
+      t.done = !t.done;
+      t.doneAt = t.done ? new Date().toISOString() : null;
+      this.save();
+      return t;
+    },
+
     /** Каскадное удаление отзывов по паре (profileId, mentorId).
      *  Используется при отвязке клиента от аккаунта на странице «Аккаунты»,
      *  чтобы тестовые/ошибочные отзывы не висели в модерации и не считались

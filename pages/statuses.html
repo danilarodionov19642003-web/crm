@@ -689,12 +689,29 @@
         newReviewText = document.getElementById('chgReviewText').value.trim();
         if (!newReviewText) { toast('Вставьте текст опубликованного отзыва', 'error'); return; }
       }
+      // Если статус УХОДИТ с «Готов» на любой другой — это значит, что отзыв
+      // больше не считается опубликованным. Снимаем зачёт у клиента и
+      // удаляем запись отзыва (включая одобренные — иначе зарплата зависнет
+      // в воздухе). Перед этим — подтверждение, чтобы не потерять случайно.
+      const wasDone = cur && cur.status === DONE_STATUS;
+      const goingAway = wasDone && newStatus !== DONE_STATUS && existingReview;
+      if (goingAway) {
+        const isApproved = existingReview.moderation === 'approved';
+        const msg = isApproved
+          ? 'Снять статус «Готов»? Связанный одобренный отзыв удалится, зарплата за него спишется.'
+          : 'Снять статус «Готов»? Связанный отзыв на модерации удалится.';
+        if (!confirmDelete(msg)) return;
+      }
       // Если реально ничего не поменялось в статусе/комментарии — просто подправим дату,
       // чтобы не плодить бессмысленные записи в истории.
       if (cur && cur.status === newStatus && (cur.comment || '') === newComment && cur.date !== newDate) {
         Store.setProfileStatusDate(chgMid, chgPid, newDate);
       } else {
         Store.setProfileStatus(chgMid, chgPid, newStatus, newComment, newDate);
+      }
+      if (goingAway) {
+        Store.deleteReviewsForPair(chgPid, chgMid);
+        if (window.ReviewsSync && window.ReviewsSync.recompute) window.ReviewsSync.recompute();
       }
       if (newReviewText) {
         const myEmail = (window.AuthGate && window.AuthGate.email && window.AuthGate.email()) || '';
@@ -704,6 +721,8 @@
           submittedAt: (newDate && newDate.length === 10) ? (newDate + 'T00:00:00Z') : new Date().toISOString(),
         });
         toast('Отзыв отправлен на модерацию');
+      } else if (goingAway) {
+        toast('Статус снят, отзыв удалён');
       } else {
         toast('Статус сохранён');
       }

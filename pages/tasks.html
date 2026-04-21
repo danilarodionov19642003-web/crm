@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Задачи — Mentori CRM</title>
+  <link rel="stylesheet" href="../css/styles.css"/>
+  <style>
+    .task-list { display:flex; flex-direction:column; gap:8px; }
+    .task-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 14px;
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 12px;
+      align-items: start;
+      transition: border-color .15s, opacity .15s;
+    }
+    .task-card.done { opacity: .55; }
+    .task-card.done .task-note { text-decoration: line-through; }
+    .task-check {
+      width: 22px; height: 22px;
+      border: 2px solid var(--border);
+      border-radius: 6px;
+      cursor: pointer;
+      display: inline-flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+      background: rgba(255,255,255,0.02);
+      transition: background .15s, border-color .15s;
+    }
+    .task-check:hover { border-color: var(--accent); }
+    .task-card.done .task-check {
+      background: var(--accent); border-color: var(--accent); color: #fff;
+    }
+    .task-card.done .task-check::after { content: '✓'; font-weight: 700; }
+    .task-meta { display:flex; flex-direction:column; gap:4px; min-width:0; }
+    .task-row1 { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+    .task-pill {
+      display:inline-flex; align-items:center; gap:4px;
+      padding:3px 9px; border-radius:999px; font-size:12px; font-weight:600;
+    }
+    .task-pill--client { background: rgba(249,115,22,0.15); color: var(--orange); }
+    .task-pill--acc    { background: rgba(99,102,241,0.15); color: #a5b4fc; }
+    .task-pill--date   { background: rgba(255,255,255,0.04); color: var(--text-mute); }
+    .task-pill--overdue{ background: rgba(239,68,68,0.15); color: var(--red); }
+    .task-pill--today  { background: rgba(34,197,94,0.18); color: #4ade80; }
+    .task-note { color: var(--text); font-size: 14px; line-height: 1.4; word-break: break-word; }
+    .task-actions { display:flex; gap:6px; flex-shrink:0; }
+    .task-actions button { padding: 4px 8px; font-size: 12px; }
+    .task-empty { padding:30px; text-align:center; color:var(--text-mute); }
+    .task-group-title {
+      font-size: 12px; text-transform: uppercase; letter-spacing: .05em;
+      color: var(--text-mute); margin: 18px 0 6px 4px; font-weight: 600;
+    }
+    .task-group-title:first-child { margin-top: 0; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div data-component="sidebar" data-active="tasks"></div>
+
+    <div class="main">
+      <div data-component="header" data-title="Задачи"></div>
+
+      <main class="content">
+        <div class="page-title">
+          <div>
+            <h1>Задачи на день</h1>
+            <p id="pageSubtitle">С какого аккаунта работать с каким клиентом сегодня.</p>
+          </div>
+          <button class="btn btn--primary" id="btnAdd" data-owner-only style="display:none">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Новая задача
+          </button>
+        </div>
+
+        <section class="cards" id="taskKpis"></section>
+
+        <div class="filters">
+          <select id="fScope" class="select">
+            <option value="today">Сегодня</option>
+            <option value="upcoming">Предстоящие</option>
+            <option value="overdue">Просрочены</option>
+            <option value="done">Выполненные</option>
+            <option value="all">Все</option>
+          </select>
+          <select id="fMentor" class="select">
+            <option value="">Все клиенты</option>
+          </select>
+          <input type="text" id="fSearch" class="input" placeholder="Поиск по тексту задачи..." style="flex:1;min-width:200px"/>
+          <button class="btn btn--ghost" id="btnReset">Сбросить</button>
+        </div>
+
+        <div class="task-list" id="taskList"></div>
+      </main>
+    </div>
+  </div>
+
+  <!-- Модалка добавления / редактирования (только владелец) -->
+  <div class="modal-backdrop" id="taskModal">
+    <div class="modal" style="max-width:520px">
+      <div class="modal__header">
+        <h3 id="taskTitle">Новая задача</h3>
+        <button class="btn--icon" data-close>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal__body">
+        <div class="field-row">
+          <div class="field"><label for="tDate">Дата</label>
+            <input type="date" id="tDate" class="input"/>
+          </div>
+          <div class="field"><label for="tMentor">Клиент</label>
+            <select id="tMentor" class="select"></select>
+          </div>
+        </div>
+        <div class="field" style="margin-top:12px">
+          <label for="tProfile">Аккаунт (с какого работать)</label>
+          <select id="tProfile" class="select"></select>
+        </div>
+        <div class="field" style="margin-top:12px">
+          <label for="tNote">Что сделать</label>
+          <textarea id="tNote" class="input" rows="3" placeholder="Например: написать диалог, подвести к выбору, опубликовать отзыв" style="resize:vertical;min-height:70px;font-family:inherit"></textarea>
+        </div>
+      </div>
+      <div class="modal__footer">
+        <button class="btn btn--ghost" id="tDelete" style="color:var(--red);display:none">🗑 Удалить</button>
+        <div style="flex:1"></div>
+        <button class="btn btn--ghost" data-close>Отмена</button>
+        <button class="btn btn--primary" id="tSave">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="../data/seed.js"></script>
+  <script src="../js/app.js"></script>
+  <script src="../js/supabase-client.js"></script>
+  <script src="../js/auth-gate.js"></script>
+  <script src="../js/cloud-sync.js"></script>
+  <script src="../js/reviews-sync.js"></script>
+  <script src="../components/sidebar.js"></script>
+  <script src="../components/header.js"></script>
+  <script src="../components/table.js"></script>
+
+  <script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const { Store, Modal, toast, todayISO, fmtDate } = window.App;
+    const { confirmDelete } = window.TableUtils;
+
+    Store.load();
+    const isOwner = (window.AuthGate && window.AuthGate.isOwner && window.AuthGate.isOwner()) || false;
+    if (isOwner) document.querySelectorAll('[data-owner-only]').forEach(el => el.style.display = '');
+
+    const filters = { scope: 'today', mentorId: '', q: '' };
+    let editingId = null;
+
+    function escapeHtml(s) {
+      return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
+    function mentorById(id) { return (Store.state.mentors || []).find(m => m.id === id) || null; }
+    function profileById(id) {
+      const live = (Store.state.profiles || []).find(p => p.id === id);
+      if (live) return live;
+      const dead = (Store.state.archivedProfiles || []).find(p => p.id === id);
+      return dead ? Object.assign({}, dead, { archived: true }) : null;
+    }
+    function mentorLabel(m) { return m ? `${m.code || '?'}${m.name ? ' — ' + m.name : ''}` : '—'; }
+    function profileLabel(p) {
+      if (!p) return '—';
+      const base = `${p.code || '—'}${p.city ? ' · ' + p.city : ''}`;
+      return p.archived ? `🗑 ${base}` : base;
+    }
+
+    function fillSelects() {
+      // Клиенты
+      const mSel = document.getElementById('fMentor');
+      const tSel = document.getElementById('tMentor');
+      const mentors = (Store.state.mentors || []).slice()
+        .sort((a,b) => (a.code||'').localeCompare(b.code||'', 'ru', { numeric: true }));
+      const opts = mentors.map(m => `<option value="${m.id}">${escapeHtml(mentorLabel(m))}</option>`).join('');
+      mSel.innerHTML = '<option value="">Все клиенты</option>' + opts;
+      tSel.innerHTML = '<option value="">— выбрать клиента —</option>' + opts;
+      // Аккаунты (только живые)
+      const pSel = document.getElementById('tProfile');
+      const profs = (Store.state.profiles || []).slice()
+        .sort((a,b) => (a.code||'').localeCompare(b.code||'', 'ru', { numeric: true }));
+      pSel.innerHTML = '<option value="">— любой аккаунт —</option>'
+        + profs.map(p => `<option value="${p.id}">${escapeHtml(profileLabel(p))}</option>`).join('');
+      // восстановим текущие значения фильтров
+      mSel.value = filters.mentorId;
+    }
+
+    function isToday(iso) { return iso === todayISO(); }
+    function isPast(iso) { return iso && iso < todayISO(); }
+    function isFuture(iso) { return iso && iso > todayISO(); }
+
+    function applyFilters(tasks) {
+      return tasks.filter(t => {
+        if (filters.mentorId && t.mentorId !== filters.mentorId) return false;
+        if (filters.q) {
+          const m = mentorById(t.mentorId);
+          const p = profileById(t.profileId);
+          const hay = [t.note, m && m.code, m && m.name, p && p.code].join(' ').toLowerCase();
+          if (!hay.includes(filters.q)) return false;
+        }
+        switch (filters.scope) {
+          case 'today':    return !t.done && isToday(t.date);
+          case 'upcoming': return !t.done && isFuture(t.date);
+          case 'overdue':  return !t.done && isPast(t.date);
+          case 'done':     return t.done;
+          case 'all':      return true;
+        }
+        return true;
+      });
+    }
+
+    function render() {
+      fillSelects();
+      const all = (Store.state.dailyTasks || []).slice()
+        .sort((a,b) => (a.date||'').localeCompare(b.date||'') || (a.createdAt||'').localeCompare(b.createdAt||''));
+      const filtered = applyFilters(all);
+
+      // KPI
+      const today = todayISO();
+      const todayTasks = all.filter(t => t.date === today);
+      const todayDone = todayTasks.filter(t => t.done).length;
+      const overdue = all.filter(t => !t.done && isPast(t.date)).length;
+      const upcoming = all.filter(t => !t.done && isFuture(t.date)).length;
+      document.getElementById('taskKpis').innerHTML = `
+        <div class="card"><div class="card__label">На сегодня</div><div class="card__value">${todayDone}/${todayTasks.length}</div></div>
+        <div class="card"><div class="card__label">Просрочено</div><div class="card__value" style="color:var(--red)">${overdue}</div></div>
+        <div class="card"><div class="card__label">Предстоит</div><div class="card__value">${upcoming}</div></div>
+        <div class="card"><div class="card__label">Всего задач</div><div class="card__value">${all.length}</div></div>
+      `;
+
+      const list = document.getElementById('taskList');
+      if (!filtered.length) {
+        list.innerHTML = `<div class="task-empty">Задач нет. ${isOwner ? 'Нажми «Новая задача».' : 'Жди, когда владелец поставит задачу.'}</div>`;
+        return;
+      }
+      // Группировка по дате
+      const groups = new Map();
+      filtered.forEach(t => {
+        const k = t.date || '—';
+        if (!groups.has(k)) groups.set(k, []);
+        groups.get(k).push(t);
+      });
+      const html = [];
+      [...groups.keys()].sort().forEach(date => {
+        let title = fmtDate(date) || date;
+        if (date === today) title += ' · СЕГОДНЯ';
+        else if (isPast(date)) title += ' · ПРОСРОЧЕНО';
+        else if (isFuture(date)) {
+          const days = Math.round((new Date(date) - new Date(today)) / 86400000);
+          title += ` · через ${days} дн.`;
+        }
+        html.push(`<div class="task-group-title">${escapeHtml(title)}</div>`);
+        groups.get(date).forEach(t => html.push(taskHtml(t)));
+      });
+      list.innerHTML = html.join('');
+
+      // bind
+      list.querySelectorAll('.task-check').forEach(el => {
+        el.addEventListener('click', () => {
+          Store.toggleDailyTask(el.dataset.id);
+          render();
+        });
+      });
+      if (isOwner) {
+        list.querySelectorAll('button[data-act="edit"]').forEach(btn => {
+          btn.addEventListener('click', () => openEdit(btn.dataset.id));
+        });
+        list.querySelectorAll('button[data-act="del"]').forEach(btn => {
+          btn.addEventListener('click', () => {
+            if (!confirmDelete('Удалить задачу?')) return;
+            Store.deleteDailyTask(btn.dataset.id);
+            toast('Удалено');
+            render();
+          });
+        });
+      }
+    }
+
+    function taskHtml(t) {
+      const m = mentorById(t.mentorId);
+      const p = profileById(t.profileId);
+      const datePill = t.date === todayISO() ? 'task-pill--today'
+        : (isPast(t.date) && !t.done) ? 'task-pill--overdue'
+        : 'task-pill--date';
+      const accBlock = p ? `<span class="task-pill task-pill--acc">📋 ${escapeHtml(profileLabel(p))}</span>` : '';
+      const editBtn = isOwner ? `<button class="btn btn--ghost" data-act="edit" data-id="${t.id}" title="Редактировать">✎</button>` : '';
+      const delBtn  = isOwner ? `<button class="btn btn--ghost" data-act="del" data-id="${t.id}" style="color:var(--red)" title="Удалить">🗑</button>` : '';
+      return `
+        <div class="task-card${t.done ? ' done' : ''}">
+          <div class="task-check" data-id="${t.id}" title="${t.done ? 'Снять выполнение' : 'Отметить выполненным'}"></div>
+          <div class="task-meta">
+            <div class="task-row1">
+              <span class="task-pill ${datePill}">📅 ${escapeHtml(fmtDate(t.date) || t.date || '—')}</span>
+              <span class="task-pill task-pill--client">👤 ${escapeHtml(mentorLabel(m))}</span>
+              ${accBlock}
+            </div>
+            <div class="task-note">${escapeHtml(t.note || '— без описания —')}</div>
+          </div>
+          <div class="task-actions">${editBtn}${delBtn}</div>
+        </div>`;
+    }
+
+    /* ---------- модалка ---------- */
+    function openNew() {
+      editingId = null;
+      document.getElementById('taskTitle').textContent = 'Новая задача';
+      document.getElementById('tDate').value = todayISO();
+      document.getElementById('tMentor').value = '';
+      document.getElementById('tProfile').value = '';
+      document.getElementById('tNote').value = '';
+      document.getElementById('tDelete').style.display = 'none';
+      Modal.open('taskModal');
+      setTimeout(() => document.getElementById('tMentor').focus(), 50);
+    }
+    function openEdit(id) {
+      const t = (Store.state.dailyTasks || []).find(x => x.id === id);
+      if (!t) return;
+      editingId = id;
+      document.getElementById('taskTitle').textContent = 'Редактировать задачу';
+      document.getElementById('tDate').value = t.date || todayISO();
+      document.getElementById('tMentor').value = t.mentorId || '';
+      document.getElementById('tProfile').value = t.profileId || '';
+      document.getElementById('tNote').value = t.note || '';
+      document.getElementById('tDelete').style.display = '';
+      Modal.open('taskModal');
+    }
+    if (isOwner) {
+      document.getElementById('btnAdd').addEventListener('click', openNew);
+    }
+    document.getElementById('tSave').addEventListener('click', () => {
+      const date = document.getElementById('tDate').value || todayISO();
+      const mentorId = document.getElementById('tMentor').value;
+      const profileId = document.getElementById('tProfile').value;
+      const note = document.getElementById('tNote').value.trim();
+      if (!mentorId) { toast('Выбери клиента', 'error'); return; }
+      if (!note) { toast('Опиши задачу', 'error'); return; }
+      const myEmail = (window.AuthGate && window.AuthGate.email && window.AuthGate.email()) || '';
+      if (editingId) {
+        Store.updateDailyTask(editingId, { date, mentorId, profileId, note });
+        toast('Сохранено');
+      } else {
+        Store.addDailyTask({ date, mentorId, profileId, note, createdBy: myEmail });
+        toast('Задача добавлена');
+      }
+      Modal.close('taskModal');
+      render();
+    });
+    document.getElementById('tDelete').addEventListener('click', () => {
+      if (!editingId) return;
+      if (!confirmDelete('Удалить задачу?')) return;
+      Store.deleteDailyTask(editingId);
+      Modal.close('taskModal');
+      toast('Удалено');
+      render();
+    });
+
+    /* ---------- фильтры ---------- */
+    document.getElementById('fScope').addEventListener('change', e => { filters.scope = e.target.value; render(); });
+    document.getElementById('fMentor').addEventListener('change', e => { filters.mentorId = e.target.value; render(); });
+    document.getElementById('fSearch').addEventListener('input', e => { filters.q = e.target.value.trim().toLowerCase(); render(); });
+    document.getElementById('btnReset').addEventListener('click', () => {
+      filters.scope = 'today'; filters.mentorId = ''; filters.q = '';
+      document.getElementById('fScope').value = 'today';
+      document.getElementById('fMentor').value = '';
+      document.getElementById('fSearch').value = '';
+      render();
+    });
+    window.onGlobalSearch = q => { filters.q = q; document.getElementById('fSearch').value = q; render(); };
+
+    window.addEventListener('cloudstate:updated', render);
+    window.addEventListener('store:reloaded', render);
+    render();
+  });
+  </script>
+</body>
+</html>

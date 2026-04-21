@@ -187,19 +187,29 @@
     Store.load();
     const filters = { tariff: '', state: '', q: '' };
 
-    /* ---- Авто-подсчёт «Сделано» из ОДОБРЕННЫХ отзывов (mentor.code === client.code) ----
-       Раньше считали все статусы «🎯 Готов». Теперь сотрудник, выставляя «Готов», обязан
-       приложить текст отзыва — он попадает на модерацию. Засчитываем только отзывы,
-       которые владелец одобрил (state.reviews[*].moderation === 'approved'). */
+    /* ---- Авто-подсчёт «Сделано» из ОДОБРЕННЫХ отзывов + действующего статуса «Готов» ----
+       Правило: отзыв считается, если а) владелец одобрил его на модерации и
+       б) в аккаунтах для пары (mentorId, profileId) ВСЁ ЕЩЁ стоит статус
+       «🎯 Готов». Как только Настя меняет статус на любой другой (например,
+       «Диалог Закончен») — отзыв перестаёт считаться у клиента. Так число
+       «Сделано» всегда отражает реальную картину в Аккаунтах, без рассинхрона. */
+    const DONE_STATUS = '🎯 Готов';
     function deriveDone(client) {
       const code = String(client.code || '').toLowerCase().trim();
       if (!code) return 0;
       const mentors = (Store.state.mentors || [])
         .filter(m => String(m.code || '').toLowerCase().trim() === code);
       if (mentors.length === 0) return 0;
-      const ids = new Set(mentors.map(m => m.id));
-      const reviews = Store.state.reviews || [];
-      return reviews.filter(r => ids.has(r.mentorId) && r.moderation === 'approved').length;
+      const mentorIds = new Set(mentors.map(m => m.id));
+      const reviews = (Store.state.reviews || []).filter(
+        r => mentorIds.has(r.mentorId) && r.moderation === 'approved'
+      );
+      const statuses = Store.state.profileStatuses || [];
+      // Считаем только те отзывы, у которых пара (mentorId, profileId)
+      // имеет статус «Готов» в текущем списке аккаунтов.
+      return reviews.filter(r => statuses.some(
+        s => s.mentorId === r.mentorId && s.profileId === r.profileId && s.status === DONE_STATUS
+      )).length;
     }
     // Обновляем клиенты при синхронизации облака и при изменении модерации отзывов
     window.addEventListener('cloudstate:updated', () => { Store.load(); render(); });
