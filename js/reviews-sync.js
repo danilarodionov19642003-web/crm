@@ -21,26 +21,48 @@
 
   const DONE_STATUS = '🎯 Готов';
 
-  /** Пересчитать reviewsDone у каждого сотрудника по локальному state.reviews.
-   *  Считаем только одобренные отзывы, у пары которых (mentorId, profileId)
-   *  всё ещё стоит статус «Готов» — иначе если Настя/владелец сняли статус
-   *  готовости, зарплата не должна продолжать капать. */
+  /** Пересчитать reviewsDone у каждого сотрудника.
+   *  Правило начисления:
+   *    1. Отзыв одобрен (moderation='approved').
+   *    2. У пары (mentorId, profileId) сейчас стоит статус «🎯 Готов».
+   *    3. Зарплата идёт МЕНЕДЖЕРУ КЛИЕНТА — client.assignedEmail (ищем
+   *       клиента по mentor.code). Если клиент ведёт владелец сам
+   *       (assignedEmail пустой или не совпадает ни с одним сотрудником) —
+   *       зарплата никому не начисляется. Так владелец может вести часть
+   *       клиентов лично, а статус «Готов» по ним не будет капать в зп. */
   function recompute() {
     if (!Store || !Store.state) return;
     const reviews = Store.state.reviews || [];
     const statuses = Store.state.profileStatuses || [];
+    const mentors = Store.state.mentors || [];
+    const clients = Store.state.clients || [];
+
+    // mentorId → assignedEmail (через mentor.code → client.assignedEmail)
+    const clientByCode = new Map();
+    clients.forEach(c => {
+      const code = String(c.code || '').toLowerCase().trim();
+      if (code) clientByCode.set(code, c);
+    });
+    const mentorToCreditEmail = new Map();
+    mentors.forEach(m => {
+      const code = String(m.code || '').toLowerCase().trim();
+      const c = clientByCode.get(code);
+      const e = c ? String(c.assignedEmail || '').toLowerCase().trim() : '';
+      mentorToCreditEmail.set(m.id, e);
+    });
+
     // быстрый поиск: есть ли «Готов» для пары
     const doneSet = new Set();
     statuses.forEach(s => {
       if (s.status === DONE_STATUS) doneSet.add(s.mentorId + '::' + s.profileId);
     });
-    // counts by author email (lowercase), только одобренные + статус «Готов»
+    // counts по менеджеру клиента
     const counts = new Map();
     reviews.forEach(r => {
       if (r.moderation !== 'approved') return;
       if (!doneSet.has(r.mentorId + '::' + r.profileId)) return;
-      const e = String(r.authorEmail || '').toLowerCase().trim();
-      if (!e) return;
+      const e = mentorToCreditEmail.get(r.mentorId) || '';
+      if (!e) return; // клиент без менеджера = ведёт владелец = никому
       counts.set(e, (counts.get(e) || 0) + 1);
     });
 
