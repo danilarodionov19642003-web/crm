@@ -5,6 +5,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>Отзывы — Mentori CRM</title>
   <link rel="stylesheet" href="../css/styles.css"/>
+  <style>
+    .rv-card { background: var(--panel); border:1px solid var(--border); border-radius:14px; padding:14px 16px; margin-bottom:12px; }
+    .rv-head { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
+    .rv-head .badge { font-size:11px; }
+    .rv-text { white-space:pre-wrap; font-size:14px; line-height:1.5; padding:10px 12px; border-radius:8px; background:rgba(255,255,255,0.02); border:1px solid var(--border); }
+    .rv-meta { font-size:12px; color:var(--text-mute); margin-top:8px; display:flex; gap:14px; flex-wrap:wrap; }
+    .rv-actions { display:flex; gap:8px; margin-top:10px; }
+    .rv-empty { text-align:center; padding:40px; color:var(--text-mute); }
+  </style>
 </head>
 <body>
   <div class="app">
@@ -16,48 +25,33 @@
       <main class="content">
         <div class="page-title">
           <div>
-            <h1>Модерация отзывов</h1>
-            <p>Сотрудники добавляют отзывы — здесь вы их проверяете и переводите в статус «проверено».</p>
+            <h1 id="pgTitle">Модерация отзывов</h1>
+            <p id="pgSubtitle">Сотрудники сдают отзывы — здесь они одобряются и засчитываются в зарплату.</p>
           </div>
-          <button class="btn btn--ghost" id="btnRefresh">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><polyline points="21 3 21 9 15 9"/></svg>
-            Обновить
-          </button>
         </div>
 
         <section class="cards" id="rKpis"></section>
 
         <div class="filters">
           <select id="fStatus" class="select">
-            <option value="">Все статусы</option>
-            <option value="новый">Новые</option>
-            <option value="проверено">Проверенные</option>
+            <option value="pending">На модерации</option>
+            <option value="approved">Одобренные</option>
+            <option value="rejected">Отклонённые</option>
+            <option value="">Все</option>
           </select>
-          <select id="fEmployee" class="select">
+          <select id="fAuthor" class="select">
             <option value="">Все сотрудники</option>
           </select>
-          <input type="text" id="fSearch" class="input" placeholder="Поиск по тексту, анкете..." style="flex:1;min-width:200px"/>
+          <select id="fPeriod" class="select">
+            <option value="">Всё время</option>
+            <option value="today">Сегодня</option>
+            <option value="week" selected>Эта неделя</option>
+            <option value="month">Этот месяц</option>
+          </select>
+          <input type="text" id="fSearch" class="input" placeholder="Поиск по тексту, аккаунту, клиенту..." style="flex:1;min-width:200px"/>
         </div>
 
-        <div class="panel">
-          <div class="table-wrap">
-            <table class="table" id="rTable">
-              <thead>
-                <tr>
-                  <th>Дата</th>
-                  <th>Анкета</th>
-                  <th>Сотрудник</th>
-                  <th>Текст отзыва</th>
-                  <th>Статус</th>
-                  <th class="actions"></th>
-                </tr>
-              </thead>
-              <tbody id="rRows">
-                <tr><td colspan="6" class="empty">Загружаем…</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <div id="rList"><div class="rv-empty">Загружаем…</div></div>
       </main>
     </div>
   </div>
@@ -65,139 +59,205 @@
   <script src="../data/seed.js"></script>
   <script src="../js/app.js"></script>
   <script src="../js/supabase-client.js"></script>
+  <script src="../js/auth-gate.js"></script>
   <script src="../js/cloud-sync.js"></script>
-  <script src="../js/accounts-sync.js"></script>
-  <script src="../js/reviews-sync.js"></script>
   <script src="../components/sidebar.js"></script>
   <script src="../components/header.js"></script>
 
   <script>
-  document.addEventListener('DOMContentLoaded', async () => {
-    const { Tbl } = window.Supabase;
+  document.addEventListener('DOMContentLoaded', () => {
     const { Store, fmtDate, toast } = window.App;
     Store.load();
 
-    const filters = { status: '', employee: '', q: '' };
-    let tasks = [];
-    let accounts = [];
+    const role = (document.documentElement.dataset.role || 'owner').toLowerCase();
+    const myEmail = (document.documentElement.dataset.userEmail || '').toLowerCase();
+    const isOwner = role === 'owner';
+    const RATE_DEFAULT = 300;
 
-    function escapeHtml(s) {
-      return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    if (!isOwner) {
+      document.getElementById('pgTitle').textContent = 'Мои отзывы';
+      document.getElementById('pgSubtitle').textContent = 'Здесь видны отзывы, которые ты сдала на модерацию. Одобренные засчитываются в зарплату.';
     }
 
-    async function loadAll() {
-      document.getElementById('rRows').innerHTML =
-        `<tr><td colspan="6" class="empty">Загружаем…</td></tr>`;
-      try {
-        [tasks, accounts] = await Promise.all([
-          Tbl.select('tasks', 'select=*&order=created_at.desc'),
-          Tbl.select('accounts', 'select=id,code,name')
-        ]);
-        refreshFilterOptions();
-        render();
-      } catch (e) {
-        document.getElementById('rRows').innerHTML =
-          `<tr><td colspan="6" class="empty" style="color:var(--red)">Ошибка: ${escapeHtml(e.message)}</td></tr>`;
-      }
+    const filters = { status: 'pending', author: '', period: 'week', q: '' };
+
+    function escapeHtml(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+    function getProfile(id) {
+      return (Store.state.profiles || []).find(p => p.id === id)
+          || (Store.state.archivedProfiles || []).find(p => p.id === id);
+    }
+    function getMentor(id) {
+      return (Store.state.mentors || []).find(m => m.id === id);
+    }
+    function periodStart(p) {
+      const now = new Date();
+      if (p === 'today')  { now.setHours(0,0,0,0); return now; }
+      if (p === 'week')   { const d = new Date(now); const dow = (d.getDay()+6)%7; d.setDate(d.getDate()-dow); d.setHours(0,0,0,0); return d; }
+      if (p === 'month')  { return new Date(now.getFullYear(), now.getMonth(), 1); }
+      return null;
     }
 
     function refreshFilterOptions() {
-      const sel = document.getElementById('fEmployee');
-      const emails = Array.from(new Set(tasks.map(t => t.employee_email))).sort();
+      const sel = document.getElementById('fAuthor');
+      if (!isOwner) { sel.style.display = 'none'; return; }
+      const emails = Array.from(new Set((Store.state.reviews || []).map(r => (r.authorEmail || '').toLowerCase()).filter(Boolean))).sort();
       const cur = sel.value;
       sel.innerHTML = '<option value="">Все сотрудники</option>' +
         emails.map(e => `<option value="${escapeHtml(e)}">${escapeHtml(e)}</option>`).join('');
       sel.value = cur;
     }
 
-    function getFiltered() {
-      return tasks.filter(t => {
-        if (filters.status && t.status !== filters.status) return false;
-        if (filters.employee && t.employee_email !== filters.employee) return false;
-        if (filters.q) {
-          const acc = accounts.find(a => a.id === t.account_id);
-          const s = ((t.text || '') + ' ' + (acc?.code || '') + ' ' + (acc?.name || '') + ' ' + t.employee_email).toLowerCase();
-          if (!s.includes(filters.q)) return false;
-        }
-        return true;
-      });
+    function getRows() {
+      const start = periodStart(filters.period);
+      let arr = (Store.state.reviews || []).slice();
+      if (!isOwner) {
+        // Настя видит только свои отзывы
+        arr = arr.filter(r => (r.authorEmail || '').toLowerCase() === myEmail);
+      } else if (filters.author) {
+        arr = arr.filter(r => (r.authorEmail || '').toLowerCase() === filters.author);
+      }
+      if (filters.status) arr = arr.filter(r => r.moderation === filters.status);
+      if (start) arr = arr.filter(r => new Date(r.submittedAt) >= start);
+      if (filters.q) {
+        const q = filters.q;
+        arr = arr.filter(r => {
+          const p = getProfile(r.profileId);
+          const m = getMentor(r.mentorId);
+          const s = ((r.text || '') + ' ' + (p?.code || '') + ' ' + (m?.code || '') + ' ' + (m?.name || '') + ' ' + (r.authorEmail || '')).toLowerCase();
+          return s.includes(q);
+        });
+      }
+      arr.sort((a,b) => new Date(b.submittedAt) - new Date(a.submittedAt));
+      return arr;
+    }
+
+    function renderKPIs() {
+      const all = (Store.state.reviews || []);
+      const start = periodStart(filters.period);
+      const inPeriod = (r) => !start || new Date(r.submittedAt) >= start;
+      let scope = all;
+      if (!isOwner) scope = scope.filter(r => (r.authorEmail || '').toLowerCase() === myEmail);
+      else if (filters.author) scope = scope.filter(r => (r.authorEmail || '').toLowerCase() === filters.author);
+      const inP = scope.filter(inPeriod);
+
+      const pending = inP.filter(r => r.moderation === 'pending').length;
+      const approved = inP.filter(r => r.moderation === 'approved');
+      const rejected = inP.filter(r => r.moderation === 'rejected').length;
+      const earned = approved.reduce((s,r) => s + (Number(r.rate) || RATE_DEFAULT), 0);
+      const potential = inP.filter(r => r.moderation === 'pending').reduce((s,r) => s + (Number(r.rate) || RATE_DEFAULT), 0);
+
+      const periodLabel = filters.period === 'today' ? 'сегодня' : filters.period === 'week' ? 'неделя' : filters.period === 'month' ? 'месяц' : 'всё время';
+
+      const kpis = isOwner ? [
+        { label: `На модерации (${periodLabel})`, val: pending, color: 'var(--orange)' },
+        { label: `Одобрено (${periodLabel})`,     val: approved.length, color: 'var(--green)' },
+        { label: `Отклонено (${periodLabel})`,    val: rejected, color: 'var(--text-mute)' },
+        { label: `К выплате (${periodLabel})`,    val: earned.toLocaleString('ru-RU') + ' ₽', color: 'var(--accent)' },
+      ] : [
+        { label: `На модерации (${periodLabel})`, val: pending, color: 'var(--orange)' },
+        { label: `Одобрено (${periodLabel})`,     val: approved.length, color: 'var(--green)' },
+        { label: `Заработано (${periodLabel})`,   val: earned.toLocaleString('ru-RU') + ' ₽', color: 'var(--accent)' },
+        { label: `В ожидании одобрения`,          val: potential.toLocaleString('ru-RU') + ' ₽', color: 'var(--text-mute)' },
+      ];
+      document.getElementById('rKpis').innerHTML = kpis.map(k => `
+        <article class="card"><div class="card__label">${k.label}</div><div class="card__value" style="color:${k.color}">${k.val}</div></article>
+      `).join('');
+    }
+
+    function moderationBadge(m) {
+      if (m === 'approved') return `<span class="badge badge--green"><span class="dot"></span>Одобрен</span>`;
+      if (m === 'rejected') return `<span class="badge badge--red"><span class="dot"></span>Отклонён</span>`;
+      return `<span class="badge badge--orange"><span class="dot"></span>На модерации</span>`;
     }
 
     function render() {
-      const rows = getFiltered();
-
-      // KPI
-      const newCount = tasks.filter(t => t.status === 'новый').length;
-      const okCount  = tasks.filter(t => t.status === 'проверено').length;
-      document.getElementById('rKpis').innerHTML = `
-        <article class="card"><div class="card__label">Всего отзывов</div><div class="card__value">${tasks.length}</div></article>
-        <article class="card"><div class="card__label">Новые</div><div class="card__value" style="color:var(--accent)">${newCount}</div></article>
-        <article class="card"><div class="card__label">Проверенные</div><div class="card__value pos">${okCount}</div></article>
-      `;
-
-      const tbody = document.getElementById('rRows');
-      if (rows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="6" class="empty">Под фильтр ничего не попало.</td></tr>`;
+      renderKPIs();
+      refreshFilterOptions();
+      const rows = getRows();
+      const list = document.getElementById('rList');
+      if (!rows.length) {
+        list.innerHTML = `<div class="rv-empty">Под фильтр ничего не попало.</div>`;
         return;
       }
-      tbody.innerHTML = rows.map(t => {
-        const acc = accounts.find(a => a.id === t.account_id);
-        const accLabel = acc
-          ? `<span class="badge badge--gray">${escapeHtml(acc.code || '—')}</span> ${escapeHtml(acc.name || '')}`
-          : `<span style="color:var(--text-mute)">— ${escapeHtml(t.account_id)} —</span>`;
-        const statusBadge = t.status === 'проверено'
-          ? `<span class="badge badge--green"><span class="dot"></span>проверено</span>`
-          : `<span class="badge badge--orange"><span class="dot"></span>новый</span>`;
-        const actions = t.status === 'новый'
-          ? `<button class="btn btn--primary btn--sm" data-act="ok" data-id="${t.id}">Проверено</button>`
-          : `<button class="btn btn--ghost btn--sm"   data-act="undo" data-id="${t.id}">Вернуть</button>`;
+      list.innerHTML = rows.map(r => {
+        const p = getProfile(r.profileId);
+        const m = getMentor(r.mentorId);
+        const accLabel = p
+          ? `<span class="badge badge--gray">${escapeHtml(p.code || '—')}</span>${p.archived ? ' <span class="badge badge--red">🗑 удалён</span>' : ''}`
+          : `<span style="color:var(--text-mute)">— анкета удалена —</span>`;
+        const menLabel = m
+          ? `<span class="badge badge--gray">${escapeHtml(m.code || '—')}</span> ${escapeHtml(m.name || '')}`
+          : `<span style="color:var(--text-mute)">— клиент удалён —</span>`;
+        const actions = (isOwner && r.moderation === 'pending') ? `
+          <div class="rv-actions">
+            <button class="btn btn--primary btn--sm" data-act="approve" data-id="${r.id}">✅ Одобрить (${(Number(r.rate)||RATE_DEFAULT)} ₽)</button>
+            <button class="btn btn--ghost btn--sm" data-act="reject" data-id="${r.id}" style="color:var(--red)">✖ Отклонить</button>
+          </div>` : '';
+        const ownerExtra = (isOwner && r.moderation !== 'pending') ? `
+          <div class="rv-actions">
+            <button class="btn btn--ghost btn--sm" data-act="reopen" data-id="${r.id}">↺ Вернуть на модерацию</button>
+            <button class="btn btn--ghost btn--sm" data-act="del"    data-id="${r.id}" style="color:var(--red)">🗑 Удалить</button>
+          </div>` : '';
         return `
-          <tr>
-            <td>${fmtDate(t.published_at)}</td>
-            <td>${accLabel}</td>
-            <td><span style="font-size:12px;color:var(--text-mute)">${escapeHtml(t.employee_email)}</span></td>
-            <td><div style="max-width:520px;white-space:pre-wrap;font-size:13px;line-height:1.4">${escapeHtml(t.text)}</div></td>
-            <td>${statusBadge}</td>
-            <td class="actions">
-              ${actions}
-              <button class="btn--icon" data-act="del" data-id="${t.id}" title="Удалить">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
-              </button>
-            </td>
-          </tr>`;
+          <article class="rv-card">
+            <div class="rv-head">
+              ${accLabel}
+              <span style="opacity:.6">×</span>
+              ${menLabel}
+              <div style="flex:1"></div>
+              ${moderationBadge(r.moderation)}
+            </div>
+            <div class="rv-text">${escapeHtml(r.text || '')}</div>
+            <div class="rv-meta">
+              <span>👤 ${escapeHtml(r.authorEmail || '—')}</span>
+              <span>📅 Сдан: ${escapeHtml(fmtDate(r.submittedAt))}</span>
+              ${r.moderatedAt ? `<span>✅ Проверен: ${escapeHtml(fmtDate(r.moderatedAt))}${r.moderatedBy ? ' · ' + escapeHtml(r.moderatedBy) : ''}</span>` : ''}
+              <span>💵 Ставка: ${Number(r.rate) || RATE_DEFAULT} ₽</span>
+            </div>
+            ${actions}${ownerExtra}
+          </article>`;
       }).join('');
 
-      tbody.querySelectorAll('button[data-act]').forEach(btn => {
+      list.querySelectorAll('button[data-act]').forEach(btn => {
         btn.addEventListener('click', () => act(btn.dataset.act, btn.dataset.id));
       });
     }
 
-    async function act(action, id) {
-      try {
-        if (action === 'ok') {
-          await Tbl.update('tasks', `id=eq.${id}`, { status: 'проверено' });
-        } else if (action === 'undo') {
-          await Tbl.update('tasks', `id=eq.${id}`, { status: 'новый' });
-        } else if (action === 'del') {
-          if (!confirm('Удалить отзыв? Счётчик «Сделано» по анкете уменьшится.')) return;
-          await Tbl.remove('tasks', `id=eq.${id}`);
-          if (window.AccountsSync) await window.AccountsSync.pull();
-        }
-        await loadAll();
-        toast('Готово');
-      } catch (e) {
-        toast('Ошибка: ' + e.message, 'error');
+    function act(action, id) {
+      const r = (Store.state.reviews || []).find(x => x.id === id);
+      if (!r) return;
+      if (action === 'approve') {
+        Store.approveReview(id, myEmail);
+        toast('Отзыв одобрен — зарплата засчитана');
+      } else if (action === 'reject') {
+        const reason = window.prompt('Причина отклонения (необязательно):', '');
+        if (reason === null) return;
+        Store.rejectReview(id, myEmail, reason || '');
+        toast('Отзыв отклонён');
+      } else if (action === 'reopen') {
+        if (!confirm('Вернуть отзыв на модерацию? Зарплата по нему отзовётся.')) return;
+        r.moderation = 'pending';
+        r.moderatedAt = null; r.moderatedBy = null;
+        Store.save();
+        toast('Возвращён на модерацию');
+      } else if (action === 'del') {
+        if (!confirm('Удалить отзыв навсегда? Это действие нельзя отменить.')) return;
+        Store.deleteReview(id);
+        toast('Удалён');
       }
+      render();
     }
 
     document.getElementById('fStatus').addEventListener('change',  e => { filters.status = e.target.value; render(); });
-    document.getElementById('fEmployee').addEventListener('change', e => { filters.employee = e.target.value; render(); });
-    document.getElementById('fSearch').addEventListener('input',    e => { filters.q = e.target.value.trim().toLowerCase(); render(); });
-    document.getElementById('btnRefresh').addEventListener('click', loadAll);
+    document.getElementById('fAuthor').addEventListener('change',  e => { filters.author = e.target.value; render(); });
+    document.getElementById('fPeriod').addEventListener('change',  e => { filters.period = e.target.value; render(); });
+    document.getElementById('fSearch').addEventListener('input',   e => { filters.q = e.target.value.trim().toLowerCase(); render(); });
     window.onGlobalSearch = q => { filters.q = q; document.getElementById('fSearch').value = q; render(); };
 
-    loadAll();
-    setInterval(loadAll, 60_000);  // авто-обновление раз в минуту
+    window.addEventListener('cloudstate:updated', () => { Store.load(); render(); });
+
+    render();
   });
   </script>
 </body>

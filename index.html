@@ -3,12 +3,25 @@
 <head>
   <meta charset="utf-8"/>
   <title>Mentori CRM</title>
-  <meta http-equiv="refresh" content="0; url=pages/dashboard.html"/>
   <link rel="stylesheet" href="css/styles.css"/>
 </head>
 <body>
   <p style="padding:30px;color:#a0a0a0;font-family:system-ui">
-    Перенаправляем на <a href="pages/dashboard.html" style="color:#ff7a00">Дашборд</a>...
+    Загрузка…
   </p>
+
+  <script src="js/supabase-client.js"></script>
+  <script>
+  (async () => {
+    const { Auth } = window.Supabase;
+    if (!Auth.isLogged()) { try { await Auth.refresh(); } catch (_) {} }
+    if (!Auth.isLogged()) {
+      location.replace('pages/employee/login.html');
+      return;
+    }
+    const role = Auth.role();
+    location.replace(role === 'team' ? 'pages/statuses.html' : 'pages/dashboard.html');
+  })();
+  </script>
 </body>
 </html>

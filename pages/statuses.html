@@ -203,6 +203,11 @@
           <div class="field"><label>Дата статуса</label><input type="date" id="addDate" class="input"/></div>
         </div>
         <div class="field" style="margin-top:12px"><label>Комментарий</label><input type="text" id="addComment" class="input"/></div>
+        <div class="field" id="addReviewWrap" style="margin-top:12px;display:none">
+          <label>Текст опубликованного отзыва <span style="color:var(--red)">*</span></label>
+          <textarea id="addReviewText" class="input" rows="5" placeholder="Вставьте текст отзыва, который был опубликован на площадке" style="resize:vertical;min-height:90px;font-family:inherit"></textarea>
+          <div style="font-size:11px;color:var(--text-mute);margin-top:4px">Отзыв отправится владельцу на модерацию. После одобрения засчитается в зарплату.</div>
+        </div>
       </div>
       <div class="modal__footer">
         <button class="btn btn--ghost" data-close>Отмена</button>
@@ -222,6 +227,11 @@
         <div class="field-row" style="margin-top:12px">
           <div class="field"><label>Дата статуса</label><input type="date" id="chgDate" class="input"/></div>
           <div class="field" style="flex:2"><label>Комментарий</label><input type="text" id="chgComment" class="input"/></div>
+        </div>
+        <div class="field" id="chgReviewWrap" style="margin-top:12px;display:none">
+          <label>Текст опубликованного отзыва <span style="color:var(--red)">*</span></label>
+          <textarea id="chgReviewText" class="input" rows="5" placeholder="Вставьте текст отзыва, который был опубликован на площадке" style="resize:vertical;min-height:90px;font-family:inherit"></textarea>
+          <div style="font-size:11px;color:var(--text-mute);margin-top:4px">Отзыв отправится владельцу на модерацию. После одобрения засчитается в зарплату.</div>
         </div>
         <div id="chgHist" style="margin-top:14px"></div>
       </div>
@@ -281,6 +291,7 @@
   <script src="../data/seed.js"></script>
   <script src="../js/app.js"></script>
   <script src="../js/supabase-client.js"></script>
+  <script src="../js/auth-gate.js"></script>
   <script src="../js/cloud-sync.js"></script>
   <script src="../js/accounts-sync.js"></script>
   <script src="../js/reviews-sync.js"></script>
@@ -557,10 +568,23 @@
       document.getElementById('addStatus').value = PROFILE_STATUSES[0]; // 📋 Запланировано
       document.getElementById('addComment').value = '';
       document.getElementById('addDate').value = window.App.todayISO();
+      document.getElementById('addReviewText').value = '';
+      toggleAddReviewField();
       checkAddWarn();
       Modal.open('addToAccModal');
     }
     document.getElementById('addMentor').addEventListener('change', checkAddWarn);
+    document.getElementById('addStatus').addEventListener('change', toggleAddReviewField);
+
+    const DONE_STATUS = '🎯 Готов';
+    function toggleAddReviewField() {
+      const s = document.getElementById('addStatus').value;
+      document.getElementById('addReviewWrap').style.display = (s === DONE_STATUS) ? 'block' : 'none';
+    }
+    function toggleChgReviewField() {
+      const s = document.getElementById('chgStatus').value;
+      document.getElementById('chgReviewWrap').style.display = (s === DONE_STATUS) ? 'block' : 'none';
+    }
 
     function checkAddWarn() {
       const mid = document.getElementById('addMentor').value;
@@ -584,15 +608,31 @@
       if (!mid || !addProfileId) { toast('Выберите клиента', 'error'); return; }
       const res = Store.canAddMentorToProfile(mid, addProfileId);
       if (!res.ok && !window.confirm(`${res.reason}\n\nВсё равно привязать?`)) return;
-      const profile = profileById(addProfileId);
-      profile.mentorIds = [...(profile.mentorIds || []), mid];
-      Store.updateProfile(profile.id, { mentorIds: profile.mentorIds });
       const status = document.getElementById('addStatus').value;
       const comment = document.getElementById('addComment').value.trim();
       const date = document.getElementById('addDate').value || window.App.todayISO();
+      // Если выставляется «Готов» — требуем текст отзыва и создаём запись на модерацию.
+      let reviewText = '';
+      if (status === DONE_STATUS) {
+        reviewText = document.getElementById('addReviewText').value.trim();
+        if (!reviewText) { toast('Вставьте текст опубликованного отзыва', 'error'); return; }
+      }
+      const profile = profileById(addProfileId);
+      profile.mentorIds = [...(profile.mentorIds || []), mid];
+      Store.updateProfile(profile.id, { mentorIds: profile.mentorIds });
       Store.setProfileStatus(mid, addProfileId, status, comment, date);
+      if (reviewText) {
+        const myEmail = (window.AuthGate && window.AuthGate.email && window.AuthGate.email()) || '';
+        Store.addReview({
+          profileId: addProfileId, mentorId: mid,
+          text: reviewText, authorEmail: myEmail,
+          submittedAt: (date && date.length === 10) ? (date + 'T00:00:00Z') : new Date().toISOString(),
+        });
+        toast('Отзыв отправлен на модерацию');
+      } else {
+        toast('Привязано');
+      }
       Modal.close('addToAccModal');
-      toast('Привязано');
       renderAll();
     });
 
@@ -608,6 +648,22 @@
       document.getElementById('chgStatus').value = cur ? cur.status : PROFILE_STATUSES[0];
       document.getElementById('chgComment').value = cur ? (cur.comment || '') : '';
       document.getElementById('chgDate').value = (cur && cur.date) ? cur.date : window.App.todayISO();
+      document.getElementById('chgReviewText').value = '';
+      toggleChgReviewField();
+      // Если уже есть pending/approved отзыв для этой пары — показать вместо поля.
+      const existing = (Store.state.reviews || []).find(r => r.mentorId === mid && r.profileId === pid);
+      const wrap = document.getElementById('chgReviewWrap');
+      if (existing && cur && cur.status === DONE_STATUS) {
+        const mod = existing.moderation;
+        const badgeColor = mod === 'approved' ? 'var(--green)' : mod === 'rejected' ? 'var(--red)' : 'var(--orange)';
+        const badgeText  = mod === 'approved' ? 'Одобрен' : mod === 'rejected' ? 'Отклонён' : 'На модерации';
+        wrap.style.display = 'block';
+        wrap.innerHTML = `
+          <label>Опубликованный отзыв · <span style="color:${badgeColor}">${badgeText}</span></label>
+          <div class="input" style="min-height:90px;white-space:pre-wrap;font-family:inherit;background:rgba(255,255,255,0.02)">${escapeHtml(existing.text || '')}</div>
+          <div style="font-size:11px;color:var(--text-mute);margin-top:4px">Отправлен: ${escapeHtml(fmtDate(existing.submittedAt))}${existing.moderatedAt ? ' · Проверен: ' + escapeHtml(fmtDate(existing.moderatedAt)) : ''}</div>
+        `;
+      }
       const histDiv = document.getElementById('chgHist');
       if (cur && (cur.history || []).length) {
         const items = cur.history.slice().reverse().map(h => `
@@ -619,12 +675,20 @@
       } else { histDiv.innerHTML = ''; }
       Modal.open('chgStatusModal');
     }
+    document.getElementById('chgStatus').addEventListener('change', toggleChgReviewField);
     document.getElementById('chgSave').addEventListener('click', () => {
       if (!chgPid || !chgMid) return;
       const newStatus = document.getElementById('chgStatus').value;
       const newComment = document.getElementById('chgComment').value.trim();
       const newDate = document.getElementById('chgDate').value || window.App.todayISO();
       const cur = getStatusFor(chgPid, chgMid);
+      // Если новый статус «Готов», а у пары ещё нет review — требуем текст и создаём review.
+      const existingReview = (Store.state.reviews || []).find(r => r.mentorId === chgMid && r.profileId === chgPid);
+      let newReviewText = '';
+      if (newStatus === DONE_STATUS && !existingReview) {
+        newReviewText = document.getElementById('chgReviewText').value.trim();
+        if (!newReviewText) { toast('Вставьте текст опубликованного отзыва', 'error'); return; }
+      }
       // Если реально ничего не поменялось в статусе/комментарии — просто подправим дату,
       // чтобы не плодить бессмысленные записи в истории.
       if (cur && cur.status === newStatus && (cur.comment || '') === newComment && cur.date !== newDate) {
@@ -632,8 +696,18 @@
       } else {
         Store.setProfileStatus(chgMid, chgPid, newStatus, newComment, newDate);
       }
+      if (newReviewText) {
+        const myEmail = (window.AuthGate && window.AuthGate.email && window.AuthGate.email()) || '';
+        Store.addReview({
+          profileId: chgPid, mentorId: chgMid,
+          text: newReviewText, authorEmail: myEmail,
+          submittedAt: (newDate && newDate.length === 10) ? (newDate + 'T00:00:00Z') : new Date().toISOString(),
+        });
+        toast('Отзыв отправлен на модерацию');
+      } else {
+        toast('Статус сохранён');
+      }
       Modal.close('chgStatusModal');
-      toast('Статус сохранён');
       renderAll();
     });
     document.getElementById('chgRemove').addEventListener('click', () => {

@@ -128,7 +128,22 @@
 
     email() { const u = this.user(); return u ? u.email : null; },
     rate()  { const u = this.user(); return u && u.user_metadata ? Number(u.user_metadata.rate) || 0 : 0; },
-    name()  { const u = this.user(); return u && u.user_metadata && u.user_metadata.name || (u ? u.email : ''); }
+    name()  { const u = this.user(); return u && u.user_metadata && u.user_metadata.name || (u ? u.email : ''); },
+    /**
+     * Роль определяется по email-маппингу в state.crmRoles либо по
+     * user_metadata.role. По умолчанию — 'team' (без полных прав).
+     * Чтобы быть owner-ом, email должен быть либо в OWNER_EMAILS,
+     * либо в user_metadata.role === 'owner'.
+     */
+    role() {
+      const u = this.user();
+      if (!u) return null;
+      const meta = u.user_metadata || {};
+      if (meta.role === 'owner' || meta.role === 'team') return meta.role;
+      const email = (u.email || '').toLowerCase();
+      const OWNER_EMAILS = ['danila.rodionov19642003@gmail.com'];
+      return OWNER_EMAILS.includes(email) ? 'owner' : 'team';
+    }
   };
 
   window.Supabase = { URL, KEY, rest, Tbl, Auth };

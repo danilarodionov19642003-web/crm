@@ -7,18 +7,29 @@
 (function () {
   'use strict';
 
+  // ownerOnly — пункт виден только владельцу (role='owner').
+  // Сотрудники (role='team') видят лишь Аккаунты, IP, Отзывы.
   const NAV = [
-    { id: 'dashboard',     label: 'Дашборд',    href: 'dashboard.html',     icon: icoGrid() },
-    { id: 'finance',       label: 'Финансы',    href: 'finance.html',       icon: icoWallet() },
-    { id: 'clients',       label: 'Клиенты',    href: 'clients.html',       icon: icoClient() },
-    { id: 'subscriptions', label: 'Подписки',   href: 'subscriptions.html', icon: icoSub() },
-    { id: 'employees',     label: 'Сотрудники', href: 'employees.html',     icon: icoUsers() },
+    { id: 'dashboard',     label: 'Дашборд',    href: 'dashboard.html',     icon: icoGrid(),     ownerOnly: true },
+    { id: 'finance',       label: 'Финансы',    href: 'finance.html',       icon: icoWallet(),   ownerOnly: true },
+    { id: 'clients',       label: 'Клиенты',    href: 'clients.html',       icon: icoClient(),   ownerOnly: true },
+    { id: 'subscriptions', label: 'Подписки',   href: 'subscriptions.html', icon: icoSub(),      ownerOnly: true },
+    { id: 'employees',     label: 'Сотрудники', href: 'employees.html',     icon: icoUsers(),    ownerOnly: true },
     { id: 'reviews',       label: 'Отзывы',     href: 'reviews.html',       icon: icoReviews() },
     { id: 'statuses',      label: 'Аккаунты',   href: 'statuses.html',      icon: icoProfiles() },
-    { id: 'links',         label: 'Связи',      href: 'links.html',         icon: icoLinks() },
+    { id: 'links',         label: 'Связи',      href: 'links.html',         icon: icoLinks(),    ownerOnly: true },
     { id: 'ips',           label: 'IP-адреса',  href: 'ips.html',           icon: icoIps() },
-    { id: 'phones',        label: 'Номера',     href: 'phones.html',        icon: icoPhones() }
+    { id: 'phones',        label: 'Номера',     href: 'phones.html',        icon: icoPhones(),   ownerOnly: true }
   ];
+
+  function currentRole() {
+    const fromBody = document.body && document.body.dataset.role;
+    return (document.documentElement.dataset.role || fromBody || 'owner').toLowerCase();
+  }
+  function visibleNav() {
+    const isOwner = currentRole() === 'owner';
+    return NAV.filter(n => isOwner || !n.ownerOnly);
+  }
 
   function resolveHref(baseHref) {
     // Если страница лежит в /pages/, ссылки относительно текущей директории.
@@ -37,7 +48,7 @@
           <span>Mentori</span>
         </div>
         <nav class="sidebar__nav">
-          ${NAV.map(n => `
+          ${visibleNav().map(n => `
             <a href="${resolveHref(n.href)}" class="nav-item ${n.id === active ? 'active' : ''}">
               ${n.icon}
               <span>${n.label}</span>

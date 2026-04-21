@@ -37,10 +37,21 @@
   (async () => {
     const { Auth } = window.Supabase;
 
-    // если уже залогинен — сразу в кабинет
-    if (Auth.isLogged()) { location.replace('./index.html'); return; }
+    // Куда редиректить после успешного входа: владельцу — главная CRM,
+    // сотруднику (Настя) — страница аккаунтов. Для обратной совместимости
+    // можно указать ?next=... (напр. если auth-gate заслал сюда).
+    function landing() {
+      const params = new URLSearchParams(location.search);
+      const next = params.get('next');
+      if (next && /^[/]/.test(next)) return next;
+      const role = Auth.role();
+      return role === 'team' ? '../statuses.html' : '../../index.html';
+    }
+
+    // если уже залогинен — сразу на главную
+    if (Auth.isLogged()) { location.replace(landing()); return; }
     // попробуем refresh — на случай протухшего access_token
-    if (await Auth.refresh()) { location.replace('./index.html'); return; }
+    if (await Auth.refresh()) { location.replace(landing()); return; }
 
     const err = document.getElementById('err');
     function showErr(msg) { err.textContent = msg; err.hidden = false; }
@@ -55,7 +66,7 @@
       btn.disabled = true; btn.textContent = 'Входим…';
       try {
         await Auth.signIn(email, pwd);
-        location.replace('./index.html');
+        location.replace(landing());
       } catch (e) {
         showErr(e.message || 'Не удалось войти');
         btn.disabled = false; btn.textContent = 'Войти';

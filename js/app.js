@@ -146,6 +146,7 @@
       this.state.phones ??= [];
       this.state.accountRegs ??= [];   // регистрации аккаунтов: TG/Яндекс/Авито/2ГИС/почта Профи
       this.state.archivedProfiles ??= []; // удалённые аккаунты: хранятся чтобы не терять историю IP/связей/номеров
+      this.state.reviews ??= [];        // отзывы на модерации: см. Store.addReview / approveReview / rejectReview
       this._migrateNormalizePhones();
       // Бэкфилл менторов из клиентов: если клиент был создан на странице
       // «Клиенты» и не имеет пары в state.mentors — создаём её здесь, чтобы
@@ -858,6 +859,54 @@
     },
     deleteProfileStatus(id) {
       this.state.profileStatuses = (this.state.profileStatuses || []).filter(s => s.id !== id);
+      this.save();
+    },
+
+    /* ---------- Reviews (модерация опубликованных отзывов) ----------
+       Когда сотрудник (Настя) выставляет статус «🎯 Готов», он обязан
+       вставить текст опубликованного отзыва. Отзыв попадает сюда со
+       статусом 'pending', владелец на странице reviews.html нажимает
+       «Проверен» → moderation='approved' → засчитывается зарплата
+       (rate ₽) и отзыв учитывается в счётчике «Сделано» у клиента. */
+    addReview(rec) {
+      const item = Object.assign({
+        id: uid(),
+        profileId: '',
+        mentorId: '',
+        text: '',
+        authorEmail: '',           // кто опубликовал и сдал на модерацию
+        submittedAt: new Date().toISOString(),
+        moderation: 'pending',     // pending | approved | rejected
+        moderatedAt: null,
+        moderatedBy: null,
+        rate: 300,                 // ставка фиксируется в момент создания
+      }, rec);
+      this.state.reviews ??= [];
+      this.state.reviews.push(item);
+      this.save();
+      return item;
+    },
+    approveReview(id, moderatorEmail) {
+      const r = (this.state.reviews || []).find(x => x.id === id);
+      if (!r) return null;
+      r.moderation = 'approved';
+      r.moderatedAt = new Date().toISOString();
+      r.moderatedBy = moderatorEmail || null;
+      this.save();
+      return r;
+    },
+    rejectReview(id, moderatorEmail, reason = '') {
+      const r = (this.state.reviews || []).find(x => x.id === id);
+      if (!r) return null;
+      r.moderation = 'rejected';
+      r.moderatedAt = new Date().toISOString();
+      r.moderatedBy = moderatorEmail || null;
+      if (reason) r.rejectReason = reason;
+      this.save();
+      return r;
+    },
+    deleteReview(id) {
+      this.state.reviews = (this.state.reviews || []).filter(x => x.id !== id);
       this.save();
     },
 

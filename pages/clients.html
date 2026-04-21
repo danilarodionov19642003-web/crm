@@ -167,6 +167,7 @@
   <script src="../data/seed.js"></script>
   <script src="../js/app.js"></script>
   <script src="../js/supabase-client.js"></script>
+  <script src="../js/auth-gate.js"></script>
   <script src="../js/cloud-sync.js"></script>
   <script src="../js/accounts-sync.js"></script>
   <script src="../js/reviews-sync.js"></script>
@@ -186,8 +187,10 @@
     Store.load();
     const filters = { tariff: '', state: '', q: '' };
 
-    /* ---- Авто-подсчёт «Сделано» из статусов (mentor.code === client.code) ---- */
-    const DONE_STATUS = '🎯 Готов';
+    /* ---- Авто-подсчёт «Сделано» из ОДОБРЕННЫХ отзывов (mentor.code === client.code) ----
+       Раньше считали все статусы «🎯 Готов». Теперь сотрудник, выставляя «Готов», обязан
+       приложить текст отзыва — он попадает на модерацию. Засчитываем только отзывы,
+       которые владелец одобрил (state.reviews[*].moderation === 'approved'). */
     function deriveDone(client) {
       const code = String(client.code || '').toLowerCase().trim();
       if (!code) return 0;
@@ -195,8 +198,8 @@
         .filter(m => String(m.code || '').toLowerCase().trim() === code);
       if (mentors.length === 0) return 0;
       const ids = new Set(mentors.map(m => m.id));
-      const statuses = Store.state.profileStatuses || [];
-      return statuses.filter(s => ids.has(s.mentorId) && s.status === DONE_STATUS).length;
+      const reviews = Store.state.reviews || [];
+      return reviews.filter(r => ids.has(r.mentorId) && r.moderation === 'approved').length;
     }
     // Обновляем клиенты при синхронизации облака
     window.addEventListener('cloudstate:updated', () => { Store.load(); render(); });
