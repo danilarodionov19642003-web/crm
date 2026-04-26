@@ -86,6 +86,22 @@
       border-radius: 4px;
     }
     .copy-btn:hover { background: var(--bg-hover); color: var(--accent); }
+
+    /* Переключатель «Активные / Архив» */
+    .acc-tabs { display: inline-flex; gap: 0; background: var(--bg-elev); border: 1px solid var(--border); border-radius: 8px; padding: 2px; }
+    .acc-tab {
+      padding: 6px 14px; font-size: 13px; font-weight: 500;
+      background: transparent; border: none; border-radius: 6px;
+      color: var(--text-dim); cursor: pointer;
+      transition: background .12s ease, color .12s ease;
+    }
+    .acc-tab:hover { color: var(--text); }
+    .acc-tab.is-active { background: var(--accent); color: #fff; }
+    .acc-tab .tab-cnt { font-size: 11px; opacity: .8; margin-left: 4px; font-variant-numeric: tabular-nums; }
+
+    .acc-card.is-archived { opacity: .85; border-style: dashed; }
+    .acc-card.is-archived .acc-card__title { color: var(--text-dim); }
+    .arch-meta { font-size: 11px; color: var(--text-mute); }
   </style>
 </head>
 <body>
@@ -108,6 +124,14 @@
         </div>
 
         <section class="cards" id="stKpis"></section>
+
+        <div style="display:flex;align-items:center;gap:12px;margin:14px 0 10px">
+          <div class="acc-tabs" role="tablist">
+            <button class="acc-tab is-active" data-tab="live" role="tab">📋 Активные <span class="tab-cnt" id="tabCntLive">0</span></button>
+            <button class="acc-tab" data-tab="arch" role="tab">📦 Архив <span class="tab-cnt" id="tabCntArch">0</span></button>
+          </div>
+          <span style="color:var(--text-mute);font-size:12px" id="archHint"></span>
+        </div>
 
         <div class="filters">
           <select id="fCity" class="select">
@@ -305,7 +329,8 @@
     const { confirmDelete } = window.TableUtils;
 
     Store.load();
-    const filters = { city: '', status: '', q: '' };
+    // mode: 'live' — активные аккаунты, 'arch' — архивные (мягко удалённые)
+    const filters = { city: '', status: '', q: '', mode: 'live' };
 
     // Стили статусов: подключаем эмодзи к коду состояния (для CSS-оформления чипа)
     const STATUS_KIND = {
@@ -360,7 +385,22 @@
 
     /* ---- Карточки аккаунтов ---- */
     function renderAccounts() {
-      const profs = (Store.state.profiles || [])
+      const live = (Store.state.profiles || []);
+      const arch = (Store.state.archivedProfiles || []);
+      // Счётчики на табах — показываем сколько есть в каждом разделе
+      document.getElementById('tabCntLive').textContent = live.length;
+      document.getElementById('tabCntArch').textContent = arch.length;
+      // Подкрашиваем активный таб
+      document.querySelectorAll('.acc-tab').forEach(b => {
+        b.classList.toggle('is-active', b.dataset.tab === filters.mode);
+      });
+      const archMode = filters.mode === 'arch';
+      document.getElementById('archHint').textContent = archMode
+        ? '📦 Архив. Здесь хранятся удалённые аккаунты — данные сохранены для аналитики и истории. Можно восстановить или удалить навсегда.'
+        : '';
+
+      const source = archMode ? arch : live;
+      const profs = source
         .slice()
         .sort((a, b) => (a.code || '').localeCompare(b.code || '', 'ru', { numeric: true }));
 
@@ -386,7 +426,8 @@
 
       const grid = document.getElementById('accGrid');
       if (filtered.length === 0) {
-        grid.innerHTML = `<div class="empty" style="grid-column:1/-1;padding:40px;text-align:center;color:var(--text-mute)">Нет аккаунтов под фильтр.</div>`;
+        const msg = archMode ? 'Архив пуст.' : 'Нет аккаунтов под фильтр.';
+        grid.innerHTML = `<div class="empty" style="grid-column:1/-1;padding:40px;text-align:center;color:var(--text-mute)">${msg}</div>`;
         return;
       }
 
@@ -433,40 +474,76 @@
           ? `<div class="acc-card__owner">👤 <b>${escapeHtml(reg.ownerName || '—')}</b>${reg.phone ? ' · ' + escapeHtml(formatPhone(reg.phone)) : ''}</div>`
           : `<div class="acc-card__owner" style="opacity:.5">— регистрация не заполнена —</div>`;
 
+        // В архиве — другой набор кнопок: восстановить + удалить навсегда.
+        const headActions = archMode
+          ? `
+              <button class="btn btn--ghost btn--sm" data-act="restore" data-pid="${p.id}" title="Восстановить аккаунт">↩ Восстановить</button>
+              <button class="btn--icon" data-act="purge" data-pid="${p.id}" title="Удалить навсегда (без отката)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+              </button>`
+          : `
+              <button class="btn btn--ghost btn--sm" data-act="reg" data-pid="${p.id}" title="Регистрация">🔐</button>
+              <button class="btn btn--ghost btn--sm" data-act="addmen" data-pid="${p.id}" title="Добавить клиента">＋</button>
+              <button class="btn--icon" data-act="archive" data-pid="${p.id}" title="Отправить в архив">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="5" rx="1"/><path d="M5 8v11a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8"/><line x1="10" y1="13" x2="14" y2="13"/></svg>
+              </button>`;
+
+        const archMeta = archMode && p.deletedAt
+          ? `<div class="arch-meta">📦 в архиве с ${escapeHtml(fmtDate(p.deletedAt))}</div>`
+          : '';
+
         return `
-          <div class="acc-card" data-pid="${p.id}">
+          <div class="acc-card${archMode ? ' is-archived' : ''}" data-pid="${p.id}">
             <div class="acc-card__head">
               <div class="acc-card__title">
                 <span class="badge badge--orange">${escapeHtml(p.code || '?')}</span>
                 <small>${escapeHtml(p.city || '—')}</small>
               </div>
               <div class="acc-card__actions">
-                <button class="btn btn--ghost btn--sm" data-act="reg" data-pid="${p.id}" title="Регистрация">🔐</button>
-                <button class="btn btn--ghost btn--sm" data-act="addmen" data-pid="${p.id}" title="Добавить клиента">＋</button>
-                <button class="btn--icon" data-act="delacc" data-pid="${p.id}" title="Удалить аккаунт">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
-                </button>
+                ${headActions}
               </div>
             </div>
             ${ownerLine}
+            ${archMeta}
             ${innerBody}
           </div>
         `;
       }).join('');
 
-      // привязка кликов
+      // привязка кликов: активный режим
       grid.querySelectorAll('[data-act="reg"]').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); openReg(b.dataset.pid); }));
       grid.querySelectorAll('[data-act="addmen"]').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); openAddMentor(b.dataset.pid); }));
-      grid.querySelectorAll('[data-act="delacc"]').forEach(b => b.addEventListener('click', e => {
+      grid.querySelectorAll('[data-act="archive"]').forEach(b => b.addEventListener('click', e => {
         e.stopPropagation();
-        if (!confirmDelete('Удалить аккаунт целиком? Все статусы и регистрация удалятся.')) return;
+        if (!confirmDelete('Отправить аккаунт в архив? Данные сохранятся (история, IP, номера) — можно будет восстановить из вкладки «Архив».')) return;
         const pid = b.dataset.pid;
-        Store.deleteAccountReg(pid);
+        // accountReg сейчас НЕ удаляем — это часть данных, которые имеет смысл
+        // сохранить в архиве (имя владельца, пароли). При окончательном удалении
+        // (purgeProfile) — будут вычищены.
         Store.deleteProfile(pid);
+        toast('Аккаунт в архиве');
+        renderAll();
+      }));
+      // привязка кликов: архивный режим
+      grid.querySelectorAll('[data-act="restore"]').forEach(b => b.addEventListener('click', e => {
+        e.stopPropagation();
+        if (!confirm('Восстановить аккаунт из архива? Он снова появится в активных.')) return;
+        Store.restoreProfile(b.dataset.pid);
+        toast('Аккаунт восстановлен');
+        renderAll();
+      }));
+      grid.querySelectorAll('[data-act="purge"]').forEach(b => b.addEventListener('click', e => {
+        e.stopPropagation();
+        const txt = 'УДАЛИТЬ НАВСЕГДА?\n\nЭто окончательное удаление. Регистрация (логины/пароли), статусы клиентов и привязки номеров к этому аккаунту исчезнут. Сами номера в разделе «Номера» останутся, но без привязки к аккаунту. История IP сохранится.\n\nОтменить нельзя.';
+        if (!confirm(txt)) return;
+        Store.purgeProfile(b.dataset.pid);
+        toast('Аккаунт удалён навсегда');
         renderAll();
       }));
       grid.querySelectorAll('[data-act="chgst"]').forEach(c => c.addEventListener('click', e => {
         e.stopPropagation();
+        // В архиве смена статуса не имеет смысла (клиенты отвязаны).
+        if (archMode) return;
         openChangeStatus(c.dataset.pid, c.dataset.mid);
       }));
     }
@@ -922,6 +999,11 @@
       ['fCity','fStatus','fSearch'].forEach(id => document.getElementById(id).value = '');
       renderAccounts();
     });
+    // Переключение «Активные / Архив»
+    document.querySelectorAll('.acc-tab').forEach(b => b.addEventListener('click', () => {
+      filters.mode = b.dataset.tab;
+      renderAccounts();
+    }));
     window.onGlobalSearch = q => { filters.q = q; document.getElementById('fSearch').value = q; renderAccounts(); };
 
     window.addEventListener('cloudstate:updated', renderAll);

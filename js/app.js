@@ -739,6 +739,42 @@
       return null;
     },
 
+    /** Восстановить аккаунт из архива в активный список.
+     *  Снимает флаги archived/deletedAt, возвращает в state.profiles. */
+    restoreProfile(id) {
+      const arr = this.state.archivedProfiles || [];
+      const i = arr.findIndex(p => p.id === id);
+      if (i < 0) return null;
+      const snap = arr[i];
+      arr.splice(i, 1);
+      const live = Object.assign({}, snap);
+      delete live.archived;
+      delete live.deletedAt;
+      live.restoredAt = todayISO();
+      // Защита от коллизий: если такого id уже нет в profiles — кладём.
+      if (!(this.state.profiles || []).some(p => p.id === id)) {
+        this.state.profiles.push(live);
+      }
+      this.save();
+      return live;
+    },
+
+    /** Удалить аккаунт ОКОНЧАТЕЛЬНО — из архива, без возможности восстановления.
+     *  Чистит:
+     *    • запись из state.archivedProfiles;
+     *    • profileStatuses (на всякий — обычно их уже нет, удалены при архивации);
+     *    • accountRegs (регистрационные данные);
+     *    • привязку profileId у phones (сами номера не трогаем — это ценные данные,
+     *      просто отвязываем от удалённого аккаунта).
+     *  ipLogs НЕ трогаем — это история засветки IP, важна даже после удаления. */
+    purgeProfile(id) {
+      this.state.archivedProfiles = (this.state.archivedProfiles || []).filter(p => p.id !== id);
+      this.state.profileStatuses = (this.state.profileStatuses || []).filter(s => s.profileId !== id);
+      this.state.accountRegs = (this.state.accountRegs || []).filter(r => r.profileId !== id);
+      (this.state.phones || []).forEach(ph => { if (ph.profileId === id) ph.profileId = ''; });
+      this.save();
+    },
+
     /* ====================================================================
        ГРАФ СВЯЗЕЙ + DFS — антипересечения клиентов
        --------------------------------------------------------------------
@@ -1203,7 +1239,11 @@
     getAccountReg(profileId) {
       return (this.state.accountRegs || []).find(r => r.profileId === profileId) || null;
     },
-    /** Создать или обновить регистрацию по profileId */
+    /** Создать или обновить регистрацию по profileId.
+     *  Побочный эффект: номера телефонов (phone и avitoPhone) автоматически
+     *  заводятся в общую базу state.phones и привязываются к этому profileId,
+     *  если такой пары (number, profileId) там ещё нет. Так не нужно вручную
+     *  дублировать номер в разделе «Номера». */
     upsertAccountReg(profileId, patch) {
       const list = this.state.accountRegs;
       const i = list.findIndex(r => r.profileId === profileId);
@@ -1225,7 +1265,42 @@
         rec.avitoPhone = this._normalizePhone(rec.avitoPhone);
         list.push(rec);
       }
+      // Авто-привязка номеров к разделу «Номера»
+      const finalReg = (this.state.accountRegs || []).find(r => r.profileId === profileId);
+      if (finalReg) {
+        this._ensurePhoneRecord(finalReg.phone,      profileId, { ownerName: finalReg.ownerName, city: finalReg.city, section: 'phone' });
+        this._ensurePhoneRecord(finalReg.avitoPhone, profileId, { ownerName: finalReg.ownerName, city: finalReg.city, section: '🟢 Авито' });
+      }
       this.save();
+    },
+
+    /** Создать запись в state.phones, если для пары (number, profileId) её ещё нет.
+     *  Если такой номер уже привязан к этому аккаунту — просто подтянем мета (имя/город),
+     *  оставив существующий id. Если номер записан под другим аккаунтом — НЕ трогаем
+     *  его (это ценная история «этот номер был на стольких-то аккаунтах»),
+     *  заводим отдельную запись для нового аккаунта. */
+    _ensurePhoneRecord(rawNumber, profileId, meta) {
+      const number = this._normalizePhone(rawNumber);
+      if (!number || !profileId) return null;
+      const phones = this.state.phones || (this.state.phones = []);
+      const existing = phones.find(p => p.number === number && p.profileId === profileId);
+      if (existing) {
+        // не перетираем уже введённые поля, только дозаполняем пустые
+        ['ownerName','city','section'].forEach(k => {
+          if (!existing[k] && meta && meta[k]) existing[k] = meta[k];
+        });
+        return existing;
+      }
+      const rec = Object.assign({
+        id: uid(),
+        number,
+        profileId,
+        note: '',
+        createdAt: todayISO(),
+        autoCreated: true,            // помечаем — пришёл из регистрации, а не из ручного ввода
+      }, this._emptyPhoneMeta(), meta || {});
+      phones.push(rec);
+      return rec;
     },
     deleteAccountReg(profileId) {
       this.state.accountRegs = (this.state.accountRegs || []).filter(r => r.profileId !== profileId);

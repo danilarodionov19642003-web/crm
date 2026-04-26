@@ -101,7 +101,7 @@
         <div class="page-title">
           <div>
             <h1>Номера телефонов</h1>
-            <p>Каждый номер — кликабельная карточка с полными данными регистрации (TG / Яндекс / Авито / Профи / 2ГИС). Дубли подсвечены красным.</p>
+            <p>Каждый номер — кликабельная карточка с полными данными регистрации (TG / Яндекс / Авито / Профи / 2ГИС). Дубли подсвечены красным. Номера, введённые в регистрации аккаунта, появляются здесь автоматически (📥).</p>
           </div>
           <button class="btn btn--primary" id="btnAdd">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -352,7 +352,9 @@
         const rowStyle = dupe ? ' style="background:rgba(239,68,68,0.06)"' : '';
         const accCell = acc
           ? `<span class="badge badge--orange">${escapeHtml(acc.profile.code)}</span>` +
-            (acc.source === 'auto' ? ' <span style="color:var(--text-mute);font-size:11px">(авто)</span>' : '')
+            (acc.profile.archived ? ' <span class="badge badge--red" style="margin-left:4px">архив</span>' : '') +
+            (r.autoCreated ? ' <span title="Заведён автоматически из регистрации аккаунта" style="color:var(--text-mute);font-size:11px">📥 авто</span>'
+              : (acc.source === 'auto' ? ' <span style="color:var(--text-mute);font-size:11px">(авто)</span>' : ''))
           : '<span style="color:var(--text-mute);font-size:12px">— нет —</span>';
         return `<tr data-id="${r.id}"${rowStyle}>
           <td>
