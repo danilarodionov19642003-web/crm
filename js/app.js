@@ -710,7 +710,10 @@
      *   2. IP-адресах — ipLogs НЕ удаляются, чтобы нельзя было случайно
      *      переиспользовать IP, который уже засвечен на старом аккаунте.
      *   3. номерах — phones с profileId этого аккаунта остаются как были.
-     * Чистим только profileStatuses (они уже неактуальны).
+     *   4. статусах — profileStatuses тоже сохраняем (был «🎯 Готов» —
+     *      пусть и остаётся, иначе у клиента счётчик «Сделано» откатится
+     *      назад при архивации, и история «на каком аккаунте мы дошли до
+     *      готова» потеряется. См. purgeProfile — там чистим окончательно).
      */
     deleteProfile(id) {
       const profile = this.state.profiles.find(x => x.id === id);
@@ -724,9 +727,9 @@
         }));
       }
       this.state.profiles = this.state.profiles.filter(x => x.id !== id);
-      this.state.profileStatuses = (this.state.profileStatuses || []).filter(s => s.profileId !== id);
-      // ipLogs и phones НЕ трогаем — ссылка profileId продолжает указывать
-      // на архивный профиль, UI резолвит через getProfileOrArchived()
+      // statuses, ipLogs, phones НЕ трогаем — UI резолвит профиль через
+      // getProfileOrArchived(), а клиентский счётчик «Сделано» дальше учитывает
+      // статус «Готов» на архивном аккаунте.
       this.save();
     },
 

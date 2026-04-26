@@ -102,6 +102,60 @@
     .acc-card.is-archived { opacity: .85; border-style: dashed; }
     .acc-card.is-archived .acc-card__title { color: var(--text-dim); }
     .arch-meta { font-size: 11px; color: var(--text-mute); }
+
+    /* ---- Inline IP-блок в карточке аккаунта ----
+       Цель: добавлять и проверять IP сразу здесь, не уходя на страницу IP.
+       Используется тот же Store.addIp/deleteIp — данные синхронны с разделом «IP-адреса». */
+    .acc-ip { padding-top: 8px; border-top: 1px dashed var(--border); }
+    .acc-ip__head {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 11px; color: var(--text-mute);
+      text-transform: uppercase; letter-spacing: .04em;
+      margin-bottom: 5px;
+    }
+    .acc-ip__add {
+      margin-left: auto; padding: 2px 10px; font-size: 11px;
+      background: transparent; border: 1px solid var(--border); border-radius: 6px;
+      color: var(--text-dim); cursor: pointer; line-height: 1.3;
+    }
+    .acc-ip__add:hover { color: var(--accent); border-color: var(--accent); }
+    .acc-ip__list { display: flex; flex-direction: column; gap: 3px; }
+    .acc-ip__row {
+      display: flex; align-items: center; gap: 8px;
+      font-family: ui-monospace, monospace; font-size: 12px;
+      padding: 3px 8px; background: var(--bg-elev-2); border-radius: 6px;
+    }
+    .acc-ip__row.conflict {
+      background: rgba(239,68,68,0.08);
+      border: 1px solid rgba(239,68,68,0.3);
+    }
+    .acc-ip__addr { flex: 1; word-break: break-all; }
+    .acc-ip__conflict-tag {
+      color: var(--red); font-size: 10.5px; font-family: var(--font);
+      padding: 1px 6px; background: rgba(239,68,68,0.12); border-radius: 4px;
+    }
+    .acc-ip__date { color: var(--text-mute); font-size: 11px; font-family: var(--font); }
+    .acc-ip__del {
+      background: none; border: none; color: var(--text-mute);
+      cursor: pointer; padding: 0 4px; font-size: 14px; line-height: 1;
+    }
+    .acc-ip__del:hover { color: var(--red); }
+    .acc-ip__form {
+      display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
+      margin-top: 6px; padding: 8px;
+      background: var(--bg-elev-2); border-radius: 8px;
+      border: 1px solid var(--border);
+    }
+    .acc-ip__form .input { font-size: 12px; padding: 5px 8px; height: auto; }
+    .acc-ip__form .ip-input { flex: 1 1 130px; font-family: ui-monospace, monospace; }
+    .acc-ip__form .ip-date  { width: 130px; }
+    .acc-ip__form .ip-note  { flex: 1 1 100px; }
+    .acc-ip__form .btn { padding: 5px 10px; font-size: 12px; }
+    .acc-ip__warn-row {
+      flex: 1 0 100%; font-size: 11px; padding: 5px 8px; margin-top: 4px;
+      background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3);
+      color: var(--red); border-radius: 6px;
+    }
   </style>
 </head>
 <body>
@@ -325,12 +379,15 @@
 
   <script>
   document.addEventListener('DOMContentLoaded', () => {
-    const { Store, Modal, toast, fmtDate, PROFILE_STATUSES, cityFromCode } = window.App;
+    const { Store, Modal, toast, fmtDate, todayISO, PROFILE_STATUSES, cityFromCode } = window.App;
     const { confirmDelete } = window.TableUtils;
 
     Store.load();
     // mode: 'live' — активные аккаунты, 'arch' — архивные (мягко удалённые)
     const filters = { city: '', status: '', q: '', mode: 'live' };
+    // Какие карточки имеют развернутую форму «+ IP» — состояние локальное,
+    // переживает re-render текущей страницы. Очищается при смене фильтров.
+    const openIpForms = new Set();
 
     // Стили статусов: подключаем эмодзи к коду состояния (для CSS-оформления чипа)
     const STATUS_KIND = {
@@ -492,6 +549,58 @@
           ? `<div class="arch-meta">📦 в архиве с ${escapeHtml(fmtDate(p.deletedAt))}</div>`
           : '';
 
+        // ---- Inline IP-блок ----
+        // Все IP-логи этого аккаунта (новые сверху). Для каждого считаем,
+        // светился ли он на других аккаунтах (live или архив) — если да,
+        // подкрашиваем красным как «занят на …». Это та же проверка что
+        // при добавлении, но видимая всегда — чтобы не пропустить старый
+        // конфликт.
+        const ipsForAcc = (Store.state.ipLogs || [])
+          .filter(i => i.profileId === p.id)
+          .slice()
+          .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+        const ipRows = ipsForAcc.map(ip => {
+          const otherUsages = (Store.state.ipLogs || [])
+            .filter(x => x.ip === ip.ip && x.profileId !== p.id);
+          const otherCodes = [...new Set(otherUsages.map(x => {
+            const pp = Store.getProfileOrArchived(x.profileId);
+            if (!pp) return '';
+            return (pp.profile.code || '?') + (pp.archived ? ' (архив)' : '');
+          }).filter(Boolean))];
+          const conflict = otherCodes.length > 0;
+          return `
+            <div class="acc-ip__row${conflict ? ' conflict' : ''}">
+              <span class="acc-ip__addr">${escapeHtml(ip.ip)}</span>
+              ${conflict ? `<span class="acc-ip__conflict-tag" title="Этот IP уже использовался на: ${escapeHtml(otherCodes.join(', '))}">⚠ ${escapeHtml(otherCodes.join(', '))}</span>` : ''}
+              <span class="acc-ip__date">${escapeHtml(shortDate(ip.date))}</span>
+              ${archMode ? '' : `<button class="acc-ip__del" data-act="delip" data-ipid="${ip.id}" title="Удалить запись IP">×</button>`}
+            </div>
+          `;
+        }).join('');
+        const addBtn = archMode
+          ? ''
+          : `<button class="acc-ip__add" data-act="ipadd" data-pid="${p.id}">+ IP</button>`;
+        const formHtml = (!archMode && openIpForms.has(p.id)) ? `
+          <div class="acc-ip__form" data-ipform="${p.id}">
+            <input type="text" class="input ip-input" placeholder="IP-адрес" data-pid="${p.id}" autocomplete="off"/>
+            <input type="date" class="input ip-date" value="${todayISO()}"/>
+            <input type="text" class="input ip-note" placeholder="заметка"/>
+            <button class="btn btn--primary" data-act="ipsave" data-pid="${p.id}">Сохранить</button>
+            <button class="btn btn--ghost" data-act="ipcancel" data-pid="${p.id}">Отмена</button>
+            <div class="acc-ip__warn-row" id="ipwarn-${p.id}" style="display:none"></div>
+          </div>
+        ` : '';
+        const ipBlock = `
+          <div class="acc-ip">
+            <div class="acc-ip__head">
+              🌐 IP <span style="opacity:.6">(${ipsForAcc.length})</span>
+              ${addBtn}
+            </div>
+            ${ipsForAcc.length ? `<div class="acc-ip__list">${ipRows}</div>` : ''}
+            ${formHtml}
+          </div>
+        `;
+
         return `
           <div class="acc-card${archMode ? ' is-archived' : ''}" data-pid="${p.id}">
             <div class="acc-card__head">
@@ -506,6 +615,7 @@
             ${ownerLine}
             ${archMeta}
             ${innerBody}
+            ${ipBlock}
           </div>
         `;
       }).join('');
@@ -545,6 +655,76 @@
         // В архиве смена статуса не имеет смысла (клиенты отвязаны).
         if (archMode) return;
         openChangeStatus(c.dataset.pid, c.dataset.mid);
+      }));
+
+      // ---- Inline IP-блок: обработчики ----
+      // Открыть форму добавления
+      grid.querySelectorAll('[data-act="ipadd"]').forEach(b => b.addEventListener('click', e => {
+        e.stopPropagation();
+        openIpForms.add(b.dataset.pid);
+        renderAccounts();
+        // Авто-фокус на поле ввода IP
+        setTimeout(() => {
+          const inp = document.querySelector(`.acc-ip__form[data-ipform="${b.dataset.pid}"] .ip-input`);
+          if (inp) inp.focus();
+        }, 30);
+      }));
+      // Закрыть форму
+      grid.querySelectorAll('[data-act="ipcancel"]').forEach(b => b.addEventListener('click', e => {
+        e.stopPropagation();
+        openIpForms.delete(b.dataset.pid);
+        renderAccounts();
+      }));
+      // Live-проверка дублей при вводе
+      grid.querySelectorAll('.ip-input').forEach(inp => {
+        inp.addEventListener('input', () => {
+          const pid = inp.dataset.pid;
+          const ip = inp.value.trim();
+          const warn = document.getElementById(`ipwarn-${pid}`);
+          if (!warn) return;
+          if (!ip) { warn.style.display = 'none'; return; }
+          const matches = (Store.state.ipLogs || []).filter(x => x.ip === ip && x.profileId !== pid);
+          if (!matches.length) { warn.style.display = 'none'; return; }
+          const codes = [...new Set(matches.map(x => {
+            const pp = Store.getProfileOrArchived(x.profileId);
+            if (!pp) return '';
+            return (pp.profile.code || '?') + (pp.archived ? ' (архив)' : '');
+          }).filter(Boolean))];
+          warn.innerHTML = `⚠ Этот IP уже на: <strong>${escapeHtml(codes.join(', '))}</strong>. Сохранять? Дубль = риск бана.`;
+          warn.style.display = 'block';
+        });
+        // Enter — сабмит формы
+        inp.addEventListener('keydown', e => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            const pid = inp.dataset.pid;
+            const btn = document.querySelector(`[data-act="ipsave"][data-pid="${pid}"]`);
+            if (btn) btn.click();
+          }
+        });
+      });
+      // Сохранить
+      grid.querySelectorAll('[data-act="ipsave"]').forEach(b => b.addEventListener('click', e => {
+        e.stopPropagation();
+        const pid = b.dataset.pid;
+        const form = document.querySelector(`.acc-ip__form[data-ipform="${pid}"]`);
+        if (!form) return;
+        const ip = form.querySelector('.ip-input').value.trim();
+        const date = form.querySelector('.ip-date').value || todayISO();
+        const note = form.querySelector('.ip-note').value.trim();
+        if (!ip) { toast('Введите IP', 'error'); return; }
+        Store.addIp({ ip, profileId: pid, date, note });
+        openIpForms.delete(pid);
+        toast('IP добавлен');
+        renderAll();
+      }));
+      // Удалить запись IP
+      grid.querySelectorAll('[data-act="delip"]').forEach(b => b.addEventListener('click', e => {
+        e.stopPropagation();
+        if (!confirm('Удалить эту IP-запись?\nЭто также удалит её из раздела «IP-адреса».')) return;
+        Store.deleteIp(b.dataset.ipid);
+        toast('IP удалён');
+        renderAll();
       }));
     }
 
