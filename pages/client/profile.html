@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Анкета — Mentori</title>
+  <link rel="stylesheet" href="../../css/styles.css"/>
+  <link rel="stylesheet" href="client.css"/>
+</head>
+<body class="cli-body">
+  <div data-cli-header></div>
+
+  <main class="cli-main">
+    <div data-cli-profile>
+      <div class="cli-empty">Загрузка…</div>
+    </div>
+  </main>
+
+  <script src="../../js/supabase-client.js"></script>
+  <script src="./client-app.js"></script>
+  <script>
+  (async () => {
+    const ok = await window.ClientApp.requireLogin();
+    if (!ok) return;
+    const snap = await window.ClientApp.loadSnapshot();
+    window.ClientApp.renderHeader(snap);
+    const params = new URLSearchParams(location.search);
+    const mentorId = params.get('id');
+    if (!snap || !snap.payload) {
+      document.querySelector('[data-cli-profile]').innerHTML =
+        '<a href="./index.html" class="cli-back">← Назад</a><div class="cli-empty">Данные ещё не загружены. Свяжитесь с менеджером.</div>';
+      return;
+    }
+    if (!mentorId) {
+      location.replace('./index.html'); return;
+    }
+    window.ClientApp.renderProfileDetail(snap.payload, mentorId);
+  })();
+  </script>
+</body>
+</html>

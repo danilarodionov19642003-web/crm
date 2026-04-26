@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Кабинеты клиентов — Mentori CRM</title>
+  <link rel="stylesheet" href="../css/styles.css"/>
+</head>
+<body>
+  <div class="app">
+    <div data-component="sidebar" data-active="client-access"></div>
+
+    <div class="main">
+      <div data-component="header" data-title="Кабинеты клиентов"></div>
+
+      <main class="content">
+        <div class="page-title">
+          <div>
+            <h1>Доступы в личные кабинеты</h1>
+            <p>Один клиент-человек (например, «Флагман») может иметь несколько анкет (a21, a22). По email он входит в личный кабинет и видит только свои данные. Сами данные изолированы на уровне Supabase RLS — клиент не сможет увидеть админку.</p>
+          </div>
+          <button class="btn btn--primary" id="btnAdd">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Добавить доступ
+          </button>
+        </div>
+
+        <div class="panel" style="padding:14px;margin-bottom:14px;background:#fff7e6;border:1px solid #ffd591;color:#874d00">
+          <strong>Важно:</strong> создание доступа здесь — это только связка email→анкеты на нашей стороне. Сам пользователь должен быть заведён в Supabase (Dashboard → Auth → Users → Add user) с этим же email и паролем, и в его user_metadata прописана роль <code>client</code>. Подробности — в SUPABASE_SETUP.md.
+        </div>
+
+        <div class="panel">
+          <div class="table-wrap">
+            <table class="table" id="cpTable">
+              <thead>
+                <tr>
+                  <th>Клиент</th>
+                  <th>Email для входа</th>
+                  <th>Анкеты</th>
+                  <th>Заметка</th>
+                  <th>Создан</th>
+                  <th class="actions"></th>
+                </tr>
+              </thead>
+              <tbody id="cpRows"></tbody>
+            </table>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- Модалка add/edit -->
+  <div class="modal-backdrop" id="cpModal">
+    <div class="modal" style="max-width:560px">
+      <div class="modal__header">
+        <h3 id="cpModalTitle">Новый доступ</h3>
+        <button class="btn--icon" data-close>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal__body">
+        <div class="field">
+          <label for="cpName">Имя клиента</label>
+          <input type="text" id="cpName" class="input" placeholder="Напр. Флагман"/>
+        </div>
+        <div class="field">
+          <label for="cpEmail">Email для входа</label>
+          <input type="email" id="cpEmail" class="input" placeholder="client@example.com"/>
+          <div style="font-size:11px;color:var(--text-mute);margin-top:4px">Этот же email должен быть заведён в Supabase Auth с user_metadata.role = "client".</div>
+        </div>
+        <div class="field">
+          <label>Анкеты, видимые в кабинете</label>
+          <div id="cpMentors" style="display:flex;flex-wrap:wrap;gap:8px;max-height:240px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:10px"></div>
+          <div style="font-size:11px;color:var(--text-mute);margin-top:4px">Отметь все анкеты, которые принадлежат этому клиенту. Например, для «Флагман» — a21 и a22.</div>
+        </div>
+        <div class="field">
+          <label for="cpNote">Заметка (для админа)</label>
+          <textarea id="cpNote" class="input" rows="2" placeholder="Внутренний комментарий"></textarea>
+        </div>
+      </div>
+      <div class="modal__footer">
+        <button class="btn btn--ghost" data-close>Отмена</button>
+        <button class="btn btn--primary" id="cpSave">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="../data/seed.js"></script>
+  <script src="../js/app.js"></script>
+  <script src="../js/supabase-client.js"></script>
+  <script src="../js/auth-gate.js"></script>
+  <script src="../js/cloud-sync.js"></script>
+  <script src="../components/sidebar.js"></script>
+  <script src="../components/header.js"></script>
+
+  <script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const { Store, Modal, toast, fmtDate } = window.App;
+    Store.load();
+
+    let editingId = null;
+
+    function escapeHtml(s) {
+      return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
+        '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+      }[c]));
+    }
+
+    /** Все ментора с непустыми кодами + их клиент (для метки "имя") */
+    function listAllMentors() {
+      const clients = Store.state.clients || [];
+      return (Store.state.mentors || [])
+        .filter(m => m.code)
+        .map(m => {
+          const c = clients.find(cl => String(cl.code||'').toLowerCase().trim() === String(m.code||'').toLowerCase().trim());
+          return {
+            id: m.id,
+            code: m.code,
+            name: c ? (c.name || m.name || '') : (m.name || '')
+          };
+        })
+        .sort((a, b) => String(a.code).localeCompare(String(b.code), 'ru', { numeric: true }));
+    }
+
+    function renderMentorsCheckboxes(selectedIds) {
+      const sel = new Set(selectedIds || []);
+      const wrap = document.getElementById('cpMentors');
+      const list = listAllMentors();
+      if (!list.length) {
+        wrap.innerHTML = '<div style="color:var(--text-mute);font-size:13px">Нет анкет (mentor’ов). Сначала добавь клиентов на странице «Клиенты».</div>';
+        return;
+      }
+      wrap.innerHTML = list.map(m => `
+        <label style="display:flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid var(--border);border-radius:999px;cursor:pointer;${sel.has(m.id) ? 'background:#e6f4ff;border-color:#91caff' : ''}">
+          <input type="checkbox" value="${m.id}" ${sel.has(m.id) ? 'checked' : ''} style="margin:0"/>
+          <span><strong>${escapeHtml(m.code)}</strong>${m.name ? ' · ' + escapeHtml(m.name) : ''}</span>
+        </label>
+      `).join('');
+    }
+
+    function getCheckedMentors() {
+      return Array.from(document.querySelectorAll('#cpMentors input[type=checkbox]:checked'))
+        .map(i => i.value);
+    }
+
+    function render() {
+      const tbody = document.getElementById('cpRows');
+      const list = (Store.state.clientPortals || []).slice()
+        .sort((a, b) => String(a.name||a.email).localeCompare(String(b.name||b.email), 'ru'));
+      if (!list.length) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-mute);padding:24px">Доступы ещё не созданы. Нажми «Добавить доступ».</td></tr>';
+        return;
+      }
+      const mentorMap = new Map((Store.state.mentors || []).map(m => [m.id, m]));
+      tbody.innerHTML = list.map(p => {
+        const codes = (p.mentorIds || [])
+          .map(id => mentorMap.get(id))
+          .filter(Boolean)
+          .map(m => `<span class="badge" style="background:#f0f5ff;color:#1d39c4;border:1px solid #adc6ff;padding:2px 8px;border-radius:999px;font-size:12px">${escapeHtml(m.code)}</span>`)
+          .join(' ');
+        return `<tr>
+          <td>${escapeHtml(p.name || '—')}</td>
+          <td><code>${escapeHtml(p.email)}</code></td>
+          <td>${codes || '<span style="color:var(--text-mute)">— нет —</span>'}</td>
+          <td>${escapeHtml(p.note || '')}</td>
+          <td>${fmtDate(p.createdAt) || ''}</td>
+          <td class="actions">
+            <button class="btn--icon" data-act="edit" data-id="${p.id}" title="Редактировать">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
+            </button>
+            <button class="btn--icon" data-act="del" data-id="${p.id}" title="Удалить">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+            </button>
+          </td>
+        </tr>`;
+      }).join('');
+
+      tbody.querySelectorAll('button[data-act="edit"]').forEach(b => {
+        b.addEventListener('click', () => openEdit(b.dataset.id));
+      });
+      tbody.querySelectorAll('button[data-act="del"]').forEach(b => {
+        b.addEventListener('click', () => {
+          const p = (Store.state.clientPortals || []).find(x => x.id === b.dataset.id);
+          if (!p) return;
+          if (!confirm(`Удалить доступ для ${p.email}?\nЭто отключит вход в кабинет, но запись в Supabase Auth останется (удали её отдельно при необходимости).`)) return;
+          Store.deleteClientPortal(b.dataset.id);
+          // Сразу пересоберём снимки на сервере (чтобы строка в client_snapshots исчезла)
+          if (window.CloudSync && window.CloudSync.pushClientSnapshots) {
+            window.CloudSync.pushClientSnapshots(Store.state).catch(() => {});
+          }
+          render();
+          toast('Доступ удалён');
+        });
+      });
+    }
+
+    function openAdd() {
+      editingId = null;
+      document.getElementById('cpModalTitle').textContent = 'Новый доступ';
+      document.getElementById('cpName').value = '';
+      document.getElementById('cpEmail').value = '';
+      document.getElementById('cpEmail').disabled = false;
+      document.getElementById('cpNote').value = '';
+      renderMentorsCheckboxes([]);
+      Modal.open('cpModal');
+    }
+
+    function openEdit(id) {
+      const p = (Store.state.clientPortals || []).find(x => x.id === id);
+      if (!p) return;
+      editingId = id;
+      document.getElementById('cpModalTitle').textContent = 'Редактирование доступа';
+      document.getElementById('cpName').value = p.name || '';
+      document.getElementById('cpEmail').value = p.email || '';
+      document.getElementById('cpEmail').disabled = true; // email = первичный ключ снимка
+      document.getElementById('cpNote').value = p.note || '';
+      renderMentorsCheckboxes(p.mentorIds || []);
+      Modal.open('cpModal');
+    }
+
+    document.getElementById('btnAdd').addEventListener('click', openAdd);
+
+    document.getElementById('cpSave').addEventListener('click', () => {
+      const name = document.getElementById('cpName').value.trim();
+      const email = document.getElementById('cpEmail').value.trim().toLowerCase();
+      const note = document.getElementById('cpNote').value.trim();
+      const mentorIds = getCheckedMentors();
+      if (!email || !/.+@.+\..+/.test(email)) {
+        toast('Введи корректный email', 'error'); return;
+      }
+      if (editingId) {
+        Store.updateClientPortal(editingId, { name, note, mentorIds });
+      } else {
+        Store.addClientPortal({ name, email, note, mentorIds });
+      }
+      // Сразу же зальём снимок этого клиента на сервер
+      if (window.CloudSync && window.CloudSync.pushClientSnapshots) {
+        window.CloudSync.pushClientSnapshots(Store.state).catch(() => {});
+      }
+      Modal.close('cpModal');
+      render();
+      toast('Сохранено');
+    });
+
+    window.addEventListener('cloudstate:updated', () => { Store.load(); render(); });
+    window.addEventListener('store:reloaded', render);
+
+    render();
+  });
+  </script>
+</body>
+</html>

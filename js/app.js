@@ -149,6 +149,7 @@
       this.state.reviews ??= [];        // отзывы на модерации: см. Store.addReview / approveReview / rejectReview
       this.state.proxyLinks ??= [];     // ссылки для смены IP (LTE-Center и др.)
       this.state.dailyTasks ??= [];     // ежедневные задачи Насте: с какого аккаунта работать с каким клиентом
+      this.state.clientPortals ??= [];  // доступы клиентов (Флагман и т.п.) к личному кабинету: см. addClientPortal
       // Сид: первая пара ссылок на смену IP, чтобы Настя могла начать сразу
       // (владелец потом редактирует/добавляет в модалке «Управлять прокси»).
       if (!this.state._proxySeeded) {
@@ -1102,6 +1103,185 @@
       const removed = before - this.state.reviews.length;
       if (removed > 0) this.save();
       return removed;
+    },
+
+    /* ---------- Client portals (личные кабинеты клиентов) ----------
+       Один доступ = один клиент-человек (например, «Флагман»), у которого
+       может быть НЕСКОЛЬКО анкет (mentorIds: [a21, a22, ...]). По email
+       клиент входит в /pages/client/, видит сводку по своим анкетам:
+       статусы, оплаты, опубликованные отзывы. ВАЖНО: данные изолируются
+       на уровне БД — для клиента генерится отдельный snapshot и кладётся
+       в таблицу client_snapshots, защищённую RLS. К сырому crm_state
+       клиент доступа не имеет. */
+    addClientPortal(rec) {
+      const item = Object.assign({
+        id: uid(),
+        email: '',
+        name: '',
+        mentorIds: [],
+        note: '',
+        createdAt: todayISO(),
+        updatedAt: todayISO()
+      }, rec);
+      item.email = String(item.email || '').toLowerCase().trim();
+      item.mentorIds = (item.mentorIds || []).filter(Boolean);
+      if (!item.email) return null;
+      // Защита от дубликатов: один email — один доступ
+      const existing = (this.state.clientPortals || []).find(
+        p => p.email === item.email
+      );
+      if (existing) {
+        // Сольём mentorIds, обновим поля
+        const merged = Array.from(new Set([...(existing.mentorIds || []), ...item.mentorIds]));
+        Object.assign(existing, {
+          name: item.name || existing.name,
+          note: item.note || existing.note,
+          mentorIds: merged,
+          updatedAt: todayISO()
+        });
+        this.save();
+        return existing;
+      }
+      this.state.clientPortals.push(item);
+      this.save();
+      return item;
+    },
+    updateClientPortal(id, patch) {
+      const i = (this.state.clientPortals || []).findIndex(x => x.id === id);
+      if (i < 0) return;
+      if (patch && typeof patch.email === 'string') {
+        patch.email = patch.email.toLowerCase().trim();
+      }
+      if (patch && Array.isArray(patch.mentorIds)) {
+        patch.mentorIds = patch.mentorIds.filter(Boolean);
+      }
+      this.state.clientPortals[i] = Object.assign(
+        {}, this.state.clientPortals[i], patch, { updatedAt: todayISO() }
+      );
+      this.save();
+    },
+    deleteClientPortal(id) {
+      this.state.clientPortals = (this.state.clientPortals || []).filter(x => x.id !== id);
+      this.save();
+    },
+    getClientPortalByEmail(email) {
+      const e = String(email || '').toLowerCase().trim();
+      if (!e) return null;
+      return (this.state.clientPortals || []).find(p => p.email === e) || null;
+    },
+
+    /**
+     * Снимок данных одной анкеты (mentorId) — то, что видит клиент в личном
+     * кабинете. Безопасно резолвит коды аккаунтов (live + archived).
+     */
+    _buildAnketaSnapshot(mentorId) {
+      const mentor = (this.state.mentors || []).find(m => m.id === mentorId);
+      if (!mentor) return null;
+      const code = String(mentor.code || '').toLowerCase().trim();
+      // Парный клиент (источник financial-полей: ordered/paid/total/...)
+      const client = (this.state.clients || []).find(
+        c => String(c.code || '').toLowerCase().trim() === code
+      );
+      // Платежи — только items.accountId === client.id
+      const payments = client ? this.getPaymentsForClient(client.id) : [];
+      // Все статусы по этой анкете (текущие — на каком аккаунте мы сейчас работаем)
+      const statuses = (this.state.profileStatuses || [])
+        .filter(s => s.mentorId === mentorId)
+        .map(s => {
+          const pr = this.getProfileOrArchived(s.profileId);
+          return {
+            profileCode: pr ? (pr.profile.code || '') : '',
+            archived: pr ? !!pr.archived : false,
+            status: s.status,
+            date: s.date,
+            comment: s.comment || ''
+          };
+        });
+      // Опубликованные отзывы — только approved (модерированные)
+      const reviews = (this.state.reviews || [])
+        .filter(r => r.mentorId === mentorId && r.moderation === 'approved')
+        .map(r => {
+          const pr = this.getProfileOrArchived(r.profileId);
+          return {
+            id: r.id,
+            profileCode: pr ? (pr.profile.code || '') : '',
+            archived: pr ? !!pr.archived : false,
+            text: r.text || '',
+            date: (r.moderatedAt || r.submittedAt || '').slice(0, 10)
+          };
+        })
+        .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+      return {
+        mentorId,
+        code: mentor.code || '',
+        name: client ? (client.name || mentor.name || '') : (mentor.name || ''),
+        platform: client ? (client.platform || '') : '',
+        tariff: client ? (client.tariff || '') : '',
+        ordered: client ? Number(client.ordered) || 0 : 0,
+        done: client ? Number(client.done) || 0 : reviews.length,
+        paid: client ? Number(client.paid) || 0 : 0,
+        remain: client ? Number(client.remain) || 0 : 0,
+        total: client ? Number(client.total) || 0 : 0,
+        date: client ? (client.date || '') : '',
+        deadline: client ? (client.deadline || '') : '',
+        overdueDays: client ? Number(client.overdueDays) || 0 : 0,
+        payments,
+        statuses,
+        reviews
+      };
+    },
+
+    /**
+     * Полный снимок для одного клиента-портала. Это ровно то, что уйдёт
+     * в client_snapshots.payload и попадёт под RLS. Никаких чужих данных
+     * здесь быть НЕ ДОЛЖНО — никаких state.clients, state.expenses и т.д.
+     */
+    buildClientSnapshot(portal) {
+      if (!portal) return null;
+      const anketas = (portal.mentorIds || [])
+        .map(mid => this._buildAnketaSnapshot(mid))
+        .filter(Boolean);
+      // Сводный фид: последние действия (отзывы + смены статусов) по всем анкетам
+      const feed = [];
+      anketas.forEach(a => {
+        a.reviews.slice(0, 20).forEach(r => feed.push({
+          kind: 'review', date: r.date, anketa: a.code,
+          text: `Опубликован отзыв с аккаунта ${r.profileCode || '—'}`
+        }));
+        a.statuses.forEach(s => feed.push({
+          kind: 'status', date: s.date, anketa: a.code,
+          text: `${s.status} — аккаунт ${s.profileCode || '—'}`
+        }));
+      });
+      feed.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+      // Итоги по всем анкетам
+      const totals = anketas.reduce((acc, a) => {
+        acc.ordered += a.ordered;
+        acc.done    += a.done;
+        acc.paid    += a.paid;
+        acc.remain  += a.remain;
+        acc.total   += a.total;
+        return acc;
+      }, { ordered: 0, done: 0, paid: 0, remain: 0, total: 0 });
+      return {
+        email: portal.email,
+        name: portal.name || '',
+        anketas,
+        totals,
+        feed: feed.slice(0, 50),
+        generatedAt: new Date().toISOString()
+      };
+    },
+
+    /** Снимки всех клиентов: вызывается перед push в client_snapshots.
+     *  Возвращает массив { email, payload } */
+    buildAllClientSnapshots() {
+      return (this.state.clientPortals || [])
+        .filter(p => p.email)
+        .map(p => ({
+          email: p.email,
+          payload: this.buildClientSnapshot(p)
+        }));
     },
 
     /* ---------- IP logs ---------- */

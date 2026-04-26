@@ -35,6 +35,7 @@
   function isAdminPage() {
     const p = location.pathname;
     if (p.includes('/employee/')) return false; // у них своя auth
+    if (p.includes('/client/'))   return false; // личный кабинет клиента — отдельный auth
     return p.endsWith('.html') || p.endsWith('/') || p === '';
   }
 
@@ -76,6 +77,16 @@
     if (document.body) syncBody();
     else document.addEventListener('DOMContentLoaded', syncBody, { once: true });
 
+    // Клиент попал в админку (например, ввёл URL вручную) — выкидываем
+    // в его личный кабинет. Сами данные он всё равно прочитать не сможет
+    // (на crm_state RLS запрещает любой authenticated-доступ), но
+    // визуально не должен видеть админский интерфейс.
+    if (role === 'client') {
+      const repo = location.pathname.split('/').slice(0, location.pathname.includes('/pages/') ? -2 : -1).join('/');
+      location.replace((repo || '') + '/pages/client/index.html');
+      return;
+    }
+
     // Гард для team-роли: запрещённые страницы → редирект.
     if (role === 'team') {
       const file = (location.pathname.split('/').pop() || 'index.html').toLowerCase();
@@ -101,8 +112,9 @@
     role: () => Auth.role(),
     email: () => Auth.email(),
     name: () => Auth.name(),
-    isOwner: () => Auth.role() === 'owner',
-    isTeam:  () => Auth.role() === 'team',
+    isOwner:  () => Auth.role() === 'owner',
+    isTeam:   () => Auth.role() === 'team',
+    isClient: () => Auth.role() === 'client',
     signOut() {
       Auth.signOut();
       const repo = location.pathname.split('/').slice(0, location.pathname.includes('/pages/') ? -2 : -1).join('/');

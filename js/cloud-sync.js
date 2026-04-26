@@ -14,6 +14,7 @@
   const SUPABASE_KEY = 'sb_publishable_QpxNagNre_4iKQrVO5Swzw_XWhmrQo4';
   const TABLE   = 'crm_state';
   const ROW_ID  = 'main';
+  const SNAPSHOTS_TABLE = 'client_snapshots';   // зеркало для личных кабинетов клиентов
   const STORAGE_KEY = 'mentori-crm-v2';
   const META_KEY    = 'mentori-crm-meta';   // { lastPushedAt, lastPulledAt }
 
@@ -61,6 +62,70 @@
     }
     setMeta({ lastPushedAt: updated_at });
     return updated_at;
+  }
+
+  /* ---- Push client snapshots ----
+     После каждого успешного push в crm_state — пересобираем индивидуальные
+     снимки для каждого клиента-портала и заливаем их в client_snapshots.
+     Это та таблица, к которой клиент имеет доступ через RLS (по email из JWT).
+     К сырому crm_state клиент доступа НЕ имеет. */
+  async function pushClientSnapshots(state) {
+    if (!state || !window.App || !window.App.Store) return;
+    const Store = window.App.Store;
+    // Подкладываем state, чтобы Store сгенерил снимки именно из него,
+    // а не из своей внутренней копии (на момент вызова они идентичны).
+    const portals = state.clientPortals || [];
+    if (!portals.length) return; // нечего пушить
+    // Используем Store API, но переключим временно state
+    const saved = Store.state;
+    Store.state = state;
+    let snapshots;
+    try {
+      snapshots = Store.buildAllClientSnapshots();
+    } finally {
+      Store.state = saved;
+    }
+    if (!snapshots.length) return;
+    const updated_at = new Date().toISOString();
+    const rows = snapshots.map(s => ({
+      email: s.email,
+      payload: s.payload,
+      updated_at
+    }));
+    const url = `${SUPABASE_URL}/rest/v1/${SNAPSHOTS_TABLE}?on_conflict=email`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { ...headers, 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify(rows)
+    });
+    if (!res.ok && res.status !== 201 && res.status !== 204) {
+      // не валим основной push — снимки можно перезалить в следующий раз
+      console.warn('[CloudSync] client_snapshots push failed', res.status, await res.text().catch(() => ''));
+      return;
+    }
+    // Удалим лишние снимки (если в админке удалили доступ — соответствующая
+    // строка в client_snapshots должна исчезнуть, иначе клиент сохранит
+    // последний снимок в своём кабинете).
+    try {
+      const existingRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/${SNAPSHOTS_TABLE}?select=email`,
+        { headers }
+      );
+      if (existingRes.ok) {
+        const existing = await existingRes.json();
+        const allowed = new Set(snapshots.map(s => s.email));
+        const stale = existing.map(r => r.email).filter(e => !allowed.has(e));
+        for (const email of stale) {
+          const enc = encodeURIComponent(email);
+          await fetch(
+            `${SUPABASE_URL}/rest/v1/${SNAPSHOTS_TABLE}?email=eq.${enc}`,
+            { method: 'DELETE', headers }
+          ).catch(() => {});
+        }
+      }
+    } catch (e) {
+      console.warn('[CloudSync] snapshots cleanup failed', e);
+    }
   }
 
   /* ---- Локальные мета-данные ---- */
@@ -182,6 +247,10 @@
     try {
       await pushRemote(state);
       setStatus('synced', 'Сохранено');
+      // Зеркалим личные снимки клиентов — best effort, не блокирует основной push
+      pushClientSnapshots(state).catch(e => {
+        console.warn('[CloudSync] snapshots mirror failed', e);
+      });
     } catch (e) {
       console.warn('[CloudSync] push error', e);
       setStatus('error', 'Ошибка сохранения');
@@ -204,6 +273,7 @@
     pull,
     push: schedulePush,
     flush,
+    pushClientSnapshots,    // ручной триггер: после CRUD над clientPortals
     URL: SUPABASE_URL,
     isConfigured: () => !!SUPABASE_URL && !!SUPABASE_KEY
   };

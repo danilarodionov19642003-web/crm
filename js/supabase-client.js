@@ -21,14 +21,24 @@
   }
 
   function authHeader() {
-    // Личную сессию используем ТОЛЬКО в кабинете сотрудника
-    // (страницы /pages/employee/*). Админка всегда ходит анонимно
-    // под публичным ключом — иначе протухший JWT сотрудника на том же
-    // устройстве ломает все REST-запросы админки (PGRST303 JWT expired).
-    const isEmployeeArea = location.pathname.includes('/employee/');
-    if (!isEmployeeArea) return `Bearer ${KEY}`;
+    // Личную сессию используем в кабинетах: сотрудника (/pages/employee/*)
+    // и клиента (/pages/client/*). В кабинете клиента это критично — RLS
+    // на таблице client_snapshots проверяет auth.email() = email строки,
+    // а под анон-ключом auth.email() = null и клиент не получит ничего.
+    // Админка всегда ходит анонимно под публичным ключом — иначе протухший
+    // JWT сотрудника/клиента на том же устройстве ломает REST-запросы
+    // админки (PGRST303 JWT expired).
+    const path = location.pathname;
+    const isAuthedArea = path.includes('/employee/') || path.includes('/client/');
+    if (!isAuthedArea) return `Bearer ${KEY}`;
     const s = getSession();
     return s && s.access_token ? `Bearer ${s.access_token}` : `Bearer ${KEY}`;
+  }
+
+  /** Текущий access_token, если есть валидная сессия. Иначе null. */
+  function accessToken() {
+    const s = getSession();
+    return s && s.access_token ? s.access_token : null;
   }
 
   /* ---- общий fetch к PostgREST ---- */
@@ -139,12 +149,12 @@
       const u = this.user();
       if (!u) return null;
       const meta = u.user_metadata || {};
-      if (meta.role === 'owner' || meta.role === 'team') return meta.role;
+      if (meta.role === 'owner' || meta.role === 'team' || meta.role === 'client') return meta.role;
       const email = (u.email || '').toLowerCase();
       const OWNER_EMAILS = ['danila.rodionov19642003@gmail.com'];
       return OWNER_EMAILS.includes(email) ? 'owner' : 'team';
     }
   };
 
-  window.Supabase = { URL, KEY, rest, Tbl, Auth };
+  window.Supabase = { URL, KEY, rest, Tbl, Auth, accessToken };
 })();

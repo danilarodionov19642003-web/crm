@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Вход — Личный кабинет</title>
+  <link rel="stylesheet" href="../../css/styles.css"/>
+  <link rel="stylesheet" href="client.css"/>
+</head>
+<body class="cli-body">
+  <main class="cli-login">
+    <div class="cli-login__card">
+      <div class="cli-login__brand">
+        <div class="cli-header__logo">M</div>
+        <div>
+          <h1>Mentori</h1>
+          <p>Личный кабинет клиента</p>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="email">Email</label>
+        <input id="email" type="email" class="input" autocomplete="username" placeholder="client@example.com"/>
+      </div>
+      <div class="field">
+        <label for="password">Пароль</label>
+        <input id="password" type="password" class="input" autocomplete="current-password" placeholder="••••••••"/>
+      </div>
+
+      <button id="btnLogin" class="btn btn--primary" style="width:100%">Войти</button>
+      <div id="err" class="cli-login__err" hidden></div>
+
+      <div style="margin-top:14px;font-size:12px;color:var(--text-mute);text-align:center">
+        Не помните пароль? Свяжитесь с менеджером.
+      </div>
+    </div>
+  </main>
+
+  <script src="../../js/supabase-client.js"></script>
+  <script>
+  (async () => {
+    const { Auth } = window.Supabase;
+
+    function landing() {
+      return './index.html';
+    }
+
+    if (Auth.isLogged() && Auth.role() === 'client') { location.replace(landing()); return; }
+    if (await Auth.refresh()) {
+      if (Auth.role() === 'client') { location.replace(landing()); return; }
+    }
+
+    const err = document.getElementById('err');
+    function showErr(msg) { err.textContent = msg; err.hidden = false; }
+
+    async function submit() {
+      err.hidden = true;
+      const email = document.getElementById('email').value.trim().toLowerCase();
+      const pwd   = document.getElementById('password').value;
+      if (!email || !pwd) return showErr('Введите email и пароль');
+
+      const btn = document.getElementById('btnLogin');
+      btn.disabled = true; btn.textContent = 'Входим…';
+      try {
+        await Auth.signIn(email, pwd);
+        if (Auth.role() !== 'client') {
+          // Это не клиентская учётка — выкинем сессию, иначе админка решит, что юзер свой.
+          try { Auth.signOut(); } catch (_) {}
+          showErr('Этот аккаунт не помечен как клиент. Используйте корпоративный вход.');
+          btn.disabled = false; btn.textContent = 'Войти';
+          return;
+        }
+        location.replace(landing());
+      } catch (e) {
+        showErr(e.message || 'Не удалось войти');
+        btn.disabled = false; btn.textContent = 'Войти';
+      }
+    }
+
+    document.getElementById('btnLogin').addEventListener('click', submit);
+    document.getElementById('password').addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
+    document.getElementById('email').addEventListener('keydown',    e => { if (e.key === 'Enter') submit(); });
+  })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,203 @@
+/* ==========================================================================
+   Client Portal — стили личного кабинета клиента (Флагман и т.п.).
+   Подключается ПОСЛЕ ../../css/styles.css.
+   Принцип: то же визуальное ощущение, что у employee-кабинета,
+   но palette более сдержанный (это «отчёт клиенту», а не рабочая панель).
+   ========================================================================== */
+
+.cli-body {
+  background: var(--bg);
+  color: var(--text);
+  margin: 0;
+  min-height: 100vh;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* ---------- header ---------- */
+.cli-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--bg-2);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+.cli-header__brand { display: flex; align-items: center; gap: 10px; flex: 1; }
+.cli-header__logo {
+  width: 32px; height: 32px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #1d39c4, #2f54eb);
+  color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 800; font-size: 18px;
+}
+.cli-header__hello { font-size: 14px; font-weight: 600; line-height: 1.1; }
+.cli-header__sub   { font-size: 11px; color: var(--text-mute); margin-top: 2px; }
+
+.cli-header__logout {
+  background: transparent; border: 1px solid var(--border);
+  color: var(--text); border-radius: 8px;
+  padding: 6px 12px; font-size: 12px; cursor: pointer;
+}
+.cli-header__logout:hover { border-color: #ff4d4f; color: #ff4d4f; }
+
+/* ---------- main ---------- */
+.cli-main { padding: 16px; max-width: 760px; margin: 0 auto; }
+
+.cli-section-title {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-mute);
+  margin: 22px 0 10px;
+  font-weight: 600;
+}
+
+/* ---------- KPI cards ---------- */
+.cli-kpis {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.cli-kpi {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 12px;
+  text-align: center;
+}
+.cli-kpi__label { font-size: 10px; text-transform: uppercase; color: var(--text-mute); margin-bottom: 4px; letter-spacing: .5px; }
+.cli-kpi__value { font-size: 18px; font-weight: 700; color: var(--text); }
+.cli-kpi__value.pos { color: #389e0d; }
+.cli-kpi__value.neg { color: #cf1322; }
+
+/* ---------- список анкет ---------- */
+.cli-list { display: flex; flex-direction: column; gap: 10px; }
+
+.cli-card {
+  display: block;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px;
+  text-decoration: none;
+  color: inherit;
+  transition: transform .12s ease, border-color .12s ease;
+}
+.cli-card:active { transform: scale(.985); }
+.cli-card:hover  { border-color: #2f54eb; }
+
+.cli-card__top { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.cli-card__code {
+  background: #e6f4ff; color: #1d39c4;
+  font-weight: 700; font-size: 12px;
+  padding: 3px 8px; border-radius: 6px;
+  letter-spacing: .5px;
+}
+.cli-card__name {
+  flex: 1; font-weight: 600; font-size: 15px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.cli-card__stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.cli-card__stat {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 8px;
+  text-align: center;
+}
+.cli-card__stat-label { font-size: 10px; color: var(--text-mute); text-transform: uppercase; }
+.cli-card__stat-value { font-size: 14px; font-weight: 700; }
+
+/* progress bar */
+.cli-progress {
+  height: 6px; background: var(--border); border-radius: 999px; overflow: hidden;
+  margin-top: 6px;
+}
+.cli-progress__fill {
+  height: 100%; background: linear-gradient(90deg, #2f54eb, #722ed1);
+  width: 0%; transition: width .25s;
+}
+
+/* ---------- фид активности ---------- */
+.cli-feed { display: flex; flex-direction: column; gap: 6px; }
+.cli-feed__item {
+  display: flex; gap: 10px; align-items: flex-start;
+  background: var(--bg-2); border: 1px solid var(--border);
+  border-radius: 10px; padding: 10px 12px;
+}
+.cli-feed__icon {
+  width: 28px; height: 28px; border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px;
+  background: #f0f5ff; color: #1d39c4; flex-shrink: 0;
+}
+.cli-feed__icon.review { background: #f6ffed; color: #389e0d; }
+.cli-feed__text { flex: 1; font-size: 13px; line-height: 1.35; }
+.cli-feed__date { font-size: 11px; color: var(--text-mute); margin-top: 2px; }
+
+/* ---------- profile detail ---------- */
+.cli-back {
+  display: inline-flex; align-items: center; gap: 6px;
+  color: var(--text-mute); text-decoration: none; font-size: 13px;
+  margin-bottom: 10px;
+}
+.cli-back:hover { color: #2f54eb; }
+
+.cli-detail-title { font-size: 22px; font-weight: 700; margin: 0 0 4px; }
+.cli-detail-sub   { color: var(--text-mute); font-size: 13px; margin-bottom: 16px; }
+
+.cli-table { width: 100%; border-collapse: collapse; background: var(--bg-2); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.cli-table th, .cli-table td { padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--border); font-size: 13px; }
+.cli-table th { background: var(--bg); font-weight: 600; color: var(--text-mute); font-size: 11px; text-transform: uppercase; letter-spacing: .4px; }
+.cli-table tr:last-child td { border-bottom: none; }
+.cli-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+
+.cli-status-pill {
+  display: inline-block; padding: 2px 8px; border-radius: 999px;
+  font-size: 12px; font-weight: 600;
+}
+.cli-status-pill.готов { background: #f6ffed; color: #389e0d; border: 1px solid #b7eb8f; }
+.cli-status-pill.diag-end { background: #f0f5ff; color: #1d39c4; border: 1px solid #adc6ff; }
+.cli-status-pill.diag-start { background: #fff7e6; color: #ad6800; border: 1px solid #ffd591; }
+
+.cli-review {
+  background: var(--bg-2); border: 1px solid var(--border);
+  border-radius: 10px; padding: 12px; margin-bottom: 8px;
+}
+.cli-review__head { display: flex; gap: 10px; align-items: center; margin-bottom: 6px; font-size: 12px; color: var(--text-mute); }
+.cli-review__code {
+  background: #e6f4ff; color: #1d39c4; font-weight: 700;
+  padding: 1px 6px; border-radius: 4px;
+}
+.cli-review__text { font-size: 13px; line-height: 1.45; white-space: pre-wrap; }
+
+/* ---------- login ---------- */
+.cli-login { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px; }
+.cli-login__card {
+  width: 100%; max-width: 380px;
+  background: var(--bg-2); border: 1px solid var(--border);
+  border-radius: 14px; padding: 24px;
+}
+.cli-login__brand { display: flex; gap: 12px; align-items: center; margin-bottom: 20px; }
+.cli-login__brand h1 { margin: 0; font-size: 20px; }
+.cli-login__brand p  { margin: 0; font-size: 12px; color: var(--text-mute); }
+.cli-login__err {
+  margin-top: 10px; padding: 8px 10px;
+  background: #fff1f0; border: 1px solid #ffa39e; color: #cf1322;
+  border-radius: 8px; font-size: 13px;
+}
+
+.cli-empty {
+  text-align: center; color: var(--text-mute); padding: 40px 16px;
+  background: var(--bg-2); border: 1px dashed var(--border); border-radius: 12px;
+}
