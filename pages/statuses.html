@@ -622,7 +622,11 @@
           : `<button class="acc-ip__add" data-act="ipadd" data-pid="${p.id}">+ IP</button>`;
         const formHtml = (!archMode && openIpForms.has(p.id)) ? `
           <div class="acc-ip__form" data-ipform="${p.id}">
-            <input type="text" class="input ip-input" placeholder="IP-адрес" data-pid="${p.id}" autocomplete="off"/>
+            <input type="text" class="input ip-input" placeholder="IP-адрес"
+                   data-pid="${p.id}"
+                   inputmode="decimal" autocomplete="off"
+                   autocorrect="off" autocapitalize="off" spellcheck="false"
+                   name="ip-address-only" data-1p-ignore data-lpignore="true"/>
             <input type="date" class="input ip-date" value="${todayISO()}"/>
             <input type="text" class="input ip-note" placeholder="заметка"/>
             <button class="btn btn--primary" data-act="ipsave" data-pid="${p.id}">Сохранить</button>
