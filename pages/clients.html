@@ -57,7 +57,6 @@
                   <th class="num">Оплачено</th>
                   <th class="num">Остаток</th>
                   <th>Дедлайн</th>
-                  <th title="Кому начисляется зарплата за одобренный отзыв по этому клиенту">Менеджер</th>
                   <th>Статус</th>
                   <th class="actions"></th>
                 </tr>
@@ -131,11 +130,6 @@
             <label for="mDeadline">Дедлайн</label>
             <input type="date" id="mDeadline" class="input"/>
           </div>
-        </div>
-        <div class="field">
-          <label for="mAssigned">Менеджер клиента</label>
-          <select id="mAssigned" class="select"></select>
-          <div style="font-size:11px;color:var(--text-mute);margin-top:4px">«Я веду сам» — отзывы по клиенту в зарплату никому не идут.</div>
         </div>
       </div>
       <div class="modal__footer">
@@ -223,31 +217,11 @@
     document.getElementById('mTariff').innerHTML =
       TARIFFS.map(t => `<option value="${t.name}">${t.name} — ${t.price.toLocaleString('ru-RU')} ₽</option>`).join('');
 
-    /* Список менеджеров для селектов: «Я веду сам» (пустая строка) +
-       все сотрудники с email. Зарплата за одобренный отзыв начисляется
-       тому сотруднику, чей email = client.assignedEmail. Если выбрано
-       «Я веду сам» (или email не совпал ни с кем) — никому. */
-    function managerOptions(currentEmail) {
-      const cur = String(currentEmail || '').toLowerCase().trim();
-      const emps = (Store.state.employees || []).filter(e => (e.email || '').trim());
-      const empOpts = emps.map(e => {
-        const v = e.email.toLowerCase().trim();
-        return `<option value="${escapeHtml(v)}" ${v === cur ? 'selected' : ''}>${escapeHtml(e.name || v)}</option>`;
-      }).join('');
-      const ownEmail = (window.AuthGate && window.AuthGate.email && window.AuthGate.email() || '').toLowerCase();
-      // Если в assignedEmail записан email, которого нет среди сотрудников
-      // (например, владельца или legacy nastya@mentori.local) — оставим
-      // его как «Я веду сам», чтобы зарплата никому не шла.
-      const knownEmails = new Set(emps.map(e => e.email.toLowerCase().trim()));
-      const isMine = !cur || !knownEmails.has(cur);
-      return `<option value="" ${isMine ? 'selected' : ''}>👤 Я веду сам — без зп</option>` + empOpts;
-    }
-    function managerSelectHtml(currentEmail, clientId) {
-      return `<select class="select" style="padding:4px 8px;min-width:140px" data-field="assignedEmail">${managerOptions(currentEmail)}</select>`;
-    }
-    function fillModalManagerSelect(currentEmail) {
-      document.getElementById('mAssigned').innerHTML = managerOptions(currentEmail);
-    }
+    // Селектор «Менеджер» убран (27.04.2026). Зарплата теперь начисляется
+    // АВТОРУ ОТЗЫВА (review.authorEmail), а не менеджеру клиента, потому
+    // что одного клиента могут вести двое (Настя + владелец), и
+    // переключение менеджера задним числом перебрасывало все отзывы
+    // новому. См. js/reviews-sync.js.
 
     document.getElementById('mTariff').addEventListener('change', e => {
       const t = TARIFFS.find(x => x.name === e.target.value);
@@ -368,7 +342,6 @@
             <input type="date" class="input" style="padding:4px 6px;background:transparent;border:1px solid transparent" data-field="deadline" value="${r.deadline || ''}"/>
             ${overdue > 0 ? `<div style="font-size:11px;color:var(--red);margin-top:2px">−${overdue} дн.</div>` : ''}
           </td>
-          <td>${managerSelectHtml(r.assignedEmail || '', r.id)}</td>
           <td>${statusBadge(r)}</td>
           <td class="actions">
             <button class="btn btn--ghost btn--sm" data-act="payments" title="История платежей">
@@ -520,13 +493,6 @@
       document.getElementById('mTariffDesc').textContent = TARIFFS[0].desc;
       document.getElementById('mDate').value = todayISO();
       document.getElementById('mDeadline').value = '';
-      // Менеджер по умолчанию: первый сотрудник с email (обычно Настя),
-      // чтобы новые клиенты сразу шли в её зарплату — а владелец вручную
-      // переключит на «Я веду сам» для своих личных клиентов.
-      const defaultMgr = (Store.state.employees || [])
-        .map(e => (e.email || '').toLowerCase().trim())
-        .find(Boolean) || '';
-      fillModalManagerSelect(defaultMgr);
       Modal.open('addModal');
       setTimeout(() => document.getElementById('mName').focus(), 60);
     });
@@ -546,7 +512,6 @@
         remain:   Math.max(0, total - paid),
         date:     document.getElementById('mDate').value,
         deadline: document.getElementById('mDeadline').value,
-        assignedEmail: document.getElementById('mAssigned').value.trim().toLowerCase(),
         overdueDays: 0
       });
       Modal.close('addModal');

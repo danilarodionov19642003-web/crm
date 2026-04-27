@@ -133,20 +133,16 @@
       return arr;
     }
 
-    /** Вернуть email сотрудника, которому начисляется зарплата за этот отзыв,
-     *  либо null если клиент ведёт владелец / нет активного «Готов» статуса. */
+    /** Вернуть email сотрудника, которому начисляется зарплата за этот отзыв.
+     *  Атрибуция = АВТОР отзыва (review.authorEmail), при условии, что у пары
+     *  (mentor, profile) сейчас стоит статус «🎯 Готов». Сменили статус —
+     *  отзыв перестаёт капать в зарплату. См. js/reviews-sync.js. */
     const DONE_STATUS_X = '🎯 Готов';
     function getReviewCreditEmail(r) {
       const st = (Store.state.profileStatuses || []).find(s =>
         s.mentorId === r.mentorId && s.profileId === r.profileId);
       if (!st || st.status !== DONE_STATUS_X) return null;
-      const m = (Store.state.mentors || []).find(x => x.id === r.mentorId);
-      if (!m) return null;
-      const code = String(m.code || '').toLowerCase().trim();
-      const c = (Store.state.clients || []).find(x =>
-        String(x.code || '').toLowerCase().trim() === code);
-      if (!c) return null;
-      const e = String(c.assignedEmail || '').toLowerCase().trim();
+      const e = String(r.authorEmail || '').toLowerCase().trim();
       return e || null;
     }
 
@@ -162,26 +158,24 @@
       const pending = inP.filter(r => r.moderation === 'pending').length;
       const approved = inP.filter(r => r.moderation === 'approved');
       const rejected = inP.filter(r => r.moderation === 'rejected').length;
-      // «Заработано / К выплате» учитывает менеджера клиента: если клиент
-      // ведёт владелец — отзыв в зп не идёт, а просто проходит модерацию.
+      // «Заработано / К выплате» считается по АВТОРУ отзыва (authorEmail).
+      // Если автор не сотрудник (например, владелец) — отзыв в зп не идёт.
+      const employees = (Store.state.employees || []);
+      const empEmails = new Set(employees.map(e => (e.email || '').toLowerCase().trim()).filter(Boolean));
       const creditMatches = (r) => {
         const credit = getReviewCreditEmail(r);
         if (!credit) return false;
-        if (isOwner) return true;          // владелец видит сумму ко всем сотрудникам
-        return credit === myEmail;          // сотрудник видит только свои
+        if (!empEmails.has(credit)) return false;  // не сотрудник = не платим
+        if (isOwner) return true;
+        return credit === myEmail;
       };
       const earned = approved.filter(creditMatches)
         .reduce((s,r) => s + (Number(r.rate) || RATE_DEFAULT), 0);
       const potential = inP.filter(r => r.moderation === 'pending')
         .filter(r => {
-          // прогноз для Насти — считаем по client.assignedEmail тоже
-          const m = (Store.state.mentors || []).find(x => x.id === r.mentorId);
-          if (!m) return false;
-          const code = String(m.code||'').toLowerCase().trim();
-          const c = (Store.state.clients || []).find(x => String(x.code||'').toLowerCase().trim() === code);
-          if (!c) return false;
-          const e = String(c.assignedEmail||'').toLowerCase().trim();
-          if (!e) return false;
+          // прогноз: автор pending-отзыва получит свою ставку, если он сотрудник
+          const e = String(r.authorEmail || '').toLowerCase().trim();
+          if (!e || !empEmails.has(e)) return false;
           return isOwner ? true : e === myEmail;
         })
         .reduce((s,r) => s + (Number(r.rate) || RATE_DEFAULT), 0);
@@ -229,16 +223,18 @@
           ? `<span class="badge badge--gray">${escapeHtml(m.code || '—')}</span> ${escapeHtml(m.name || '')}`
           : `<span style="color:var(--text-mute)">— клиент удалён —</span>`;
         // Кому засчитывается зп (если этот отзыв одобрят и есть статус «Готов»).
-        // Показываем только владельцу — Насте видеть кто именно получит не критично.
+        // С 27.04 — атрибуция по АВТОРУ отзыва: кто опубликовал, тот и
+        // получает. Если автор — владелец (нет в employees), зп никому.
         let creditLabel = '';
         if (isOwner) {
           const credit = getReviewCreditEmail(r);
           if (credit) {
             const emp = (Store.state.employees || []).find(e => (e.email || '').toLowerCase().trim() === credit);
-            const name = emp ? (emp.name || credit) : credit;
-            creditLabel = `<span title="Менеджер клиента — ему идёт зп">💰 ${escapeHtml(name)}</span>`;
-          } else {
-            creditLabel = `<span title="Я веду этого клиента сам — зп никому" style="color:var(--text-mute)">💼 веду сам</span>`;
+            if (emp) {
+              creditLabel = `<span title="Автор отзыва — сотрудник, ему идёт зп">💰 ${escapeHtml(emp.name || credit)}</span>`;
+            } else {
+              creditLabel = `<span title="Автор отзыва — не сотрудник (владелец?), зп никому" style="color:var(--text-mute)">💼 ${escapeHtml(credit)}</span>`;
+            }
           }
         }
         const actions = (isOwner && r.moderation === 'pending') ? `
