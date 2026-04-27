@@ -328,11 +328,17 @@
           <div class="field"><label>Дата статуса</label><input type="date" id="chgDate" class="input"/></div>
           <div class="field" style="flex:2"><label>Комментарий</label><input type="text" id="chgComment" class="input"/></div>
         </div>
+        <!-- Поле ввода нового отзыва. Структура жёсткая — НЕ переписываем
+             через innerHTML, иначе на повторное открытие модалки textarea
+             не находится и весь обработчик падает с null. -->
         <div class="field" id="chgReviewWrap" style="margin-top:12px;display:none">
           <label>Текст опубликованного отзыва <span style="color:var(--red)">*</span></label>
           <textarea id="chgReviewText" class="input" rows="5" placeholder="Вставьте текст отзыва, который был опубликован на площадке" style="resize:vertical;min-height:90px;font-family:inherit"></textarea>
           <div style="font-size:11px;color:var(--text-mute);margin-top:4px">Отзыв отправится владельцу на модерацию. После одобрения засчитается в зарплату.</div>
         </div>
+        <!-- Отдельный контейнер для отображения СУЩЕСТВУЮЩЕГО отзыва
+             (одобренного или на модерации) — чтобы не ломать textarea выше. -->
+        <div id="chgExistingReview" style="margin-top:12px;display:none"></div>
         <div id="chgHist" style="margin-top:14px"></div>
       </div>
       <div class="modal__footer">
@@ -985,19 +991,29 @@
       document.getElementById('chgDate').value = (cur && cur.date) ? cur.date : window.App.todayISO();
       document.getElementById('chgReviewText').value = '';
       toggleChgReviewField();
-      // Если уже есть pending/approved отзыв для этой пары — показать вместо поля.
+      // Если уже есть pending/approved отзыв для этой пары — показать его
+      // в ОТДЕЛЬНОМ контейнере (chgExistingReview) и спрятать поле ввода
+      // нового. Раньше переписывали innerHTML самого chgReviewWrap — это
+      // удаляло textarea из DOM, и на повторное открытие модалки
+      // chgReviewText был null, что роняло весь обработчик и блокировало
+      // открытие любых других статусов до перезагрузки страницы.
       const existing = (Store.state.reviews || []).find(r => r.mentorId === mid && r.profileId === pid);
       const wrap = document.getElementById('chgReviewWrap');
+      const existingBox = document.getElementById('chgExistingReview');
       if (existing && cur && cur.status === DONE_STATUS) {
         const mod = existing.moderation;
         const badgeColor = mod === 'approved' ? 'var(--green)' : mod === 'rejected' ? 'var(--red)' : 'var(--orange)';
         const badgeText  = mod === 'approved' ? 'Одобрен' : mod === 'rejected' ? 'Отклонён' : 'На модерации';
-        wrap.style.display = 'block';
-        wrap.innerHTML = `
-          <label>Опубликованный отзыв · <span style="color:${badgeColor}">${badgeText}</span></label>
-          <div class="input" style="min-height:90px;white-space:pre-wrap;font-family:inherit;background:rgba(255,255,255,0.02)">${escapeHtml(existing.text || '')}</div>
+        wrap.style.display = 'none';   // прячем форму ввода — отзыв уже есть
+        existingBox.style.display = 'block';
+        existingBox.innerHTML = `
+          <label style="font-size:12px;color:var(--text-dim);font-weight:500">Опубликованный отзыв · <span style="color:${badgeColor}">${badgeText}</span></label>
+          <div class="input" style="min-height:90px;white-space:pre-wrap;font-family:inherit;background:rgba(255,255,255,0.02);margin-top:6px">${escapeHtml(existing.text || '')}</div>
           <div style="font-size:11px;color:var(--text-mute);margin-top:4px">Отправлен: ${escapeHtml(fmtDate(existing.submittedAt))}${existing.moderatedAt ? ' · Проверен: ' + escapeHtml(fmtDate(existing.moderatedAt)) : ''}</div>
         `;
+      } else {
+        existingBox.style.display = 'none';
+        existingBox.innerHTML = '';
       }
       const histDiv = document.getElementById('chgHist');
       if (cur && (cur.history || []).length) {
