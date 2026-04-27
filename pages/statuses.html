@@ -113,6 +113,28 @@
       text-transform: uppercase; letter-spacing: .04em;
       margin-bottom: 5px;
     }
+    /* Заголовок-кнопка аккордеона: клик по нему сворачивает/раскрывает
+       список IP. Активная зона — большая часть строки, кроме «+ IP». */
+    .acc-ip__toggle {
+      display: inline-flex; align-items: center; gap: 4px;
+      cursor: pointer; user-select: none;
+      color: inherit; font: inherit; text-transform: inherit; letter-spacing: inherit;
+    }
+    .acc-ip__toggle:hover { color: var(--accent); }
+    .acc-ip__chev {
+      display: inline-block;
+      transition: transform .15s ease;
+      font-size: 10px;
+      opacity: .5;
+    }
+    .acc-ip__chev.open { transform: rotate(90deg); opacity: 1; }
+    /* Красная точка-индикатор: висит на заголовке если есть конфликт,
+       чтобы пользователь увидел даже свёрнутый список. */
+    .acc-ip__alert {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--red);
+      box-shadow: 0 0 0 2px rgba(239,68,68,0.2);
+    }
     .acc-ip__add {
       margin-left: auto; padding: 2px 10px; font-size: 11px;
       background: transparent; border: 1px solid var(--border); border-radius: 6px;
@@ -388,6 +410,10 @@
     // Какие карточки имеют развернутую форму «+ IP» — состояние локальное,
     // переживает re-render текущей страницы. Очищается при смене фильтров.
     const openIpForms = new Set();
+    // Какие карточки имеют развёрнутый СПИСОК IP. По умолчанию свёрнут,
+    // чтобы аккаунты на телефоне не растягивались по высоте.
+    // Если форма «+IP» открыта — список тоже считаем открытым (логично).
+    const openIpLists = new Set();
 
     // Стили статусов: подключаем эмодзи к коду состояния (для CSS-оформления чипа)
     const STATUS_KIND = {
@@ -590,13 +616,30 @@
             <div class="acc-ip__warn-row" id="ipwarn-${p.id}" style="display:none"></div>
           </div>
         ` : '';
+        // Аккордеон: список свёрнут по умолчанию, чтобы карточки не
+        // растягивались. Раскрывается по клику на заголовок (или
+        // автоматически, когда открыта форма «+ IP»). Если есть конфликт
+        // хоть на одной записи — показываем красную точку даже на
+        // свёрнутом заголовке, чтобы не пропустить.
+        const hasConflict = ipsForAcc.some(ip =>
+          (Store.state.ipLogs || []).some(x => x.ip === ip.ip && x.profileId !== p.id)
+        );
+        const isExpanded = openIpLists.has(p.id) || openIpForms.has(p.id);
+        const showList = isExpanded && ipsForAcc.length > 0;
+        const toggleHtml = ipsForAcc.length > 0
+          ? `<button type="button" class="acc-ip__toggle" data-act="iptoggle" data-pid="${p.id}" title="${isExpanded ? 'Свернуть' : 'Развернуть'} список IP">
+              <span class="acc-ip__chev${isExpanded ? ' open' : ''}">▶</span>
+              🌐 IP <span style="opacity:.6">(${ipsForAcc.length})</span>
+              ${hasConflict && !isExpanded ? '<span class="acc-ip__alert" title="Есть конфликт IP с другим аккаунтом"></span>' : ''}
+            </button>`
+          : `<span class="acc-ip__toggle" style="cursor:default">🌐 IP <span style="opacity:.6">(0)</span></span>`;
         const ipBlock = `
           <div class="acc-ip">
             <div class="acc-ip__head">
-              🌐 IP <span style="opacity:.6">(${ipsForAcc.length})</span>
+              ${toggleHtml}
               ${addBtn}
             </div>
-            ${ipsForAcc.length ? `<div class="acc-ip__list">${ipRows}</div>` : ''}
+            ${showList ? `<div class="acc-ip__list">${ipRows}</div>` : ''}
             ${formHtml}
           </div>
         `;
@@ -658,14 +701,24 @@
       }));
 
       // ---- Inline IP-блок: обработчики ----
+      // Свернуть/раскрыть список IP в карточке
+      grid.querySelectorAll('[data-act="iptoggle"]').forEach(b => b.addEventListener('click', e => {
+        e.stopPropagation();
+        const pid = b.dataset.pid;
+        if (openIpLists.has(pid)) openIpLists.delete(pid);
+        else openIpLists.add(pid);
+        renderAccounts();
+      }));
       // Открыть форму добавления
       grid.querySelectorAll('[data-act="ipadd"]').forEach(b => b.addEventListener('click', e => {
         e.stopPropagation();
-        openIpForms.add(b.dataset.pid);
+        const pid = b.dataset.pid;
+        openIpForms.add(pid);
+        openIpLists.add(pid);   // при открытии формы автоматически раскрываем список
         renderAccounts();
         // Авто-фокус на поле ввода IP
         setTimeout(() => {
-          const inp = document.querySelector(`.acc-ip__form[data-ipform="${b.dataset.pid}"] .ip-input`);
+          const inp = document.querySelector(`.acc-ip__form[data-ipform="${pid}"] .ip-input`);
           if (inp) inp.focus();
         }, 30);
       }));
