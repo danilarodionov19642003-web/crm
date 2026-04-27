@@ -81,7 +81,11 @@
   }
   function fmtDate(iso) {
     if (!iso) return '';
-    const [y, m, d] = iso.split('-');
+    // Поддерживаем и YYYY-MM-DD, и полный ISO-таймштамп (2026-04-21T00:00:00Z).
+    // Без slice старый код возвращал «21T00:00:00Z.04.2026» — баг.
+    const s = String(iso).slice(0, 10);
+    const [y, m, d] = s.split('-');
+    if (!y || !m || !d) return s;
     return `${d}.${m}.${y}`;
   }
   function monthKey(iso) { return iso ? iso.slice(0, 7) : ''; }

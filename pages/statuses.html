@@ -955,7 +955,13 @@
         Store.addReview({
           profileId: addProfileId, mentorId: mid,
           text: reviewText, authorEmail: myEmail,
-          submittedAt: (date && date.length === 10) ? (date + 'T00:00:00Z') : new Date().toISOString(),
+          // submittedAt = МОМЕНТ отправки на модерацию (всегда сейчас).
+          // Дата статуса (date) — это дата публикации на площадке, она
+          // отдельно живёт в profileStatus.date и не привязана к
+          // submittedAt — иначе фильтр «эта неделя» в reviews.html
+          // выкидывал отзывы, опубликованные неделю назад, хотя на
+          // модерацию их сдали сегодня.
+          submittedAt: new Date().toISOString(),
         });
         toast('Отзыв отправлен на модерацию');
       } else {
@@ -1047,7 +1053,9 @@
         Store.addReview({
           profileId: chgPid, mentorId: chgMid,
           text: newReviewText, authorEmail: myEmail,
-          submittedAt: (newDate && newDate.length === 10) ? (newDate + 'T00:00:00Z') : new Date().toISOString(),
+          // submittedAt = «сейчас». Дата статуса (newDate) — это когда
+          // отзыв ОПУБЛИКОВАН на площадке, отдельно от модерации.
+          submittedAt: new Date().toISOString(),
         });
         toast('Отзыв отправлен на модерацию');
       } else if (goingAway) {
