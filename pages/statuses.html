@@ -193,7 +193,7 @@
             <h1>Аккаунты и статусы</h1>
             <p>Каждая карточка — отдельный аккаунт. Внутри клиенты сгруппированы по статусу. Клик по чипу — изменить статус, кнопка «🔐 Регистрация» — все логины/пароли аккаунта.</p>
           </div>
-          <div style="display:flex; gap:8px">
+          <div style="display:flex; gap:8px" data-owner-only>
             <button class="btn btn--ghost" id="btnNewAcc">+ Аккаунт</button>
             <button class="btn btn--ghost" id="btnNewMentor">+ Клиент</button>
           </div>
@@ -225,7 +225,7 @@
 
         <div class="acc-grid" id="accGrid"></div>
 
-        <details style="margin-top:32px">
+        <details style="margin-top:32px" id="mnSection" data-owner-only>
           <summary style="cursor:pointer;font-weight:600;color:var(--text-dim);padding:10px 0">Управление клиентами (a-коды)</summary>
           <div class="panel" style="margin-top:10px">
             <div class="table-wrap">
@@ -405,6 +405,14 @@
     const { confirmDelete } = window.TableUtils;
 
     Store.load();
+    // Роль: владелец видит/может всё, сотрудник (Настя) — только для работы:
+    // смена статуса + просмотр/добавление IP. Регистрация (телефон, пароли)
+    // и редактирование структуры (добавление клиента, архивация) — скрыты.
+    const isOwner = !!(window.AuthGate && window.AuthGate.isOwner && window.AuthGate.isOwner());
+    // Скрываем все элементы с data-owner-only для не-владельцев
+    if (!isOwner) {
+      document.querySelectorAll('[data-owner-only]').forEach(el => el.style.display = 'none');
+    }
     // mode: 'live' — активные аккаунты, 'arch' — архивные (мягко удалённые)
     const filters = { city: '', status: '', q: '', mode: 'live' };
     // Какие карточки имеют развернутую форму «+ IP» — состояние локальное,
@@ -553,23 +561,29 @@
           ? `<div class="stg">${groupRows}${noStatusRow}</div>`
           : `<div class="stg__empty" style="padding:8px 0">Нет привязанных клиентов</div>`;
 
+        // Сотруднику показываем только имя владельца (без телефона).
+        // Сам блок регистрации (с паролями/почтами) тоже недоступен — см. headActions.
         const ownerLine = reg
-          ? `<div class="acc-card__owner">👤 <b>${escapeHtml(reg.ownerName || '—')}</b>${reg.phone ? ' · ' + escapeHtml(formatPhone(reg.phone)) : ''}</div>`
+          ? `<div class="acc-card__owner">👤 <b>${escapeHtml(reg.ownerName || '—')}</b>${(isOwner && reg.phone) ? ' · ' + escapeHtml(formatPhone(reg.phone)) : ''}</div>`
           : `<div class="acc-card__owner" style="opacity:.5">— регистрация не заполнена —</div>`;
 
         // В архиве — другой набор кнопок: восстановить + удалить навсегда.
-        const headActions = archMode
-          ? `
+        // Сотруднику все эти действия недоступны.
+        let headActions = '';
+        if (archMode && isOwner) {
+          headActions = `
               <button class="btn btn--ghost btn--sm" data-act="restore" data-pid="${p.id}" title="Восстановить аккаунт">↩ Восстановить</button>
               <button class="btn--icon" data-act="purge" data-pid="${p.id}" title="Удалить навсегда (без отката)">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
-              </button>`
-          : `
+              </button>`;
+        } else if (!archMode && isOwner) {
+          headActions = `
               <button class="btn btn--ghost btn--sm" data-act="reg" data-pid="${p.id}" title="Регистрация">🔐</button>
               <button class="btn btn--ghost btn--sm" data-act="addmen" data-pid="${p.id}" title="Добавить клиента">＋</button>
               <button class="btn--icon" data-act="archive" data-pid="${p.id}" title="Отправить в архив">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="5" rx="1"/><path d="M5 8v11a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8"/><line x1="10" y1="13" x2="14" y2="13"/></svg>
               </button>`;
+        }
 
         const archMeta = archMode && p.deletedAt
           ? `<div class="arch-meta">📦 в архиве с ${escapeHtml(fmtDate(p.deletedAt))}</div>`
@@ -864,6 +878,7 @@
     /* --- Привязать клиента к аккаунту --- */
     let addProfileId = null;
     function openAddMentor(profileId) {
+      if (!isOwner) { toast('Доступно только владельцу', 'error'); return; }
       addProfileId = profileId;
       const p = profileById(profileId);
       if (!p) return;
@@ -1088,6 +1103,9 @@
     ];
 
     function openReg(profileId) {
+      // Safety net: даже если элемент UI скрыт, прямой вызов из консоли
+      // должен быть остановлен — регистрация содержит телефон/пароли.
+      if (!isOwner) { toast('Доступно только владельцу', 'error'); return; }
       regPid = profileId;
       regEditing = false;
       const p = profileById(profileId);
