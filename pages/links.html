@@ -5,6 +5,99 @@
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>Связи клиентов — Mentori CRM</title>
   <link rel="stylesheet" href="../css/styles.css"/>
+  <style>
+    .lk-section-title {
+      font-size: 16px; font-weight: 600;
+      margin: 28px 0 12px; color: var(--text-dim);
+      display: flex; align-items: center; gap: 10px;
+    }
+    .lk-section-title__cnt {
+      font-size: 11px; padding: 2px 8px; border-radius: 999px;
+      background: var(--bg-elev-2); color: var(--text-mute);
+      font-weight: 500;
+    }
+    .lk-section-title__cnt.warn {
+      background: rgba(239,68,68,0.12); color: var(--red);
+    }
+    .lk-audit-list { display: flex; flex-direction: column; gap: 10px; }
+    .lk-audit-card {
+      background: var(--bg-elev); border: 1px solid var(--border);
+      border-left: 3px solid var(--red);
+      border-radius: 8px; padding: 12px 14px;
+    }
+    .lk-audit-card__head {
+      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+      margin-bottom: 6px;
+    }
+    .lk-audit-card__code {
+      font-weight: 700; font-size: 14px;
+      background: rgba(239,68,68,0.12); color: var(--red);
+      padding: 2px 8px; border-radius: 6px;
+    }
+    .lk-audit-card__city { font-size: 11px; color: var(--text-mute); }
+    .lk-audit-card__pair { font-size: 13px; line-height: 1.5; }
+    .lk-audit-card__pair b { color: var(--text); }
+    .lk-audit-card__via { font-size: 12px; color: var(--text-mute); margin-top: 4px; }
+    .lk-audit-card__via code {
+      font-family: ui-monospace, monospace;
+      background: var(--bg-elev-2); padding: 1px 6px; border-radius: 4px;
+    }
+    .lk-audit-empty {
+      padding: 14px 16px; text-align: center; font-size: 13px;
+      color: var(--green);
+      background: rgba(34,197,94,0.08);
+      border: 1px solid rgba(34,197,94,0.25);
+      border-radius: 8px;
+    }
+
+    .lk-plan-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 12px;
+    }
+    .lk-plan-card {
+      background: var(--bg-elev); border: 1px solid var(--border);
+      border-radius: 10px; padding: 12px 14px;
+    }
+    .lk-plan-card__head {
+      display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+      padding-bottom: 8px; border-bottom: 1px dashed var(--border);
+    }
+    .lk-plan-card__code {
+      background: var(--accent-soft); color: var(--accent);
+      font-weight: 700; font-size: 13px;
+      padding: 2px 8px; border-radius: 6px;
+    }
+    .lk-plan-card__current {
+      font-size: 11px; color: var(--text-mute); margin-left: auto;
+    }
+    .lk-plan-card__current b { color: var(--text); font-weight: 500; }
+    .lk-plan-card__candidates {
+      display: flex; flex-wrap: wrap; gap: 4px;
+    }
+    .lk-plan-chip {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 3px 8px; font-size: 12px;
+      background: rgba(34,197,94,0.08); color: var(--green);
+      border: 1px solid rgba(34,197,94,0.3);
+      border-radius: 14px;
+    }
+    .lk-plan-chip small { color: var(--text-mute); font-weight: normal; }
+    .lk-plan-empty {
+      grid-column: 1/-1;
+      padding: 20px; text-align: center; color: var(--text-mute);
+      background: var(--bg-elev-2); border-radius: 8px; font-size: 13px;
+    }
+    .lk-plan-card__none {
+      font-size: 12px; color: var(--text-mute); font-style: italic;
+    }
+
+    .lk-controls {
+      display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+      margin-bottom: 10px;
+    }
+    .lk-controls .input { max-width: 180px; }
+  </style>
 </head>
 <body>
   <div class="app">
@@ -64,6 +157,45 @@
             <div id="checkResult" style="margin-top:14px;font-size:13px"></div>
           </div>
         </div>
+
+        <!-- ===== АУДИТ: уже стоящие связи, которые опасны =====
+             Сканирует все профили (live + архив) и для каждого профиля
+             ищет пару клиентов, которые УЖЕ были связаны через ДРУГОЙ
+             аккаунт до того, как их свели здесь. Это «двойной линк»:
+             бан-риск был с самого начала, мы просто не знали. -->
+        <h2 class="lk-section-title">
+          🔍 Аудит существующих связей
+          <span class="lk-section-title__cnt" id="auditCnt">0</span>
+        </h2>
+        <p style="font-size:12px;color:var(--text-mute);margin:-6px 0 10px">
+          Профили, где двое клиентов сидят вместе, хотя до этого уже были
+          связаны через другой аккаунт. Чем длиннее цепочка предыдущих
+          связей — тем риск выше.
+        </p>
+        <div id="auditList" class="lk-audit-list"></div>
+
+        <!-- ===== ПЛАНИРОВЩИК: куда безопасно добавить клиентов =====
+             Для каждого активного профиля показывает мини-список mentor’ов,
+             которых можно сюда положить без появления новых путей в графе.
+             Использует тот же canAddMentorToProfile, что и UI добавления. -->
+        <h2 class="lk-section-title">
+          🧭 Планировщик: безопасные расстановки
+          <span class="lk-section-title__cnt" id="planCnt">0</span>
+        </h2>
+        <p style="font-size:12px;color:var(--text-mute);margin:-6px 0 10px">
+          Для каждого аккаунта — список клиентов, которых можно сюда добавить
+          без создания пересечений с уже стоящими. Учитывает архив.
+        </p>
+        <div class="lk-controls">
+          <select id="planFilter" class="select" style="max-width:220px">
+            <option value="all">Все аккаунты</option>
+            <option value="empty">Только пустые</option>
+            <option value="sparse" selected>Аккаунты с местом (≤2)</option>
+          </select>
+          <input type="text" id="planSearch" class="input" placeholder="Поиск по аккаунту..."/>
+          <span style="font-size:11px;color:var(--text-mute)">показывает первые 8 кандидатов</span>
+        </div>
+        <div id="planGrid" class="lk-plan-grid"></div>
       </main>
     </div>
   </div>
@@ -195,6 +327,213 @@
 
     function keyPair(a, b) { return a < b ? a + '|' + b : b + '|' + a; }
 
+    /* ---- Аудит существующих связей ----
+       Идея: для КАЖДОГО профиля P со списком mentorIds [m1,m2,...]
+       ищем пары (mi, mj), которые СВЯЗАНЫ ещё и через ДРУГИЕ профили.
+       Алгоритм:
+         1) Строим граф связей, ИСКЛЮЧАЯ ребра конкретно из P.
+         2) Для каждой пары на P проверяем — есть ли путь между ними
+            в этом усечённом графе.
+         3) Если да — этот профиль не «впервые свёл» этих клиентов,
+            а добавил ВТОРОЕ ребро поверх уже существующей цепочки.
+            Значит при создании профиля проверка не сработала
+            (или не была сделана) — это риск.
+       Пул профилей: только LIVE (если уже архивный — поздно паниковать,
+       но архивные ребра всё равно учитываем как «другие профили»). */
+    function buildGraphExcludingProfile(excludeProfileId) {
+      const g = new Map();
+      const link = (a, b) => { if (!g.has(a)) g.set(a, new Set()); g.get(a).add(b); };
+      const sources = [
+        ...(Store.state.profiles || []),
+        ...(Store.state.archivedProfiles || [])
+      ];
+      sources.forEach(p => {
+        if (p.id === excludeProfileId) return;
+        const ms = (p.mentorIds || []).filter(Boolean);
+        for (let i = 0; i < ms.length; i++) {
+          for (let j = i + 1; j < ms.length; j++) {
+            link(ms[i], ms[j]); link(ms[j], ms[i]);
+          }
+        }
+      });
+      return g;
+    }
+    function pathExists(g, start, target) {
+      if (start === target) return true;
+      const visited = new Set([start]);
+      const stack = [start];
+      while (stack.length) {
+        const n = stack.pop();
+        for (const nb of (g.get(n) || [])) {
+          if (nb === target) return true;
+          if (!visited.has(nb)) { visited.add(nb); stack.push(nb); }
+        }
+      }
+      return false;
+    }
+    function findPathInGraph(g, start, target) {
+      if (start === target) return [start];
+      const prev = new Map();
+      const visited = new Set([start]);
+      const queue = [start];
+      let found = false;
+      while (queue.length) {
+        const n = queue.shift();
+        if (n === target) { found = true; break; }
+        for (const nb of (g.get(n) || [])) {
+          if (!visited.has(nb)) { visited.add(nb); prev.set(nb, n); queue.push(nb); }
+        }
+      }
+      if (!found) return null;
+      const path = [target]; let cur = target;
+      while (prev.has(cur)) { cur = prev.get(cur); path.unshift(cur); }
+      return path;
+    }
+
+    function renderAudit() {
+      // Хронологический проход: сортируем профили по дате создания,
+      // строим граф ПОСТЕПЕННО. Когда добавляем профиль P со списком
+      // mentorIds — для каждой пары на P проверяем, был ли уже путь
+      // между ними В ГРАФЕ ДО добавления этого профиля. Если да —
+      // именно P ЗАМЫКАЕТ цикл, флагаем только его. Это даёт по одной
+      // записи на каждое реальное «двойное замыкание», а не три на
+      // треугольник.
+      const allProfs = [
+        ...(Store.state.profiles || []).map(p => ({ p, archived: false })),
+        ...(Store.state.archivedProfiles || []).map(p => ({ p, archived: true }))
+      ].sort((a, b) => {
+        const da = a.p.createdAt || a.p.deletedAt || '';
+        const db = b.p.createdAt || b.p.deletedAt || '';
+        if (da !== db) return da.localeCompare(db);
+        return (a.p.id || '').localeCompare(b.p.id || '');
+      });
+
+      const g = new Map();
+      const link = (a, b) => { if (!g.has(a)) g.set(a, new Set()); g.get(a).add(b); };
+      const issues = [];   // { profile, archived, pairs: [{a,b,via:[mids]}] }
+
+      allProfs.forEach(({ p, archived }) => {
+        const ms = (p.mentorIds || []).filter(Boolean);
+        if (ms.length < 2) {
+          // одиночный mentor — добавим в граф (хотя ребер нет) и идём дальше
+          ms.forEach(m => { if (!g.has(m)) g.set(m, new Set()); });
+          return;
+        }
+        const pairs = [];
+        for (let i = 0; i < ms.length; i++) {
+          for (let j = i + 1; j < ms.length; j++) {
+            // проверяем СУЩЕСТВУЮЩИЙ граф ДО добавления P
+            if (pathExists(g, ms[i], ms[j])) {
+              const path = findPathInGraph(g, ms[i], ms[j]) || [ms[i], ms[j]];
+              pairs.push({ a: ms[i], b: ms[j], via: path });
+            }
+          }
+        }
+        // Только живые аккаунты идут в отчёт (архив поздно править).
+        // Но рёбра архива в граф мы добавляем — они часть истории.
+        if (pairs.length && !archived) {
+          issues.push({ profile: p, archived, pairs });
+        }
+        // теперь добавляем рёбра этого профиля в граф
+        for (let i = 0; i < ms.length; i++) {
+          for (let j = i + 1; j < ms.length; j++) {
+            link(ms[i], ms[j]); link(ms[j], ms[i]);
+          }
+        }
+      });
+
+      document.getElementById('auditCnt').textContent = issues.length;
+      document.getElementById('auditCnt').classList.toggle('warn', issues.length > 0);
+      const wrap = document.getElementById('auditList');
+      if (!issues.length) {
+        wrap.innerHTML = '<div class="lk-audit-empty">✓ Аудит чист — ни на одном активном аккаунте нет «двойных линков».</div>';
+        return;
+      }
+      wrap.innerHTML = issues.map(({ profile, pairs }) => {
+        const pairsHtml = pairs.map(pr => {
+          const ma = mentorById(pr.a), mb = mentorById(pr.b);
+          const viaPath = pr.via.map(id => {
+            const m = mentorById(id); return m ? m.code : '?';
+          }).join(' → ');
+          return `
+            <div class="lk-audit-card__pair">
+              ⚠ <b>${escapeHtml(mentorLabel(ma))}</b> и <b>${escapeHtml(mentorLabel(mb))}</b> уже были связаны.
+              <div class="lk-audit-card__via">через цепочку <code>${escapeHtml(viaPath)}</code></div>
+            </div>
+          `;
+        }).join('');
+        return `
+          <div class="lk-audit-card">
+            <div class="lk-audit-card__head">
+              <span class="lk-audit-card__code">${escapeHtml(profile.code || '?')}</span>
+              <span class="lk-audit-card__city">${escapeHtml(profile.city || '')}</span>
+              <span style="font-size:11px;color:var(--text-mute);margin-left:auto">проблемных пар: ${pairs.length}</span>
+            </div>
+            ${pairsHtml}
+          </div>
+        `;
+      }).join('');
+    }
+
+    /* ---- Планировщик: безопасные кандидаты по аккаунтам ---- */
+    const planFilters = { mode: 'sparse', q: '' };
+    function renderPlanner() {
+      const profs = (Store.state.profiles || []).slice()
+        .sort((a, b) => (a.code || '').localeCompare(b.code || '', 'ru', { numeric: true }));
+      const mentors = (Store.state.mentors || []);
+
+      const filtered = profs.filter(p => {
+        const cnt = (p.mentorIds || []).length;
+        if (planFilters.mode === 'empty' && cnt > 0) return false;
+        if (planFilters.mode === 'sparse' && cnt > 2) return false;
+        if (planFilters.q) {
+          const blob = `${p.code || ''} ${p.city || ''}`.toLowerCase();
+          if (!blob.includes(planFilters.q)) return false;
+        }
+        return true;
+      });
+
+      let totalCandidates = 0;
+      const grid = document.getElementById('planGrid');
+      if (!filtered.length) {
+        grid.innerHTML = '<div class="lk-plan-empty">Под фильтр аккаунтов нет.</div>';
+        document.getElementById('planCnt').textContent = '0';
+        return;
+      }
+      grid.innerHTML = filtered.map(p => {
+        const currentMentors = (p.mentorIds || []).map(id => mentorById(id)).filter(Boolean);
+        const currentLabel = currentMentors.length
+          ? currentMentors.map(m => `<b>${escapeHtml(m.code)}</b>`).join(', ')
+          : '<i style="color:var(--text-mute)">пусто</i>';
+
+        // Кандидаты: те, кого можно безопасно добавить (canAddMentorToProfile.ok === true)
+        const candidates = mentors
+          .filter(m => !((p.mentorIds || []).includes(m.id)))
+          .map(m => ({ m, check: Store.canAddMentorToProfile(m.id, p.id) }))
+          .filter(x => x.check.ok);
+        totalCandidates += candidates.length;
+
+        const candHtml = candidates.length
+          ? candidates.slice(0, 8).map(({ m }) => `
+              <span class="lk-plan-chip" title="${escapeHtml(mentorLabel(m))}">
+                ${escapeHtml(m.code || '?')}<small>${escapeHtml((m.name || '').split(' ')[0] || '')}</small>
+              </span>
+            `).join('') + (candidates.length > 8 ? `<span class="lk-plan-chip" style="background:transparent;color:var(--text-mute);border-color:var(--border)">+${candidates.length - 8} ещё</span>` : '')
+          : '<div class="lk-plan-card__none">— нет безопасных кандидатов (все активные клиенты уже связаны) —</div>';
+
+        return `
+          <div class="lk-plan-card">
+            <div class="lk-plan-card__head">
+              <span class="lk-plan-card__code">${escapeHtml(p.code || '?')}</span>
+              <span class="lk-plan-card__current">сейчас: <b>${currentLabel}</b></span>
+            </div>
+            <div class="lk-plan-card__candidates">${candHtml}</div>
+          </div>
+        `;
+      }).join('');
+      document.getElementById('planCnt').textContent = String(totalCandidates);
+    }
+
     /* ---- Ручная проверка пары ---- */
     function renderCheck() {
       const a = document.getElementById('checkA').value;
@@ -230,11 +569,23 @@
     document.getElementById('checkA').addEventListener('change', renderCheck);
     document.getElementById('checkB').addEventListener('change', renderCheck);
 
-    window.addEventListener('cloudstate:updated', () => { fillMentorSelect(document.getElementById('fMentor'), true); fillMentorSelect(document.getElementById('checkA')); fillMentorSelect(document.getElementById('checkB')); render(); renderCheck(); });
-    window.addEventListener('store:reloaded', () => { render(); renderCheck(); });
+    document.getElementById('planFilter').addEventListener('change', e => {
+      planFilters.mode = e.target.value; renderPlanner();
+    });
+    document.getElementById('planSearch').addEventListener('input', e => {
+      planFilters.q = e.target.value.trim().toLowerCase(); renderPlanner();
+    });
 
-    render();
-    renderCheck();
+    function renderAll() { render(); renderAudit(); renderPlanner(); renderCheck(); }
+    window.addEventListener('cloudstate:updated', () => {
+      fillMentorSelect(document.getElementById('fMentor'), true);
+      fillMentorSelect(document.getElementById('checkA'));
+      fillMentorSelect(document.getElementById('checkB'));
+      renderAll();
+    });
+    window.addEventListener('store:reloaded', renderAll);
+
+    renderAll();
   });
 
   function escapeHtml(s) {

@@ -738,10 +738,35 @@ input, select, textarea { font-family: inherit; font-size: inherit; }
   .btn--sm { padding: 5px 8px; font-size: 11px; }
   .btn--sm .btn-label { display: none; }     /* скрываем длинные подписи */
 
-  /* Модалки — фул-скрин */
-  .modal { max-width: 100%; margin: 0; max-height: 100vh; border-radius: 0; }
-  .modal__body { padding: 14px; }
+  /* Модалки — фул-скрин на телефоне */
+  .modal-backdrop { padding: 0; }
+  .modal {
+    max-width: 100%; margin: 0; max-height: 100vh;
+    border-radius: 0;
+    display: flex; flex-direction: column;
+    height: 100vh;
+  }
+  .modal__body {
+    padding: 14px;
+    flex: 1 1 auto;
+    overflow-y: auto;     /* длинные модалки прокручиваются внутри, а не уезжают за экран */
+    -webkit-overflow-scrolling: touch;
+  }
+  .modal__header, .modal__footer { flex-shrink: 0; }
   .field-row { grid-template-columns: 1fr; gap: 10px; }
+
+  /* Payment-item: на узких экранах лента «селект | сумма | ✕» не помещается
+     в три колонки — раскладываем как «селект на всю ширину», ниже «сумма + ✕». */
+  .payment-item {
+    grid-template-columns: 1fr 40px;
+    grid-template-areas:
+      "sel sel"
+      "amt rm";
+    gap: 6px;
+  }
+  .payment-item .select { grid-area: sel; }
+  .payment-item .input  { grid-area: amt; }
+  .payment-item .btn--icon { grid-area: rm; }
 
   /* Tabs (финансы) */
   .tabs { display: flex; width: 100%; }

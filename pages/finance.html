@@ -553,16 +553,15 @@
         document.getElementById('iAmount').value = '0';
         document.getElementById('iComment').value = '';
         refreshClientDatalist();
-        // сбрасываем items и сразу добавляем одну пустую строку
+        // Стартуем с пустым списком — модалка получается компактной (важно
+        // для телефона). Когда нужно привязать анкеты, владелец нажимает
+        // «+ Добавить анкету» — и только тогда появляется первая строка.
         paymentItems = [];
-        addPaymentItemRow();
         renderPaymentItems();
         document.getElementById('iManualBlock').open = false;
         Modal.open('incomeModal');
-        setTimeout(() => {
-          const firstSel = document.querySelector('#iItems .payment-item select');
-          if (firstSel) firstSel.focus();
-        }, 60);
+        // Не фокусируем ничего — на телефоне это поднимает клавиатуру и
+        // съедает половину экрана, заставляя скролить.
       } else {
         document.getElementById('eDate').value = todayISO();
         document.getElementById('eCategory').value = EXPENSE_CATEGORIES[0];
