@@ -187,12 +187,22 @@
   width: 100%; max-width: 380px;
   background: var(--bg-2); border: 1px solid var(--border);
   border-radius: 14px; padding: 24px;
+  /* Flex с gap — иначе кнопка «Войти» прилипала к полю пароля без
+     никакого пространства между ними. */
+  display: flex; flex-direction: column; gap: 14px;
 }
-.cli-login__brand { display: flex; gap: 12px; align-items: center; margin-bottom: 20px; }
+.cli-login__brand { display: flex; gap: 12px; align-items: center; margin-bottom: 6px; }
 .cli-login__brand h1 { margin: 0; font-size: 20px; }
 .cli-login__brand p  { margin: 0; font-size: 12px; color: var(--text-mute); }
+/* Кнопка «Войти» в логин-карточке — нормальная высота под палец */
+.cli-login__card .btn--primary {
+  padding: 11px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  margin-top: 4px;
+}
 .cli-login__err {
-  margin-top: 10px; padding: 8px 10px;
+  margin-top: 0; padding: 8px 10px;
   background: #fff1f0; border: 1px solid #ffa39e; color: #cf1322;
   border-radius: 8px; font-size: 13px;
 }
