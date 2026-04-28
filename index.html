@@ -10,12 +10,12 @@
 <body class="cli-body">
   <main class="cli-login" id="loginScreen" hidden>
     <div class="cli-login__card">
-      <div class="cli-login__brand">
-        <div class="cli-header__logo">M</div>
-        <div>
-          <h1>Mentori</h1>
-          <p>Войдите в личный кабинет</p>
-        </div>
+      <div class="cli-login__hero">
+        <img src="assets/logo.png" alt="Mentori"
+             class="cli-login__logo"
+             onerror="this.style.display='none';this.nextElementSibling.style.display='block'"/>
+        <div class="cli-login__hero-fallback" style="display:none">Mentori</div>
+        <div class="cli-login__hero-sub">Войдите в личный кабинет</div>
       </div>
 
       <div class="field">
@@ -27,7 +27,7 @@
         <input id="password" type="password" class="input" autocomplete="current-password" placeholder="••••••••"/>
       </div>
 
-      <button id="btnLogin" class="btn btn--primary cli-login__btn">Войти</button>
+      <button id="btnLogin" class="btn btn--primary cli-login__btn"><span>Войти</span></button>
       <div id="err" class="cli-login__err" hidden></div>
     </div>
   </main>

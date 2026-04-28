@@ -194,6 +194,30 @@
 .cli-login__brand { display: flex; gap: 12px; align-items: center; margin-bottom: 6px; }
 .cli-login__brand h1 { margin: 0; font-size: 20px; }
 .cli-login__brand p  { margin: 0; font-size: 12px; color: var(--text-mute); }
+
+/* Hero-блок на странице логина: большой логотип сверху + подпись.
+   Картинка (assets/logo.png) занимает всю ширину карточки за вычетом
+   паддингов; если файла нет — показываем «Mentori» текстом-fallback. */
+.cli-login__hero {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 8px;
+  padding: 4px 0 6px;
+}
+.cli-login__logo {
+  display: block;
+  max-width: 220px; width: 80%;
+  height: auto;
+  object-fit: contain;
+}
+.cli-login__hero-fallback {
+  font-size: 26px; font-weight: 800; letter-spacing: 2px;
+  color: #fa8c16;
+  text-transform: uppercase;
+}
+.cli-login__hero-sub {
+  font-size: 12px; color: var(--text-mute);
+  text-align: center;
+}
 /* Кнопка «Войти» в логин-карточке — компактная pill-кнопка по центру.
    .btn у нас inline-flex; принудительно делаем flex с центровкой
    контента, выравниваем саму кнопку по центру через align-self,
@@ -213,7 +237,12 @@
   font-size: 14px;
   font-weight: 600;
   border-radius: 9999px;
+  /* Сбрасываем gap из .btn (8px) и whitespace между потенциальными
+     детьми — иначе текст слегка смещается влево от центра. */
+  gap: 0;
+  text-align: center;
 }
+.cli-login__btn > span { display: inline-block; }
 .cli-login__err {
   margin-top: 0; padding: 8px 10px;
   background: #fff1f0; border: 1px solid #ffa39e; color: #cf1322;
