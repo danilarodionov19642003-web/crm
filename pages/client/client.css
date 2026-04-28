@@ -194,12 +194,18 @@
 .cli-login__brand { display: flex; gap: 12px; align-items: center; margin-bottom: 6px; }
 .cli-login__brand h1 { margin: 0; font-size: 20px; }
 .cli-login__brand p  { margin: 0; font-size: 12px; color: var(--text-mute); }
-/* Кнопка «Войти» в логин-карточке — нормальная высота под палец */
-.cli-login__card .btn--primary {
-  padding: 11px 16px;
+/* Кнопка «Войти» в логин-карточке — компактная овальная по центру.
+   Половинной ширины, скругление на полную высоту (pill), текст
+   автоматически по центру (это <button>). Дополнительный margin-top
+   даёт воздух между паролем и действием. */
+.cli-login__btn {
+  align-self: center;
+  width: 50%; min-width: 140px;
+  padding: 10px 18px;
   font-size: 14px;
   font-weight: 600;
-  margin-top: 4px;
+  border-radius: 999px;
+  margin-top: 10px;
 }
 .cli-login__err {
   margin-top: 0; padding: 8px 10px;
