@@ -30,7 +30,9 @@
 
   // На какую страницу редиректить team-роль из запрещённых.
   const TEAM_HOME = '/pages/statuses.html';
-  const LOGIN_URL = '/pages/employee/login.html';
+  // С 27.04.2026 единый универсальный логин лежит в корне репозитория.
+  // Старый /pages/employee/login.html продолжает работать (закладки).
+  const LOGIN_URL = '/';
 
   function isAdminPage() {
     const p = location.pathname;
@@ -57,9 +59,11 @@
     if (!Auth.isLogged()) {
       // запоминаем куда хотели зайти, чтобы вернуть после входа
       try { sessionStorage.setItem('mentori-after-login', location.pathname + location.search); } catch (_) {}
-      // относительный путь к login: всегда абсолютный безопаснее
-      const repo = location.pathname.split('/').slice(0, location.pathname.includes('/pages/') ? -2 : -1).join('/');
-      location.replace((repo || '') + LOGIN_URL);
+      // Уходим в корень репозитория — там единый логин (с 27.04.2026).
+      // Учитываем подкаталог GitHub Pages типа /crm/.
+      const inPages = location.pathname.includes('/pages/');
+      const repo = location.pathname.split('/').slice(0, inPages ? -2 : -1).join('/');
+      location.replace((repo || '') + '/');
       return;
     }
 

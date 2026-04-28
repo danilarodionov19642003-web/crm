@@ -42,23 +42,34 @@
     return Math.min(100, Math.round((d / o) * 100));
   }
 
+  // Корень репо (где лежит универсальный логин). Учитываем подкаталог
+  // GitHub Pages типа /crm/. Из /pages/client/* нужно подняться на 2.
+  function rootHref() {
+    const inClient = location.pathname.includes('/client/');
+    const inPages  = location.pathname.includes('/pages/');
+    const up = inClient ? -2 : (inPages ? -2 : -1);
+    const repo = location.pathname.split('/').slice(0, up).join('/');
+    return (repo || '') + '/';
+  }
+
   async function requireLogin() {
     if (!Auth.isLogged()) {
       try { await Auth.refresh(); } catch (_) {}
     }
     if (!Auth.isLogged()) {
       try { sessionStorage.setItem('mentori-cli-after-login', location.pathname + location.search); } catch (_) {}
-      location.replace('./login.html');
+      location.replace(rootHref());
       return false;
     }
     // На всякий случай: если в Supabase эта учётка не client — в админку всё равно
     // не пустит RLS, но и тут не дадим открыть портал (вероятно ошибка настройки).
     const role = Auth.role();
     if (role !== 'client') {
-      // Редиректим в обычный логин админки — там разберётся auth-gate
+      // Возвращаем на универсальный логин — auth-gate.js разберётся куда
+      // отправить (owner → дашборд, team → аккаунты).
       try { Auth.signOut(); } catch (_) {}
       alert('Этот аккаунт не помечен как клиент. Обратись к администратору.');
-      location.replace('./login.html');
+      location.replace(rootHref());
       return false;
     }
     return true;
@@ -109,7 +120,7 @@
     document.getElementById('cliLogout').addEventListener('click', () => {
       if (!confirm('Выйти из кабинета?')) return;
       try { Auth.signOut(); } catch (_) {}
-      location.replace('./login.html');
+      location.replace(rootHref());
     });
   }
 

@@ -66,7 +66,10 @@
           window.AuthGate.signOut();
         } else if (window.Supabase && window.Supabase.Auth) {
           window.Supabase.Auth.signOut();
-          location.replace('/pages/employee/login.html');
+          // Универсальный логин в корне; учитываем подкаталог GitHub Pages.
+          const inPages = location.pathname.includes('/pages/');
+          const repo = location.pathname.split('/').slice(0, inPages ? -2 : -1).join('/');
+          location.replace((repo || '') + '/');
         }
       });
     }
