@@ -124,9 +124,14 @@
     });
   }
 
-  function renderTotals(totals) {
+  function renderTotals(totals, anketas) {
     const el = document.querySelector('[data-cli-totals]');
     if (!el || !totals) return;
+    // Сводный счётчик «в работе» по всем анкетам.
+    let inProgress = 0;
+    (anketas || []).forEach(a => {
+      inProgress += _statusBreakdown(a.statuses).active;
+    });
     el.innerHTML = `
       <div class="cli-kpi">
         <div class="cli-kpi__label">Заказано</div>
@@ -137,10 +142,30 @@
         <div class="cli-kpi__value pos">${totals.done || 0}</div>
       </div>
       <div class="cli-kpi">
+        <div class="cli-kpi__label">В работе</div>
+        <div class="cli-kpi__value" style="color:#fa8c16">${inProgress}</div>
+      </div>
+      <div class="cli-kpi">
         <div class="cli-kpi__label">Остаток</div>
         <div class="cli-kpi__value ${(totals.remain||0) > 0 ? 'neg' : ''}">${fmtMoney(totals.remain || 0)}</div>
       </div>
     `;
+  }
+
+  /** Разбивка статусов на 3 группы для визуализации в карточке анкеты:
+   *  «Запланировано» (📋) — серый, ничего ещё не происходит;
+   *  «В работе» — оранжевый, активные диалоги/выбор/выбран;
+   *  «Готово» (🎯) — зелёный, опубликованный отзыв. */
+  const STATUS_PLANNED = '📋 Запланировано';
+  const STATUS_DONE    = '🎯 Готов';
+  function _statusBreakdown(statuses) {
+    let planned = 0, active = 0, done = 0;
+    (statuses || []).forEach(s => {
+      if (s.status === STATUS_PLANNED) planned++;
+      else if (s.status === STATUS_DONE) done++;
+      else active++;   // диалог начат / закончен / выбрать / выбран
+    });
+    return { planned, active, done, total: planned + active + done };
   }
 
   function renderAnketas(anketas) {
@@ -151,7 +176,13 @@
       return;
     }
     el.innerHTML = anketas.map(a => {
-      const pct = progressPct(a.done, a.ordered);
+      const br = _statusBreakdown(a.statuses);
+      // Стек-бар по статусам аккаунтов: ширина = отношение к общему числу
+      // привязанных аккаунтов. Если совсем ничего нет — пустая полоска.
+      const total = br.total || 1;
+      const wPlanned = (br.planned / total) * 100;
+      const wActive  = (br.active  / total) * 100;
+      const wDone    = (br.done    / total) * 100;
       return `
         <a class="cli-card" href="./profile.html?id=${encodeURIComponent(a.mentorId)}">
           <div class="cli-card__top">
@@ -165,14 +196,25 @@
             </div>
             <div class="cli-card__stat">
               <div class="cli-card__stat-label">Сделано</div>
-              <div class="cli-card__stat-value">${a.done || 0}</div>
+              <div class="cli-card__stat-value" style="color:#389e0d">${a.done || 0}</div>
             </div>
             <div class="cli-card__stat">
-              <div class="cli-card__stat-label">Остаток</div>
-              <div class="cli-card__stat-value">${fmtMoney(a.remain || 0)}</div>
+              <div class="cli-card__stat-label">В работе</div>
+              <div class="cli-card__stat-value" style="color:#fa8c16">${br.active}</div>
             </div>
           </div>
-          <div class="cli-progress"><div class="cli-progress__fill" style="width:${pct}%"></div></div>
+          <div class="cli-stackbar" title="Распределение аккаунтов по статусам">
+            ${br.planned ? `<span class="cli-stackbar__seg planned" style="width:${wPlanned}%"></span>` : ''}
+            ${br.active  ? `<span class="cli-stackbar__seg active"  style="width:${wActive}%"></span>` : ''}
+            ${br.done    ? `<span class="cli-stackbar__seg done"    style="width:${wDone}%"></span>` : ''}
+            ${br.total === 0 ? '<span class="cli-stackbar__empty">Аккаунты ещё не подключены</span>' : ''}
+          </div>
+          <div class="cli-stackbar__legend">
+            <span><span class="cli-dot planned"></span>Запланировано · <b>${br.planned}</b></span>
+            <span><span class="cli-dot active"></span>В работе · <b>${br.active}</b></span>
+            <span><span class="cli-dot done"></span>Готово · <b>${br.done}</b></span>
+          </div>
+          <div class="cli-card__remain">Остаток к оплате: <b>${fmtMoney(a.remain || 0)}</b></div>
         </a>
       `;
     }).join('');
@@ -359,6 +401,11 @@
       return;
     }
     const pct = progressPct(a.done, a.ordered);
+    const br = _statusBreakdown(a.statuses);
+    const total = br.total || 1;
+    const wPlanned = (br.planned / total) * 100;
+    const wActive  = (br.active  / total) * 100;
+    const wDone    = (br.done    / total) * 100;
     const totalsHtml = `
       <div class="cli-kpis" style="margin-bottom:16px">
         <div class="cli-kpi">
@@ -370,11 +417,25 @@
           <div class="cli-kpi__value pos">${a.done || 0}</div>
         </div>
         <div class="cli-kpi">
+          <div class="cli-kpi__label">В работе</div>
+          <div class="cli-kpi__value" style="color:#fa8c16">${br.active}</div>
+        </div>
+        <div class="cli-kpi">
           <div class="cli-kpi__label">Прогресс</div>
           <div class="cli-kpi__value">${pct}%</div>
         </div>
       </div>
-      <div class="cli-progress" style="margin-bottom:18px"><div class="cli-progress__fill" style="width:${pct}%"></div></div>
+      <div class="cli-stackbar" style="margin-bottom:6px">
+        ${br.planned ? `<span class="cli-stackbar__seg planned" style="width:${wPlanned}%"></span>` : ''}
+        ${br.active  ? `<span class="cli-stackbar__seg active"  style="width:${wActive}%"></span>` : ''}
+        ${br.done    ? `<span class="cli-stackbar__seg done"    style="width:${wDone}%"></span>` : ''}
+        ${br.total === 0 ? '<span class="cli-stackbar__empty">Аккаунты ещё не подключены</span>' : ''}
+      </div>
+      <div class="cli-stackbar__legend" style="margin-bottom:18px">
+        <span><span class="cli-dot planned"></span>Запланировано · <b>${br.planned}</b></span>
+        <span><span class="cli-dot active"></span>В работе · <b>${br.active}</b></span>
+        <span><span class="cli-dot done"></span>Готово · <b>${br.done}</b></span>
+      </div>
     `;
     const moneyHtml = `
       <div class="cli-kpis" style="margin-bottom:16px">

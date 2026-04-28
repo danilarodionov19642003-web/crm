@@ -29,8 +29,8 @@
     <div class="cli-feed" data-cli-feed></div>
   </main>
 
-  <script src="../../js/supabase-client.js?v=20260428"></script>
-  <script src="./client-app.js?v=20260428"></script>
+  <script src="../../js/supabase-client.js?v=20260428b"></script>
+  <script src="./client-app.js?v=20260428b"></script>
   <script>
   (async () => {
     const ok = await window.ClientApp.requireLogin();
@@ -44,7 +44,7 @@
       document.querySelector('[data-cli-feed]').innerHTML = '';
       return;
     }
-    window.ClientApp.renderTotals(snap.payload.totals);
+    window.ClientApp.renderTotals(snap.payload.totals, snap.payload.anketas);
     window.ClientApp.renderAnketas(snap.payload.anketas);
     window.ClientApp.renderCalendar(snap.payload);
     window.ClientApp.renderFeed(snap.payload.feed);
