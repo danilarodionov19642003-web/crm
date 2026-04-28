@@ -174,15 +174,168 @@
       el.innerHTML = '<div class="cli-empty">Активности пока нет.</div>';
       return;
     }
-    el.innerHTML = feed.slice(0, 30).map(f => `
+    el.innerHTML = feed.slice(0, 30).map(f => {
+      // Показываем имя анкеты (например «ФЛ1»), а не служебный код «a21».
+      const anketaLabel = f.anketaName || f.anketa || '';
+      return `
       <div class="cli-feed__item">
         <div class="cli-feed__icon ${f.kind === 'review' ? 'review' : ''}">${f.kind === 'review' ? '✍️' : '📋'}</div>
         <div class="cli-feed__text">
-          <div><strong>${escapeHtml(f.anketa || '')}</strong> · ${escapeHtml(f.text || '')}</div>
+          <div><strong>${escapeHtml(anketaLabel)}</strong> · ${escapeHtml(f.text || '')}</div>
           <div class="cli-feed__date">${fmtDate(f.date)}</div>
         </div>
-      </div>
+      </div>`;
+    }).join('');
+  }
+
+  /* --- Calendar widget ---
+     Месячная сетка со статусами и опубликованными отзывами. Каждый день
+     с событиями подсвечен точками по цвету анкеты. Тап на день → список
+     событий за этот день. Идея — клиент видит активность по своим
+     анкетам в календарном виде, не вчитываясь в ленту. */
+  const CAL_COLORS = ['#2f54eb', '#52c41a', '#fa8c16', '#722ed1', '#13c2c2'];
+  const calState = { month: new Date(), selected: new Date().toISOString().slice(0, 10) };
+
+  function _gatherEvents(snap) {
+    const events = [];
+    if (!snap || !snap.anketas) return events;
+    snap.anketas.forEach((a, idx) => {
+      const color = CAL_COLORS[idx % CAL_COLORS.length];
+      a.statuses.forEach(s => {
+        if (!s.date) return;
+        events.push({
+          date: String(s.date).slice(0, 10),
+          color, anketa: a.name || a.code,
+          kind: 'status', icon: '📋',
+          title: s.status || '',
+          sub: s.profileName || '',
+          comment: s.comment || ''
+        });
+      });
+      a.reviews.forEach(r => {
+        if (!r.date) return;
+        events.push({
+          date: String(r.date).slice(0, 10),
+          color, anketa: a.name || a.code,
+          kind: 'review', icon: '✍️',
+          title: 'Опубликован отзыв',
+          sub: r.profileName || '',
+          comment: ''
+        });
+      });
+    });
+    return events;
+  }
+
+  function _monthLabel(d) {
+    const months = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+    return `${months[d.getMonth()]} ${d.getFullYear()}`;
+  }
+
+  function renderCalendar(snap) {
+    const el = document.querySelector('[data-cli-calendar]');
+    if (!el || !snap) return;
+    const events = _gatherEvents(snap);
+    const byDate = new Map();
+    events.forEach(e => {
+      if (!byDate.has(e.date)) byDate.set(e.date, []);
+      byDate.get(e.date).push(e);
+    });
+
+    const m = calState.month;
+    const year = m.getFullYear(), month = m.getMonth();
+    const first = new Date(year, month, 1);
+    const last = new Date(year, month + 1, 0);
+    // Пн=0..Вс=6
+    const firstDow = (first.getDay() + 6) % 7;
+    const daysInMonth = last.getDate();
+    const todayStr = new Date().toISOString().slice(0, 10);
+
+    // Легенда по анкетам
+    const legend = (snap.anketas || []).map((a, idx) => `
+      <span class="cli-cal__legend-item">
+        <span class="cli-cal__dot" style="background:${CAL_COLORS[idx % CAL_COLORS.length]}"></span>
+        ${escapeHtml(a.name || a.code)}
+      </span>
     `).join('');
+
+    // Сетка
+    const cells = [];
+    for (let i = 0; i < firstDow; i++) cells.push(`<div class="cli-cal__cell cli-cal__cell--empty"></div>`);
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+      const dayEvents = byDate.get(dateStr) || [];
+      // уникальные цвета
+      const uniqColors = [...new Set(dayEvents.map(e => e.color))];
+      const dotsHtml = uniqColors.slice(0, 3).map(c =>
+        `<span class="cli-cal__dot" style="background:${c}"></span>`
+      ).join('');
+      const cls = [
+        'cli-cal__cell',
+        dateStr === todayStr ? 'is-today' : '',
+        dateStr === calState.selected ? 'is-selected' : '',
+        dayEvents.length > 0 ? 'has-events' : ''
+      ].filter(Boolean).join(' ');
+      cells.push(`
+        <button class="${cls}" data-date="${dateStr}">
+          <span class="cli-cal__day">${d}</span>
+          ${dotsHtml ? `<span class="cli-cal__dots">${dotsHtml}</span>` : ''}
+        </button>
+      `);
+    }
+
+    // События за выбранный день
+    const selEvents = byDate.get(calState.selected) || [];
+    const selEventsHtml = selEvents.length
+      ? selEvents.map(e => `
+          <div class="cli-cal__event">
+            <span class="cli-cal__event-icon" style="background:${e.color}22;color:${e.color}">${e.icon}</span>
+            <div class="cli-cal__event-body">
+              <div class="cli-cal__event-title">${escapeHtml(e.title)}</div>
+              <div class="cli-cal__event-meta">
+                <strong>${escapeHtml(e.anketa)}</strong> · ${escapeHtml(e.sub)}
+                ${e.comment ? ' · <span style="color:var(--text-mute)">' + escapeHtml(e.comment) + '</span>' : ''}
+              </div>
+            </div>
+          </div>
+        `).join('')
+      : `<div class="cli-cal__empty">Событий за этот день нет.</div>`;
+
+    el.innerHTML = `
+      <div class="cli-cal__nav">
+        <button class="cli-cal__nav-btn" data-cal-prev>‹</button>
+        <div class="cli-cal__month">${_monthLabel(m)}</div>
+        <button class="cli-cal__nav-btn" data-cal-next>›</button>
+        <button class="cli-cal__today" data-cal-today>сегодня</button>
+      </div>
+      <div class="cli-cal__legend">${legend}</div>
+      <div class="cli-cal__weekdays">
+        <span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span>
+      </div>
+      <div class="cli-cal__grid">${cells.join('')}</div>
+      <div class="cli-cal__sel-title">${fmtDate(calState.selected)}</div>
+      <div class="cli-cal__events">${selEventsHtml}</div>
+    `;
+
+    // Биндим клики (после каждого ререндера, поскольку innerHTML затирает старые слушатели)
+    el.querySelector('[data-cal-prev]').addEventListener('click', () => {
+      calState.month = new Date(year, month - 1, 1); renderCalendar(snap);
+    });
+    el.querySelector('[data-cal-next]').addEventListener('click', () => {
+      calState.month = new Date(year, month + 1, 1); renderCalendar(snap);
+    });
+    el.querySelector('[data-cal-today]').addEventListener('click', () => {
+      const t = new Date();
+      calState.month = new Date(t.getFullYear(), t.getMonth(), 1);
+      calState.selected = t.toISOString().slice(0, 10);
+      renderCalendar(snap);
+    });
+    el.querySelectorAll('.cli-cal__cell[data-date]').forEach(b => {
+      b.addEventListener('click', () => {
+        calState.selected = b.dataset.date;
+        renderCalendar(snap);
+      });
+    });
   }
 
   /* --- Profile detail rendering --- */
@@ -234,7 +387,7 @@
         <thead><tr><th>Аккаунт</th><th>Статус</th><th>Обновлён</th></tr></thead>
         <tbody>${a.statuses.map(s => `
           <tr>
-            <td><strong>${escapeHtml(s.profileCode || '—')}</strong>${s.archived ? ' <span style="color:#cf1322;font-size:11px">(архив)</span>' : ''}</td>
+            <td><strong>${escapeHtml(s.profileName || '—')}</strong>${s.archived ? ' <span style="color:#cf1322;font-size:11px">(архив)</span>' : ''}</td>
             <td><span class="cli-status-pill">${escapeHtml(s.status || '')}</span></td>
             <td>${fmtDate(s.date)}</td>
           </tr>
@@ -259,7 +412,7 @@
       ${a.reviews.map(r => `
         <div class="cli-review">
           <div class="cli-review__head">
-            <span class="cli-review__code">${escapeHtml(r.profileCode || '—')}</span>
+            <span class="cli-review__code">${escapeHtml(r.profileName || '—')}</span>
             <span>${fmtDate(r.date)}</span>
             ${r.archived ? '<span style="color:#cf1322">(аккаунт в архиве)</span>' : ''}
           </div>
@@ -287,6 +440,7 @@
     renderTotals,
     renderAnketas,
     renderFeed,
+    renderCalendar,
     renderProfileDetail,
     fmtDate, fmtMoney, escapeHtml
   };

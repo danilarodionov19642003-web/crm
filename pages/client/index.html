@@ -19,6 +19,9 @@
       <div class="cli-empty">Загрузка…</div>
     </div>
 
+    <h2 class="cli-section-title">Календарь</h2>
+    <div class="cli-cal" data-cli-calendar></div>
+
     <h2 class="cli-section-title">Последние действия</h2>
     <div class="cli-feed" data-cli-feed></div>
   </main>
@@ -40,6 +43,7 @@
     }
     window.ClientApp.renderTotals(snap.payload.totals);
     window.ClientApp.renderAnketas(snap.payload.anketas);
+    window.ClientApp.renderCalendar(snap.payload);
     window.ClientApp.renderFeed(snap.payload.feed);
   })();
   </script>

@@ -1191,13 +1191,41 @@
       );
       // Платежи — только items.accountId === client.id
       const payments = client ? this.getPaymentsForClient(client.id) : [];
+
+      // Резолвер «дружелюбного имени» аккаунта для клиентского портала.
+      // Внутренний код «5-3» — это служебное (город + номер), клиент
+      // его видеть не должен. Берём имя из регистрации (ownerName —
+      // персона, на которую заведён профи/авито), а если пусто —
+      // показываем нейтральное «Аккаунт #N» (нумерация в пределах
+      // одной анкеты).
+      const profilesUsedHere = new Set();
+      (this.state.profileStatuses || [])
+        .filter(s => s.mentorId === mentorId)
+        .forEach(s => profilesUsedHere.add(s.profileId));
+      (this.state.reviews || [])
+        .filter(r => r.mentorId === mentorId)
+        .forEach(r => profilesUsedHere.add(r.profileId));
+      // нумерация по порядку появления в state.profiles (стабильна между сборками)
+      const orderedProfiles = [
+        ...(this.state.profiles || []),
+        ...(this.state.archivedProfiles || [])
+      ].filter(p => profilesUsedHere.has(p.id));
+      const profileNumByCode = new Map();
+      orderedProfiles.forEach((p, i) => profileNumByCode.set(p.id, i + 1));
+      const friendlyName = (profileId) => {
+        const reg = this.getAccountReg(profileId);
+        if (reg && reg.ownerName) return String(reg.ownerName).trim();
+        const num = profileNumByCode.get(profileId) || 0;
+        return num > 0 ? `Аккаунт #${num}` : 'Аккаунт';
+      };
+
       // Все статусы по этой анкете (текущие — на каком аккаунте мы сейчас работаем)
       const statuses = (this.state.profileStatuses || [])
         .filter(s => s.mentorId === mentorId)
         .map(s => {
           const pr = this.getProfileOrArchived(s.profileId);
           return {
-            profileCode: pr ? (pr.profile.code || '') : '',
+            profileName: friendlyName(s.profileId),
             archived: pr ? !!pr.archived : false,
             status: s.status,
             date: s.date,
@@ -1211,7 +1239,7 @@
           const pr = this.getProfileOrArchived(r.profileId);
           return {
             id: r.id,
-            profileCode: pr ? (pr.profile.code || '') : '',
+            profileName: friendlyName(r.profileId),
             archived: pr ? !!pr.archived : false,
             text: r.text || '',
             date: (r.moderatedAt || r.submittedAt || '').slice(0, 10)
@@ -1252,12 +1280,14 @@
       const feed = [];
       anketas.forEach(a => {
         a.reviews.slice(0, 20).forEach(r => feed.push({
-          kind: 'review', date: r.date, anketa: a.code,
-          text: `Опубликован отзыв с аккаунта ${r.profileCode || '—'}`
+          kind: 'review', date: r.date, anketa: a.code, anketaName: a.name,
+          profileName: r.profileName,
+          text: `Опубликован отзыв · ${r.profileName || '—'}`
         }));
         a.statuses.forEach(s => feed.push({
-          kind: 'status', date: s.date, anketa: a.code,
-          text: `${s.status} — аккаунт ${s.profileCode || '—'}`
+          kind: 'status', date: s.date, anketa: a.code, anketaName: a.name,
+          profileName: s.profileName, status: s.status,
+          text: `${s.status} · ${s.profileName || '—'}`
         }));
       });
       feed.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
