@@ -1,5 +1,12 @@
 /* ==========================================================================
-   MENTORI CRM — Темная тема, оранжевый акцент
+   MENTORI CRM — Темная тема (по умолчанию), оранжевый акцент.
+   --------------------------------------------------------------------------
+   С 28.04.2026 поддерживается AUTO-светлая тема: если в системе
+   (телефон/macOS) включена светлая тема — переменные ниже переопределяются
+   media-query @media (prefers-color-scheme: light). Никакого тоггла:
+   всё подстраивается само. Работает на всех страницах (админка, кабинет
+   сотрудника, кабинет клиента) — потому что весь UI завязан на эти
+   переменные.
    ========================================================================== */
 
 :root {
@@ -25,7 +32,41 @@
   --header-h: 64px;
   --shadow: 0 4px 24px rgba(0, 0, 0, 0.35);
   --font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", "Segoe UI", Roboto, sans-serif;
+  /* алиасы под совместимость со старым именованием в client.css */
+  --bg-2: var(--bg-elev);
 }
+
+/* Светлая тема: автоматически если в системе светлый режим. */
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f7f7f8;
+    --bg-elev: #ffffff;
+    --bg-elev-2: #f0f1f3;
+    --bg-hover: #e8eaef;
+    --border: #e2e4e9;
+    --border-strong: #c8ccd2;
+    --text: #1a1a1f;
+    --text-dim: #4a4f57;
+    --text-mute: #8a8f99;
+    --accent: #ff7a00;
+    --accent-soft: rgba(255, 122, 0, 0.12);
+    --accent-hover: #ee6f00;
+    --green: #16a34a;
+    --red: #dc2626;
+    --blue: #2563eb;
+    --shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+    --bg-2: var(--bg-elev);
+  }
+  /* Скроллбар на белом фоне виден лучше с серым ползунком */
+  ::-webkit-scrollbar-thumb { background: #c8ccd2; }
+  ::-webkit-scrollbar-thumb:hover { background: #a0a4ad; }
+}
+
+/* color-scheme подсказывает браузеру нативные элементы (date picker,
+   scrollbar, autofill) — без неё тёмный date-input на светлом фоне
+   выглядит как чёрная плашка. */
+html { color-scheme: dark; }
+@media (prefers-color-scheme: light) { html { color-scheme: light; } }
 
 /* --- Reset --- */
 * { box-sizing: border-box; margin: 0; padding: 0; }
