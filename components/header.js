@@ -66,10 +66,12 @@
           window.AuthGate.signOut();
         } else if (window.Supabase && window.Supabase.Auth) {
           window.Supabase.Auth.signOut();
-          // Универсальный логин в корне; учитываем подкаталог GitHub Pages.
-          const inPages = location.pathname.includes('/pages/');
-          const repo = location.pathname.split('/').slice(0, inPages ? -2 : -1).join('/');
-          location.replace((repo || '') + '/');
+          // Корень = всё, что до /pages/ (или текущая директория).
+          // Раньше slice(-2) ломалось на /pages/client/* → 404.
+          const path = location.pathname;
+          const idx = path.indexOf('/pages/');
+          const root = idx >= 0 ? path.substring(0, idx + 1) : path.substring(0, path.lastIndexOf('/') + 1);
+          location.replace(root);
         }
       });
     }

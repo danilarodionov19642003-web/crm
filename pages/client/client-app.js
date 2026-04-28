@@ -42,14 +42,14 @@
     return Math.min(100, Math.round((d / o) * 100));
   }
 
-  // Корень репо (где лежит универсальный логин). Учитываем подкаталог
-  // GitHub Pages типа /crm/. Из /pages/client/* нужно подняться на 2.
+  // Корень репо (где лежит универсальный логин). Для пути типа
+  // /crm/pages/client/index.html → '/crm/'. Раньше было через slice(-2)
+  // и для подпапок (включая /client/) возвращало '/crm/pages/' → 404.
   function rootHref() {
-    const inClient = location.pathname.includes('/client/');
-    const inPages  = location.pathname.includes('/pages/');
-    const up = inClient ? -2 : (inPages ? -2 : -1);
-    const repo = location.pathname.split('/').slice(0, up).join('/');
-    return (repo || '') + '/';
+    const path = location.pathname;
+    const idx = path.indexOf('/pages/');
+    if (idx >= 0) return path.substring(0, idx + 1);
+    return path.substring(0, path.lastIndexOf('/') + 1);
   }
 
   async function requireLogin() {

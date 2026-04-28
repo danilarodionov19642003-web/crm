@@ -34,6 +34,18 @@
   // Старый /pages/employee/login.html продолжает работать (закладки).
   const LOGIN_URL = '/';
 
+  /** Корень GitHub Pages-репозитория (где лежит index.html — универсальный
+   *  логин). Учитывает подкаталоги: /crm/pages/dashboard.html → /crm/,
+   *  /crm/pages/client/index.html → /crm/, /index.html → /. Раньше
+   *  считалось через slice(-2) и для /pages/client/* возвращало /crm/pages/
+   *  → 404. */
+  function _rootHref() {
+    const path = location.pathname;
+    const idx = path.indexOf('/pages/');
+    if (idx >= 0) return path.substring(0, idx + 1);   // включая последний /
+    return path.substring(0, path.lastIndexOf('/') + 1);
+  }
+
   function isAdminPage() {
     const p = location.pathname;
     if (p.includes('/employee/')) return false; // у них своя auth
@@ -59,11 +71,7 @@
     if (!Auth.isLogged()) {
       // запоминаем куда хотели зайти, чтобы вернуть после входа
       try { sessionStorage.setItem('mentori-after-login', location.pathname + location.search); } catch (_) {}
-      // Уходим в корень репозитория — там единый логин (с 27.04.2026).
-      // Учитываем подкаталог GitHub Pages типа /crm/.
-      const inPages = location.pathname.includes('/pages/');
-      const repo = location.pathname.split('/').slice(0, inPages ? -2 : -1).join('/');
-      location.replace((repo || '') + '/');
+      location.replace(_rootHref());
       return;
     }
 
@@ -86,8 +94,7 @@
     // (на crm_state RLS запрещает любой authenticated-доступ), но
     // визуально не должен видеть админский интерфейс.
     if (role === 'client') {
-      const repo = location.pathname.split('/').slice(0, location.pathname.includes('/pages/') ? -2 : -1).join('/');
-      location.replace((repo || '') + '/pages/client/index.html');
+      location.replace(_rootHref() + 'pages/client/index.html');
       return;
     }
 
@@ -96,13 +103,11 @@
       const file = (location.pathname.split('/').pop() || 'index.html').toLowerCase();
       const onIndex = file === '' || file === 'index.html';
       if (onIndex) {
-        const repo = location.pathname.split('/').slice(0, -1).join('/');
-        location.replace((repo || '') + TEAM_HOME);
+        location.replace(_rootHref() + 'pages/statuses.html');
         return;
       }
       if (!TEAM_ALLOW.has(file)) {
-        const repo = location.pathname.split('/').slice(0, -1).join('/');
-        location.replace((repo || '') + '/statuses.html');
+        location.replace(_rootHref() + 'pages/statuses.html');
         return;
       }
     }
@@ -121,8 +126,7 @@
     isClient: () => Auth.role() === 'client',
     signOut() {
       Auth.signOut();
-      const repo = location.pathname.split('/').slice(0, location.pathname.includes('/pages/') ? -2 : -1).join('/');
-      location.replace((repo || '') + LOGIN_URL);
+      location.replace(_rootHref());
     }
   };
 })();
