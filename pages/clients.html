@@ -159,6 +159,26 @@
     </div>
   </div>
 
+  <!-- Модалка опубликованных отзывов клиента -->
+  <div class="modal-backdrop" id="reviewsModal">
+    <div class="modal" style="max-width:640px">
+      <div class="modal__header">
+        <h3 id="rvTitle">Отзывы клиента</h3>
+        <button class="btn--icon" data-close>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal__body">
+        <div id="rvSummary" style="display:flex;gap:10px;margin-bottom:14px"></div>
+        <div id="rvList"></div>
+      </div>
+      <div class="modal__footer">
+        <button class="btn btn--ghost" data-close>Закрыть</button>
+        <a class="btn btn--primary" href="reviews.html">К модерации</a>
+      </div>
+    </div>
+  </div>
+
   <script src="../data/seed.js"></script>
   <script src="../js/app.js"></script>
   <script src="../js/supabase-client.js"></script>
@@ -318,7 +338,7 @@
         </div>`;
       return `
         <tr data-id="${r.id}">
-          <td><span class="badge badge--gray">${escapeHtml(r.code || '—')}</span></td>
+          <td><span class="badge badge--gray" data-act="reviews" style="cursor:pointer" title="Опубликованные отзывы">${escapeHtml(r.code || '—')}</span></td>
           <td data-field="name"><strong>${escapeHtml(r.name || '—')}</strong></td>
           <td>
             <select class="select" style="padding:4px 8px" data-field="platform">
@@ -344,6 +364,10 @@
           </td>
           <td>${statusBadge(r)}</td>
           <td class="actions">
+            <button class="btn btn--ghost btn--sm" data-act="reviews" title="Опубликованные отзывы">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:3px;vertical-align:middle"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+              <span class="btn-label">Отзывы (${countReviewsForClient(r)})</span>
+            </button>
             <button class="btn btn--ghost btn--sm" data-act="payments" title="История платежей">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:3px;vertical-align:middle"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
               <span class="btn-label">Платежи (${Store.getPaymentsForClient(r.id).length})</span>
@@ -353,6 +377,36 @@
             </button>
           </td>
         </tr>`;
+    }
+
+    /** Сколько одобренных отзывов опубликовано по этому клиенту.
+     *  Считается через mentor.code → reviews.mentorId, но только статус Готов. */
+    function countReviewsForClient(c) {
+      return collectReviewsForClient(c).length;
+    }
+    function collectReviewsForClient(c) {
+      const code = String(c.code || '').toLowerCase().trim();
+      if (!code) return [];
+      const mentorIds = new Set((Store.state.mentors || [])
+        .filter(m => String(m.code || '').toLowerCase().trim() === code)
+        .map(m => m.id));
+      if (!mentorIds.size) return [];
+      // Только одобренные — клиенту платят за реально опубликованные.
+      return (Store.state.reviews || [])
+        .filter(r => mentorIds.has(r.mentorId) && r.moderation === 'approved')
+        .map(r => {
+          const pr = Store.getProfileOrArchived(r.profileId);
+          const reg = pr ? Store.getAccountReg(pr.profile.id) : null;
+          return {
+            id: r.id,
+            text: r.text || '',
+            date: (r.moderatedAt || r.submittedAt || '').slice(0, 10),
+            profileCode: pr ? (pr.profile.code || '') : '',
+            archived: pr ? !!pr.archived : false,
+            ownerName: reg ? (reg.ownerName || '') : ''
+          };
+        })
+        .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
     }
 
     function statusBadge(r) {
@@ -416,7 +470,62 @@
 
         // история платежей
         tr.querySelector('[data-act="payments"]').addEventListener('click', () => openPayments(id));
+        // опубликованные отзывы — биндим ВСЕ элементы (badge кода + кнопка),
+        // их два в строке. e.stopPropagation чтобы не пытаться сделать ячейку
+        // редактируемой через makeEditable.
+        tr.querySelectorAll('[data-act="reviews"]').forEach(el => {
+          el.addEventListener('click', e => { e.stopPropagation(); openReviews(id); });
+        });
       });
+    }
+
+    /* ---- Модалка опубликованных отзывов ----
+       Открывается по клику на «Отзывы (N)» в строке клиента. Показывает
+       все одобренные отзывы (текст + дата + аккаунт + имя владельца),
+       без модерируемых/отклонённых — клиенту это видеть не надо, тут
+       только реально засчитанные. Сортировка от новых к старым. */
+    function openReviews(clientId) {
+      const c = Store.state.clients.find(x => x.id === clientId);
+      if (!c) return;
+      const list = collectReviewsForClient(c);
+      document.getElementById('rvTitle').textContent =
+        `Отзывы · ${c.code ? c.code + ' · ' : ''}${c.name || 'Клиент'}`;
+
+      document.getElementById('rvSummary').innerHTML = `
+        <div class="card card--compact" style="flex:1;margin:0">
+          <div class="card__label">Всего одобрено</div>
+          <div class="card__value pos">${list.length}</div>
+        </div>
+        <div class="card card--compact" style="flex:1;margin:0">
+          <div class="card__label">Заказано</div>
+          <div class="card__value">${c.ordered || 0}</div>
+        </div>
+        <div class="card card--compact" style="flex:1;margin:0">
+          <div class="card__label">Осталось</div>
+          <div class="card__value ${(c.ordered||0) - list.length > 0 ? 'neg' : ''}">${Math.max(0, (c.ordered || 0) - list.length)}</div>
+        </div>
+      `;
+
+      const wrap = document.getElementById('rvList');
+      if (!list.length) {
+        wrap.innerHTML = `<div class="empty" style="padding:24px;text-align:center;color:var(--text-mute)">
+          Опубликованных отзывов ещё нет.<br/>
+          <span style="font-size:11px">Когда сотрудник нажимает «🎯 Готов» и владелец одобряет отзыв в разделе «Отзывы» — он попадает сюда.</span>
+        </div>`;
+      } else {
+        wrap.innerHTML = list.map(r => `
+          <div style="background:var(--bg-elev-2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:10px">
+            <div style="display:flex;gap:8px;align-items:center;font-size:12px;color:var(--text-mute);margin-bottom:6px;flex-wrap:wrap">
+              <span class="badge badge--green"><span class="dot"></span>Одобрен</span>
+              <span><strong style="color:var(--text)">${escapeHtml(r.profileCode || '—')}</strong>${r.ownerName ? ' · ' + escapeHtml(r.ownerName) : ''}${r.archived ? ' <span style="color:var(--red)">(архив)</span>' : ''}</span>
+              <span style="margin-left:auto">${escapeHtml(fmtDate(r.date))}</span>
+            </div>
+            <div style="white-space:pre-wrap;line-height:1.45;font-size:13px">${escapeHtml(r.text || '')}</div>
+          </div>
+        `).join('');
+      }
+
+      Modal.open('reviewsModal');
     }
 
     /* ---- Модалка истории платежей ---- */
