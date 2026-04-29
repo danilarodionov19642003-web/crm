@@ -459,7 +459,7 @@
         <thead><tr><th>Аккаунт</th><th>Статус</th><th>Обновлён</th></tr></thead>
         <tbody>${a.statuses.map(s => `
           <tr>
-            <td><strong>${escapeHtml(s.profileName || '—')}</strong>${s.archived ? ' <span style="color:#cf1322;font-size:11px">(архив)</span>' : ''}</td>
+            <td><strong>${escapeHtml(s.profileName || '—')}</strong></td>
             <td><span class="cli-status-pill">${escapeHtml(s.status || '')}</span></td>
             <td>${fmtDate(s.date)}</td>
           </tr>
@@ -486,7 +486,6 @@
           <div class="cli-review__head">
             <span class="cli-review__code">${escapeHtml(r.profileName || '—')}</span>
             <span>${fmtDate(r.date)}</span>
-            ${r.archived ? '<span style="color:#cf1322">(аккаунт в архиве)</span>' : ''}
           </div>
           <div class="cli-review__text">${escapeHtml(r.text || '')}</div>
         </div>
