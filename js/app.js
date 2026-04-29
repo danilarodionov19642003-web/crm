@@ -1233,8 +1233,9 @@
           };
         });
       // Опубликованные отзывы — только approved (модерированные)
-      const reviews = (this.state.reviews || [])
-        .filter(r => r.mentorId === mentorId && r.moderation === 'approved')
+      const reviewsRaw = (this.state.reviews || [])
+        .filter(r => r.mentorId === mentorId && r.moderation === 'approved');
+      const reviews = reviewsRaw
         .map(r => {
           const pr = this.getProfileOrArchived(r.profileId);
           return {
@@ -1246,6 +1247,16 @@
           };
         })
         .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+      // «Сделано» считаем из ЖИВЫХ данных, а не из устаревшего client.done.
+      // Правило: одобренный отзыв + у этой пары (mentor, profile) до сих
+      // пор стоит статус «🎯 Готов». Если позже статус сменили на другой
+      // или отзыв удалили — счётчик уменьшится (как и в clients.html).
+      const doneProfileIds = new Set(
+        (this.state.profileStatuses || [])
+          .filter(s => s.mentorId === mentorId && s.status === '🎯 Готов')
+          .map(s => s.profileId)
+      );
+      const realDone = reviewsRaw.filter(r => doneProfileIds.has(r.profileId)).length;
       return {
         mentorId,
         code: mentor.code || '',
@@ -1253,7 +1264,7 @@
         platform: client ? (client.platform || '') : '',
         tariff: client ? (client.tariff || '') : '',
         ordered: client ? Number(client.ordered) || 0 : 0,
-        done: client ? Number(client.done) || 0 : reviews.length,
+        done: realDone,
         paid: client ? Number(client.paid) || 0 : 0,
         remain: client ? Number(client.remain) || 0 : 0,
         total: client ? Number(client.total) || 0 : 0,
