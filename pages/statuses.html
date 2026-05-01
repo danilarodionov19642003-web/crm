@@ -613,13 +613,13 @@
         const regBadges = (isOwner && reg) ? `
           <div class="acc-card__regs">
             <span class="reg-ind ${reg.cloudPassword ? 'is-on' : ''}" title="Облачный пароль (Telegram)${reg.cloudPassword ? ': заполнен' : ': пусто'}">
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/></svg>
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
             </span>
             <span class="reg-ind ${reg.profiEmail ? 'is-on' : ''}" title="Почта Профи.ру${reg.profiEmail ? ': ' + reg.profiEmail : ': пусто'}">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 6l10 7L22 6"/></svg>
             </span>
             <span class="reg-ind ${reg.twoGis ? 'is-on' : ''}" title="2ГИС${reg.twoGis ? ': ' + reg.twoGis : ': пусто'}">
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/></svg>
             </span>
           </div>
         ` : '';
