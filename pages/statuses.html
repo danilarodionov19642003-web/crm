@@ -30,6 +30,40 @@
     .acc-card__owner { font-size: 12px; color: var(--text-dim); }
     .acc-card__owner b { color: var(--text); font-weight: 600; }
 
+    /* Индикаторы заполненности регистрационных полей.
+       Зелёный = заполнено, серый = пусто. Маленькие иконки в строку. */
+    .acc-card__regs {
+      display: flex; gap: 8px; align-items: center;
+      margin-top: 6px;
+    }
+    .reg-ind {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 26px; height: 26px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--bg-elev-2);
+      color: var(--text-mute);
+      transition: all .15s ease;
+      cursor: help;
+      position: relative;
+    }
+    .reg-ind.is-on {
+      color: #22c55e;
+      border-color: rgba(34,197,94,0.4);
+      background: rgba(34,197,94,0.1);
+    }
+    /* Точка-индикатор в правом верхнем углу: красная если пусто, зелёная если есть */
+    .reg-ind::after {
+      content: '';
+      position: absolute;
+      top: -2px; right: -2px;
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--red);
+      border: 1.5px solid var(--bg-elev);
+    }
+    .reg-ind.is-on::after { background: #22c55e; }
+
     /* Статус-группы */
     .stg { display: flex; flex-direction: column; gap: 4px; }
     .stg__row {
@@ -573,6 +607,23 @@
           ? `<div class="acc-card__owner">👤 <b>${escapeHtml(reg.ownerName || '—')}</b>${(isOwner && reg.phone) ? ' · ' + escapeHtml(formatPhone(reg.phone)) : ''}</div>`
           : `<div class="acc-card__owner" style="opacity:.5">— регистрация не заполнена —</div>`;
 
+        // Индикаторы заполненности ключевых полей регистрации.
+        // Зелёный = поле заполнено, серый = пусто. Видно только владельцу
+        // (сотруднику регистрация целиком закрыта).
+        const regBadges = (isOwner && reg) ? `
+          <div class="acc-card__regs">
+            <span class="reg-ind ${reg.cloudPassword ? 'is-on' : ''}" title="Облачный пароль (Telegram)${reg.cloudPassword ? ': заполнен' : ': пусто'}">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/></svg>
+            </span>
+            <span class="reg-ind ${reg.profiEmail ? 'is-on' : ''}" title="Почта Профи.ру${reg.profiEmail ? ': ' + reg.profiEmail : ': пусто'}">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 6l10 7L22 6"/></svg>
+            </span>
+            <span class="reg-ind ${reg.twoGis ? 'is-on' : ''}" title="2ГИС${reg.twoGis ? ': ' + reg.twoGis : ': пусто'}">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+            </span>
+          </div>
+        ` : '';
+
         // В архиве — другой набор кнопок: восстановить + удалить навсегда.
         // Сотруднику все эти действия недоступны.
         let headActions = '';
@@ -680,6 +731,7 @@
               </div>
             </div>
             ${ownerLine}
+            ${regBadges}
             ${archMeta}
             ${innerBody}
             ${ipBlock}
