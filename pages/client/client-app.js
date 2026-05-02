@@ -177,12 +177,12 @@
     }
     el.innerHTML = anketas.map(a => {
       const br = _statusBreakdown(a.statuses);
-      // Стек-бар по статусам аккаунтов: ширина = отношение к общему числу
-      // привязанных аккаунтов. Если совсем ничего нет — пустая полоска.
-      const total = br.total || 1;
-      const wPlanned = (br.planned / total) * 100;
-      const wActive  = (br.active  / total) * 100;
-      const wDone    = (br.done    / total) * 100;
+      // Шкала считается от «Заказано» — чтобы клиент читал её как
+      // «сколько из заказа уже сделано». Оранжевый = в работе,
+      // зелёный = готово, остаток фона = ещё не начато.
+      const ordered = a.ordered || 0;
+      const wActive = ordered ? Math.min(100, (br.active / ordered) * 100) : 0;
+      const wDone   = ordered ? Math.min(100, (br.done   / ordered) * 100) : 0;
       return `
         <a class="cli-card" href="./profile.html?id=${encodeURIComponent(a.mentorId)}">
           <div class="cli-card__top">
@@ -203,11 +203,10 @@
               <div class="cli-card__stat-value" style="color:#fa8c16">${br.active}</div>
             </div>
           </div>
-          <div class="cli-stackbar" title="Распределение аккаунтов по статусам">
-            ${br.planned ? `<span class="cli-stackbar__seg planned" style="width:${wPlanned}%"></span>` : ''}
-            ${br.active  ? `<span class="cli-stackbar__seg active"  style="width:${wActive}%"></span>` : ''}
-            ${br.done    ? `<span class="cli-stackbar__seg done"    style="width:${wDone}%"></span>` : ''}
-            ${br.total === 0 ? '<span class="cli-stackbar__empty">Аккаунты ещё не подключены</span>' : ''}
+          <div class="cli-stackbar" title="Прогресс по заказу: сделано и в работе">
+            ${br.active ? `<span class="cli-stackbar__seg active" style="width:${wActive}%"></span>` : ''}
+            ${br.done   ? `<span class="cli-stackbar__seg done"   style="width:${wDone}%"></span>`   : ''}
+            ${ordered === 0 && br.total === 0 ? '<span class="cli-stackbar__empty">Аккаунты ещё не подключены</span>' : ''}
           </div>
           <div class="cli-stackbar__legend">
             <span><span class="cli-dot planned"></span>Запланировано · <b>${br.planned}</b></span>
@@ -402,10 +401,9 @@
     }
     const pct = progressPct(a.done, a.ordered);
     const br = _statusBreakdown(a.statuses);
-    const total = br.total || 1;
-    const wPlanned = (br.planned / total) * 100;
-    const wActive  = (br.active  / total) * 100;
-    const wDone    = (br.done    / total) * 100;
+    const ordered = a.ordered || 0;
+    const wActive = ordered ? Math.min(100, (br.active / ordered) * 100) : 0;
+    const wDone   = ordered ? Math.min(100, (br.done   / ordered) * 100) : 0;
     const totalsHtml = `
       <div class="cli-kpis" style="margin-bottom:16px">
         <div class="cli-kpi">
@@ -426,10 +424,9 @@
         </div>
       </div>
       <div class="cli-stackbar" style="margin-bottom:6px">
-        ${br.planned ? `<span class="cli-stackbar__seg planned" style="width:${wPlanned}%"></span>` : ''}
-        ${br.active  ? `<span class="cli-stackbar__seg active"  style="width:${wActive}%"></span>` : ''}
-        ${br.done    ? `<span class="cli-stackbar__seg done"    style="width:${wDone}%"></span>` : ''}
-        ${br.total === 0 ? '<span class="cli-stackbar__empty">Аккаунты ещё не подключены</span>' : ''}
+        ${br.active ? `<span class="cli-stackbar__seg active" style="width:${wActive}%"></span>` : ''}
+        ${br.done   ? `<span class="cli-stackbar__seg done"   style="width:${wDone}%"></span>`   : ''}
+        ${ordered === 0 && br.total === 0 ? '<span class="cli-stackbar__empty">Аккаунты ещё не подключены</span>' : ''}
       </div>
       <div class="cli-stackbar__legend" style="margin-bottom:18px">
         <span><span class="cli-dot planned"></span>Запланировано · <b>${br.planned}</b></span>
