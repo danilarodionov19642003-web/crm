@@ -114,6 +114,106 @@ update public.crm_state set data = '{}'::jsonb where id = 'main';
 После этого открой страницу — `cloud-sync.js` увидит пустой облачный state
 и зальёт туда то, что есть в твоём localStorage.
 
+---
+
+## Шаг 5. Таблица истории (страховка от потерь)
+
+`cloud-sync.js` после каждого успешного push (но не чаще раза в 5 минут)
+дублирует снимок state в таблицу `crm_state_history`. Это защита на случай,
+если что-то всё же затёрлось — можно откатиться на любой из последних
+~500 снимков SQL’ем за минуту.
+
+Запусти в SQL Editor (под ролью `postgres`, не под impersonation!):
+
+```sql
+create table if not exists public.crm_state_history (
+  id          bigserial primary key,
+  state_id    text        not null default 'main',
+  data        jsonb       not null,
+  pushed_at   timestamptz not null default now(),
+  client_info text
+);
+
+create index if not exists crm_state_history_pushed_at_idx
+  on public.crm_state_history (pushed_at desc);
+
+alter table public.crm_state_history enable row level security;
+
+drop policy if exists "anon_insert_history" on public.crm_state_history;
+drop policy if exists "anon_select_history" on public.crm_state_history;
+drop policy if exists "anon_delete_history" on public.crm_state_history;
+
+-- Админка пишет/читает/чистит под публикабельным ключом (anon).
+create policy "anon_insert_history"
+  on public.crm_state_history
+  for insert
+  to anon
+  with check (true);
+
+create policy "anon_select_history"
+  on public.crm_state_history
+  for select
+  to anon
+  using (true);
+
+create policy "anon_delete_history"
+  on public.crm_state_history
+  for delete
+  to anon
+  using (true);
+
+-- Триггер-страховка от роста: при вставке режем всё, кроме последних 500.
+create or replace function public.trim_crm_state_history()
+returns trigger language plpgsql as $$
+begin
+  delete from public.crm_state_history
+  where id <= coalesce(
+    (select id from public.crm_state_history order by id desc offset 500 limit 1),
+    -1
+  );
+  return null;
+end;
+$$;
+
+drop trigger if exists trim_crm_state_history_trg on public.crm_state_history;
+create trigger trim_crm_state_history_trg
+  after insert on public.crm_state_history
+  for each statement
+  execute function public.trim_crm_state_history();
+```
+
+### Как откатиться на конкретный снимок
+
+```sql
+-- 1) посмотреть последние 30 версий
+select id, pushed_at, client_info,
+       jsonb_array_length(coalesce(data->'mentors','[]'::jsonb))   as mentors_n,
+       jsonb_array_length(coalesce(data->'profiles','[]'::jsonb))  as profiles_n
+from public.crm_state_history
+order by id desc
+limit 30;
+
+-- 2) откатить crm_state на версию с нужным id (например 142)
+update public.crm_state
+set    data = (select data from public.crm_state_history where id = 142),
+       updated_at = now()
+where  id = 'main';
+```
+
+После этого открой админку с `?resync=1` в URL (например
+`/pages/dashboard.html?resync=1`) — это сбросит локальный кеш и подтянет
+свежий стейт с сервера.
+
+---
+
+## Кнопка «Скачать бэкап» в шапке
+
+В правом верхнем углу админки (рядом с индикатором облака) есть иконка
+скачивания — жми её после серьёзной работы, и текущий облачный state
+сохранится локальным файлом `mentori-crm-backup-YYYY-MM-DDTHH-MM-SS.json`.
+Это резервная страховка поверх таблицы истории — если когда-нибудь
+улетит вся база, восстановишься из этого файла.
+
 ## Сменить URL/ключ
 
 Поправь две константы в начале `js/cloud-sync.js`:

@@ -34,6 +34,10 @@
             <span class="cloud-status__dot"></span>
             <span class="cloud-status__text">…</span>
           </div>
+          ${role === 'owner' ? `
+          <button class="btn--icon" id="btnBackup" title="Скачать бэкап JSON">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          </button>` : ''}
           <button class="btn--icon" id="btnLogout" title="${userName ? 'Выйти (' + userName + ')' : 'Выйти'}">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
           </button>
@@ -56,6 +60,20 @@
     // (раньше тут была кнопка «принудительный ресинк» — убрана как лишняя:
     //  cloud-sync уже делает pull при каждой загрузке страницы. Если когда-то
     //  очень понадобится сброс кеша — открой URL с ?resync=1, см. cloud-sync.js.)
+
+    // Ручной бэкап (только у owner-а — кнопка в шаблоне рендерится тоже только ему).
+    const btnBackup = document.getElementById('btnBackup');
+    if (btnBackup) {
+      btnBackup.addEventListener('click', async () => {
+        if (!window.CloudSync || !window.CloudSync.downloadBackup) {
+          alert('Облачная синхронизация ещё не загрузилась — попробуй через секунду.');
+          return;
+        }
+        btnBackup.disabled = true;
+        try { await window.CloudSync.downloadBackup(); }
+        finally { btnBackup.disabled = false; }
+      });
+    }
 
     // Выход из аккаунта
     const btnLogout = document.getElementById('btnLogout');

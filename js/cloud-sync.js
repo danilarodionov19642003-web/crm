@@ -15,8 +15,11 @@
   const TABLE   = 'crm_state';
   const ROW_ID  = 'main';
   const SNAPSHOTS_TABLE = 'client_snapshots';   // зеркало для личных кабинетов клиентов
+  const HISTORY_TABLE   = 'crm_state_history';  // история снимков для отката
   const STORAGE_KEY = 'mentori-crm-v2';
   const META_KEY    = 'mentori-crm-meta';   // { lastPushedAt, lastPulledAt }
+  const HISTORY_THROTTLE_MS = 5 * 60 * 1000;  // не чаще 1 снимка в 5 минут
+  const POLL_INTERVAL_MS    = 60 * 1000;      // фоновый pull раз в минуту
 
   // Принудительный ресинк через URL ?resync=1 — чистим локалку ДО того,
   // как app.js успеет её прочитать. Параметр после этого убираем из URL.
@@ -61,7 +64,43 @@
       throw new Error(`push ${res.status}: ${await res.text()}`);
     }
     setMeta({ lastPushedAt: updated_at });
+    serverUpdatedAt = updated_at;             // мы только что записали — это новая «правда»
+    remoteSnapshot  = state;                  // и обновим snapshot для safety-check
+    // Фоном дублируем снимок в историю (best-effort, throttled).
+    pushHistory(state).catch(e => console.warn('[CloudSync] history push failed', e));
     return updated_at;
+  }
+
+  /* ---- История версий ----
+     На каждый успешный push добавляем строку в crm_state_history.
+     Throttle: не чаще 1 раза в HISTORY_THROTTLE_MS (5 мин) — иначе при
+     активной работе мы бы засирали таблицу десятками снимков в минуту.
+     Откат: SELECT data FROM crm_state_history ORDER BY id DESC; найти
+     нужную версию и UPDATE crm_state SET data = ... WHERE id='main'. */
+  let lastHistoryAt = 0;
+  async function pushHistory(state) {
+    const now = Date.now();
+    if (now - lastHistoryAt < HISTORY_THROTTLE_MS) return;
+    lastHistoryAt = now;
+    const row = {
+      state_id: ROW_ID,
+      data: state,
+      pushed_at: new Date().toISOString(),
+      client_info: (navigator.userAgent || '').slice(0, 200)
+    };
+    const url = `${SUPABASE_URL}/rest/v1/${HISTORY_TABLE}`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { ...headers, 'Prefer': 'return=minimal' },
+      body: JSON.stringify(row)
+    });
+    if (!res.ok && res.status !== 201 && res.status !== 204) {
+      // не валим основной push — это всего лишь история
+      const text = await res.text().catch(() => '');
+      console.warn('[CloudSync] history insert failed', res.status, text);
+      // откатим throttle, чтобы следующий push попробовал ещё раз
+      lastHistoryAt = 0;
+    }
   }
 
   /* ---- Push client snapshots ----
@@ -161,7 +200,8 @@
         if (pendingState) { clearTimeout(pushTimer); pushTimer = setTimeout(flush, 50); }
         return { changed: false };
       }
-      remoteSnapshot = remote.data;
+      remoteSnapshot   = remote.data;
+      serverUpdatedAt  = remote.updated_at;   // фиксируем «версию» сервера
       pullCompleted = true;
       // если push ждал окончания pull — запустим его сейчас
       if (pendingState) { clearTimeout(pushTimer); pushTimer = setTimeout(flush, 50); }
@@ -205,6 +245,7 @@
   let pendingState = null;
   let pullCompleted = false;         // true после первого успешного fetchRemote
   let remoteSnapshot = null;         // последний известный облачный state — для safety-check
+  let serverUpdatedAt = null;        // updated_at последней версии, которую мы видели/писали
   const BIG_COLLECTIONS = ['mentors','profiles','ipLogs','phones','accountRegs','profileStatuses'];
 
   /** Возвращает true, если state подозрительно пуст по всем «большим» коллекциям. */
@@ -235,7 +276,7 @@
     if (!pullCompleted) return; // повторная защита
     const state = pendingState;
     pendingState = null;
-    // SAFETY-CHECK: нельзя перезаписывать непустое облако пустым локальным state.
+    // SAFETY-CHECK 1: нельзя перезаписывать непустое облако пустым локальным state.
     if (isEffectivelyEmpty(state) && remoteHasData(remoteSnapshot)) {
       console.error('[CloudSync] BLOCKED push of empty state over non-empty remote.', {
         localKeys: Object.keys(state || {}),
@@ -243,6 +284,31 @@
       });
       setStatus('error', 'Push отклонён (защита)');
       return;
+    }
+    // SAFETY-CHECK 2: проверка конкурентности.
+    // Перед push сверяемся с сервером — если updated_at там новее того, что
+    // мы видели последний pull’ом, значит другая вкладка/устройство уже
+    // записали свежую версию. В таком случае не пушим (иначе затрём чужое),
+    // а делаем pull и просим страницы перерисоваться. Локальный мелкий клик,
+    // который привёл к этому push, придётся повторить — но это лучше, чем
+    // молча грохнуть ночные изменения с другого устройства.
+    try {
+      const remote = await fetchRemote();
+      if (remote && remote.updated_at && serverUpdatedAt && remote.updated_at > serverUpdatedAt) {
+        console.warn('[CloudSync] CONFLICT: server newer than seen, pulling instead of pushing.', {
+          seen: serverUpdatedAt, server: remote.updated_at
+        });
+        remoteSnapshot  = remote.data;
+        serverUpdatedAt = remote.updated_at;
+        setMeta({ lastPulledAt: remote.updated_at });
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(remote.data));
+        window.dispatchEvent(new CustomEvent('cloudstate:updated', { detail: remote.data }));
+        setStatus('synced', 'Обновлено из облака');
+        return;
+      }
+    } catch (e) {
+      // Если сеть упала — лучше попробовать push, чем потерять данные.
+      console.warn('[CloudSync] concurrency check failed, proceeding with push', e);
     }
     try {
       await pushRemote(state);
@@ -268,12 +334,111 @@
   window.addEventListener('online',  () => { setStatus('syncing','Восстановление…'); pull(); flush(); });
   window.addEventListener('offline', () => setStatus('offline','Оффлайн'));
 
+  /* ---- Push при закрытии вкладки ----
+     Дебаунс на 600 мс не успевает выстрелить, если юзер тут же закрыл
+     ноут/вкладку. Раньше из-за этого терялись «последние клики перед сном».
+     На pagehide/beforeunload отправляем pendingState через keepalive:true —
+     браузер гарантирует доставку даже после выгрузки страницы.
+     sendBeacon не подходит, так как требует фиксированный Content-Type
+     и не позволяет проставить apikey/Authorization. */
+  function flushOnHide() {
+    if (!pendingState || !pullCompleted) return;
+    const state = pendingState;
+    if (isEffectivelyEmpty(state) && remoteHasData(remoteSnapshot)) return;
+    pendingState = null;
+    const updated_at = new Date().toISOString();
+    const body = JSON.stringify({ id: ROW_ID, data: state, updated_at });
+    const url = `${SUPABASE_URL}/rest/v1/${TABLE}?on_conflict=id`;
+    try {
+      fetch(url, {
+        method: 'POST',
+        headers: { ...headers, 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+        body,
+        keepalive: true
+      });
+      setMeta({ lastPushedAt: updated_at });
+      // дублируем в историю — тоже keepalive, тоже best-effort
+      const histRow = {
+        state_id: ROW_ID,
+        data: state,
+        pushed_at: updated_at,
+        client_info: 'pagehide:' + (navigator.userAgent || '').slice(0, 180)
+      };
+      fetch(`${SUPABASE_URL}/rest/v1/${HISTORY_TABLE}`, {
+        method: 'POST',
+        headers: { ...headers, 'Prefer': 'return=minimal' },
+        body: JSON.stringify(histRow),
+        keepalive: true
+      });
+    } catch (e) { /* всё, что могли — сделали */ }
+  }
+  window.addEventListener('pagehide', flushOnHide);
+  window.addEventListener('beforeunload', flushOnHide);
+  // На мобильных Safari pagehide не всегда срабатывает при сворачивании —
+  // дополнительно спасаемся при переходе вкладки в hidden.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushOnHide();
+  });
+
+  /* ---- Фоновый pull раз в минуту ----
+     Закрывает сценарий «вторая вкладка с устаревшим стейтом перетёрла
+     свежие данные»: даже если ты её не трогаешь, она каждую минуту
+     подтягивает актуальный state и обновляет serverUpdatedAt.
+     Только когда вкладка видима — на скрытой нет смысла греть сеть. */
+  setInterval(() => {
+    if (document.visibilityState !== 'visible') return;
+    if (!navigator.onLine) return;
+    if (!pullCompleted) return;
+    pull({ silent: true });
+  }, POLL_INTERVAL_MS);
+
+  /* ---- Ручной бэкап: скачать текущий облачный state как JSON ----
+     Удобно жать раз в день/после важной работы. Файл лежит у тебя локально
+     и в случае любой проблемы с базой — восстанавливается одним SQL. */
+  async function downloadBackup() {
+    setStatus('syncing', 'Готовим бэкап…');
+    try {
+      const remote = await fetchRemote();
+      const data = (remote && remote.data) || readLocal() || {};
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `mentori-crm-backup-${stamp}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setStatus('synced', 'Бэкап скачан');
+      return true;
+    } catch (e) {
+      console.error('[CloudSync] backup failed', e);
+      setStatus('error', 'Ошибка бэкапа');
+      // fallback — отдаём хотя бы локальный стейт, чтобы юзер не остался ни с чем
+      try {
+        const data = readLocal() || {};
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `mentori-crm-backup-LOCAL-${stamp}.json`;
+        document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(url);
+      } catch (_) {}
+      return false;
+    }
+  }
+
   /* ---- Публичный API ---- */
   window.CloudSync = {
     pull,
     push: schedulePush,
     flush,
+    flushOnHide,
     pushClientSnapshots,    // ручной триггер: после CRUD над clientPortals
+    downloadBackup,         // ручной бэкап на диск (используется кнопкой в шапке)
     URL: SUPABASE_URL,
     isConfigured: () => !!SUPABASE_URL && !!SUPABASE_KEY
   };
