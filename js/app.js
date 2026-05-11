@@ -948,6 +948,9 @@
       const list = this.state.profileStatuses;
       let rec = list.find(s => s.mentorId === mentorId && s.profileId === profileId);
       const stamp = date || todayISO();
+      // Захватываем СТАРЫЙ статус ДО мутации — нужен для уведомления клиенту.
+      const oldStatus = rec ? rec.status : null;
+      const isNew = !rec;
       if (rec) {
         rec.history = rec.history || [];
         rec.history.push({ date: rec.date || stamp, status: rec.status, comment: rec.comment || '' });
@@ -964,7 +967,59 @@
         list.push(rec);
       }
       this.save();
+      // Уведомление в Telegram-очередь — best effort, не блокирует и не валит save.
+      try { this._queueStatusNotification(mentorId, profileId, status, oldStatus, comment, isNew); }
+      catch (e) { console.warn('[Store] queueStatusNotification failed', e); }
       return rec;
+    },
+
+    /** Кладёт уведомление о смене статуса в notification_outbox (Supabase).
+     *  Бот в /Users/mentori/tg/ опрашивает таблицу и шлёт сообщение клиенту в TG.
+     *  Не падает если: нет CloudSync, нет clientPortal-владельца этой анкеты,
+     *  у клиента не задан telegram_chat_id, статус не изменился, или это
+     *  создание записи со статусом «Запланировано» (первое назначение).
+     */
+    _queueStatusNotification(mentorId, profileId, newStatus, oldStatus, comment, isNew) {
+      if (!window.CloudSync || !window.CloudSync.queueTelegramNotification) return;
+      // Не уведомляем если статус по факту не сменился
+      if (!isNew && oldStatus === newStatus) return;
+      // Не уведомляем при ПЕРВОМ назначении статуса «Запланировано» — это просто
+      // заведение в работу, для клиента ничего не произошло
+      if (isNew && newStatus === PROFILE_STATUSES[0]) return;
+
+      // Находим клиента-владельца этой анкеты
+      const portal = (this.state.clientPortals || [])
+        .find(p => Array.isArray(p.mentorIds) && p.mentorIds.includes(mentorId));
+      if (!portal) return;                          // нет привязанного клиента — ничего не шлём
+      if (!portal.telegramChatId) return;           // chat_id не задан — нечего слать
+
+      const mentor  = (this.state.mentors  || []).find(m => m.id === mentorId);
+      const profile = (this.state.profiles || []).find(p => p.id === profileId);
+      const mentorLabel  = mentor  ? `${mentor.code}${mentor.name ? ' «' + mentor.name + '»' : ''}` : '—';
+      const profileLabel = profile ? `${profile.code}${profile.city ? ' (' + profile.city + ')' : ''}` : '—';
+
+      let message;
+      if (oldStatus) {
+        message = `📢 Обновление по анкете ${mentorLabel}\n`
+                + `Аккаунт ${profileLabel}: ${oldStatus} → ${newStatus}`;
+      } else {
+        message = `📢 Обновление по анкете ${mentorLabel}\n`
+                + `Аккаунт ${profileLabel}: ${newStatus}`;
+      }
+      if (comment) message += `\n\n💬 ${comment}`;
+
+      window.CloudSync.queueTelegramNotification({
+        client_email:      portal.email || null,
+        telegram_chat_id:  portal.telegramChatId,
+        telegram_username: portal.telegramUsername || null,
+        kind:              'status_change',
+        message:           message,
+        mentor_id:         mentorId,
+        profile_id:        profileId,
+        new_status:        newStatus,
+        old_status:        oldStatus || null,
+        created_by:        (window.AuthGate && window.AuthGate.getUserEmail && window.AuthGate.getUserEmail()) || 'admin'
+      }).catch(e => console.warn('[Store] queueTelegramNotification failed', e));
     },
     /** Обновить только дату статуса, не меняя сам статус (inline edit из карточки) */
     setProfileStatusDate(mentorId, profileId, date) {

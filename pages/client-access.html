@@ -37,6 +37,7 @@
                   <th>Клиент</th>
                   <th>Email для входа</th>
                   <th>Анкеты</th>
+                  <th>Telegram</th>
                   <th>Заметка</th>
                   <th>Создан</th>
                   <th class="actions"></th>
@@ -73,6 +74,16 @@
           <label>Анкеты, видимые в кабинете</label>
           <div id="cpMentors" style="display:flex;flex-wrap:wrap;gap:8px;max-height:240px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:10px"></div>
           <div style="font-size:11px;color:var(--text-mute);margin-top:4px">Отметь все анкеты, которые принадлежат этому клиенту. Например, для «Флагман» — a21 и a22.</div>
+        </div>
+        <div class="field">
+          <label for="cpTgUsername">Telegram @username (необязательно)</label>
+          <input type="text" id="cpTgUsername" class="input" placeholder="@flagman или flagman"/>
+          <div style="font-size:11px;color:var(--text-mute);margin-top:4px">Для справки/поиска. Сообщения отправляются по chat_id ниже.</div>
+        </div>
+        <div class="field">
+          <label for="cpTgChatId">Telegram chat_id</label>
+          <input type="number" id="cpTgChatId" class="input" placeholder="например 123456789"/>
+          <div style="font-size:11px;color:var(--text-mute);margin-top:4px">Клиент должен написать боту @MentoriTG_bot команду <code>/start</code> — бот ответит своим chat_id, который сюда и вписать. Без этого уведомления не будут отправляться.</div>
         </div>
         <div class="field">
           <label for="cpNote">Заметка (для админа)</label>
@@ -149,7 +160,7 @@
       const list = (Store.state.clientPortals || []).slice()
         .sort((a, b) => String(a.name||a.email).localeCompare(String(b.name||b.email), 'ru'));
       if (!list.length) {
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-mute);padding:24px">Доступы ещё не созданы. Нажми «Добавить доступ».</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-mute);padding:24px">Доступы ещё не созданы. Нажми «Добавить доступ».</td></tr>';
         return;
       }
       const mentorMap = new Map((Store.state.mentors || []).map(m => [m.id, m]));
@@ -159,10 +170,22 @@
           .filter(Boolean)
           .map(m => `<span class="badge" style="background:#f0f5ff;color:#1d39c4;border:1px solid #adc6ff;padding:2px 8px;border-radius:999px;font-size:12px">${escapeHtml(m.code)}</span>`)
           .join(' ');
+        // TG: показываем @username если есть, и зелёный значок если chat_id задан
+        const tgChat = p.telegramChatId;
+        const tgUser = p.telegramUsername;
+        let tgCell;
+        if (tgChat) {
+          tgCell = `<span title="Уведомления будут отправляться" style="color:#389e0d;font-weight:600">✓ ${tgUser ? '@' + escapeHtml(tgUser) : escapeHtml(String(tgChat))}</span>`;
+        } else if (tgUser) {
+          tgCell = `<span title="Нет chat_id — клиент должен написать /start боту" style="color:#fa8c16">@${escapeHtml(tgUser)} <small>(нет chat_id)</small></span>`;
+        } else {
+          tgCell = `<span style="color:var(--text-mute)">— нет —</span>`;
+        }
         return `<tr>
           <td>${escapeHtml(p.name || '—')}</td>
           <td><code>${escapeHtml(p.email)}</code></td>
           <td>${codes || '<span style="color:var(--text-mute)">— нет —</span>'}</td>
+          <td>${tgCell}</td>
           <td>${escapeHtml(p.note || '')}</td>
           <td>${fmtDate(p.createdAt) || ''}</td>
           <td class="actions">
@@ -202,6 +225,8 @@
       document.getElementById('cpEmail').value = '';
       document.getElementById('cpEmail').disabled = false;
       document.getElementById('cpNote').value = '';
+      document.getElementById('cpTgUsername').value = '';
+      document.getElementById('cpTgChatId').value = '';
       renderMentorsCheckboxes([]);
       Modal.open('cpModal');
     }
@@ -215,6 +240,8 @@
       document.getElementById('cpEmail').value = p.email || '';
       document.getElementById('cpEmail').disabled = true; // email = первичный ключ снимка
       document.getElementById('cpNote').value = p.note || '';
+      document.getElementById('cpTgUsername').value = p.telegramUsername || '';
+      document.getElementById('cpTgChatId').value = p.telegramChatId != null ? String(p.telegramChatId) : '';
       renderMentorsCheckboxes(p.mentorIds || []);
       Modal.open('cpModal');
     }
@@ -226,13 +253,27 @@
       const email = document.getElementById('cpEmail').value.trim().toLowerCase();
       const note = document.getElementById('cpNote').value.trim();
       const mentorIds = getCheckedMentors();
+      // Telegram-поля: username нормализуем (срезаем "@", lower-case),
+      // chat_id парсим в число (или null если пусто).
+      let tgUsernameRaw = document.getElementById('cpTgUsername').value.trim();
+      if (tgUsernameRaw.startsWith('@')) tgUsernameRaw = tgUsernameRaw.slice(1);
+      const telegramUsername = tgUsernameRaw ? tgUsernameRaw.toLowerCase() : '';
+      const tgChatRaw = document.getElementById('cpTgChatId').value.trim();
+      let telegramChatId = null;
+      if (tgChatRaw) {
+        const n = Number(tgChatRaw);
+        if (!Number.isFinite(n) || !Number.isInteger(n)) {
+          toast('Telegram chat_id должен быть целым числом', 'error'); return;
+        }
+        telegramChatId = n;
+      }
       if (!email || !/.+@.+\..+/.test(email)) {
         toast('Введи корректный email', 'error'); return;
       }
       if (editingId) {
-        Store.updateClientPortal(editingId, { name, note, mentorIds });
+        Store.updateClientPortal(editingId, { name, note, mentorIds, telegramUsername, telegramChatId });
       } else {
-        Store.addClientPortal({ name, email, note, mentorIds });
+        Store.addClientPortal({ name, email, note, mentorIds, telegramUsername, telegramChatId });
       }
       // Сразу же зальём снимок этого клиента на сервер
       if (window.CloudSync && window.CloudSync.pushClientSnapshots) {

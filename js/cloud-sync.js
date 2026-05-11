@@ -16,6 +16,7 @@
   const ROW_ID  = 'main';
   const SNAPSHOTS_TABLE = 'client_snapshots';   // зеркало для личных кабинетов клиентов
   const HISTORY_TABLE   = 'crm_state_history';  // история снимков для отката
+  const OUTBOX_TABLE    = 'notification_outbox'; // очередь TG-уведомлений (читает бот на VPS)
   const STORAGE_KEY = 'mentori-crm-v2';
   const META_KEY    = 'mentori-crm-meta';   // { lastPushedAt, lastPulledAt }
   const HISTORY_THROTTLE_MS = 5 * 60 * 1000;  // не чаще 1 снимка в 5 минут
@@ -392,6 +393,31 @@
     pull({ silent: true });
   }, POLL_INTERVAL_MS);
 
+  /* ---- Очередь Telegram-уведомлений ----
+     Вызывается из app.js при смене статуса. Просто INSERT-нашей строки
+     в notification_outbox. Бот на VPS опрашивает таблицу и шлёт сообщения.
+     Best effort: ошибки логируем, ничего не блокируем. */
+  async function queueTelegramNotification(row) {
+    if (!row || !row.message) return false;
+    const url = `${SUPABASE_URL}/rest/v1/${OUTBOX_TABLE}`;
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { ...headers, 'Prefer': 'return=minimal' },
+        body: JSON.stringify(row)
+      });
+      if (!res.ok && res.status !== 201 && res.status !== 204) {
+        const text = await res.text().catch(() => '');
+        console.warn('[CloudSync] outbox insert failed', res.status, text);
+        return false;
+      }
+      return true;
+    } catch (e) {
+      console.warn('[CloudSync] outbox insert error', e);
+      return false;
+    }
+  }
+
   /* ---- Ручной бэкап: скачать текущий облачный state как JSON ----
      Удобно жать раз в день/после важной работы. Файл лежит у тебя локально
      и в случае любой проблемы с базой — восстанавливается одним SQL. */
@@ -438,6 +464,7 @@
     flush,
     flushOnHide,
     pushClientSnapshots,    // ручной триггер: после CRUD над clientPortals
+    queueTelegramNotification, // пишем строку в notification_outbox (читает бот)
     downloadBackup,         // ручной бэкап на диск (используется кнопкой в шапке)
     URL: SUPABASE_URL,
     isConfigured: () => !!SUPABASE_URL && !!SUPABASE_KEY
