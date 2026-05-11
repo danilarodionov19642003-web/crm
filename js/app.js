@@ -996,15 +996,22 @@
       const mentor  = (this.state.mentors  || []).find(m => m.id === mentorId);
       const profile = (this.state.profiles || []).find(p => p.id === profileId);
       const mentorLabel  = mentor  ? `${mentor.code}${mentor.name ? ' «' + mentor.name + '»' : ''}` : '—';
-      const profileLabel = profile ? `${profile.code}${profile.city ? ' (' + profile.city + ')' : ''}` : '—';
+      // Имя владельца аккаунта берём из accountRegs.ownerName (одна или несколько
+      // регистраций на платформах — у каждой свой ownerName). Если имени нет —
+      // fallback на profile.code (чтобы клиент хоть как-то понял о чём речь).
+      const regs = (this.state.accountRegs || []).filter(r => r.profileId === profileId);
+      const ownerNames = Array.from(new Set(regs.map(r => (r.ownerName || '').trim()).filter(Boolean)));
+      const accountLabel = ownerNames.length
+        ? ownerNames.join(' / ')
+        : (profile ? profile.code : '—');
 
       let message;
       if (oldStatus) {
         message = `📢 Обновление по анкете ${mentorLabel}\n`
-                + `Аккаунт ${profileLabel}: ${oldStatus} → ${newStatus}`;
+                + `Аккаунт ${accountLabel}: ${oldStatus} → ${newStatus}`;
       } else {
         message = `📢 Обновление по анкете ${mentorLabel}\n`
-                + `Аккаунт ${profileLabel}: ${newStatus}`;
+                + `Аккаунт ${accountLabel}: ${newStatus}`;
       }
       if (comment) message += `\n\n💬 ${comment}`;
 
