@@ -92,6 +92,64 @@
           </div>
         </div>
 
+        <!-- ────────────────────── Telegram-рассыльщик ─────────────────────── -->
+        <h2 class="section-title">
+          Telegram-рассыльщик
+          <span id="botStatsStatus" class="badge badge--gray" style="margin-left:8px;font-weight:400">—</span>
+        </h2>
+
+        <section class="cards cards--compact" id="botKpiCards"></section>
+
+        <div class="panel">
+          <div class="panel__header">
+            <h3>Аккаунты</h3>
+            <div class="spacer"></div>
+            <span id="botAccountsBadges" style="display:flex;gap:8px;flex-wrap:wrap"></span>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="panel">
+            <div class="panel__header">
+              <h3>Активные рассылки</h3>
+            </div>
+            <div class="table-wrap">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Кампания</th>
+                    <th>Статус</th>
+                    <th class="num">Прогресс</th>
+                    <th class="num">Ответили</th>
+                    <th>Старт</th>
+                  </tr>
+                </thead>
+                <tbody id="botRunningRows"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel__header">
+              <h3>Заявки из @MentoriTG_bot</h3>
+            </div>
+            <div class="table-wrap">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Дата</th>
+                    <th>Имя</th>
+                    <th>Услуга</th>
+                    <th class="num">Цена</th>
+                    <th>Статус</th>
+                  </tr>
+                </thead>
+                <tbody id="botOrdersRows"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
         <div class="panel">
           <div class="panel__header">
             <h3>Внимание: клиенты с долгом / просрочкой</h3>
@@ -125,6 +183,7 @@
   <script src="../js/cloud-sync.js"></script>
   <script src="../js/accounts-sync.js"></script>
   <script src="../js/reviews-sync.js"></script>
+  <script src="../js/bot-stats.js"></script>
   <script src="../components/sidebar.js"></script>
   <script src="../components/header.js"></script>
   <script src="../components/table.js"></script>
