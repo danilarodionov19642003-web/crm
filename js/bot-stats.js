@@ -35,17 +35,15 @@
 
   function renderKpi(data) {
     const t = data.today || {};
-    const a = data.autoreplies || {};
     const o = data.orders || {};
     const r = data.running || {};
-    const tone = (n, neg) => (n > 0 ? (neg ? "down" : "up") : "");
+    const tone = n => (n > 0 ? "up" : "");
     const cards = [
-      { label: "Отправлено сегодня",  value: fmtNum(t.sent),         tone: tone(t.sent) },
-      { label: "Ответили сегодня",    value: `${fmtNum(t.replied)}${t.reply_rate_pct ? ` · ${t.reply_rate_pct}%` : ""}`, tone: tone(t.replied) },
-      { label: "Автоответы сегодня",  value: fmtNum(t.auto_replies), tone: tone(t.auto_replies) },
-      { label: "Активных рассылок",   value: fmtNum(r.count || 0),   tone: (r.count ? "up" : "") },
-      { label: "Заявок (всего)",      value: fmtNum(o.count || 0),   tone: "" },
-      { label: "Автоответов в очереди", value: fmtNum(a.in_queue),   tone: tone(a.in_queue, true) },
+      { label: "Отправлено сегодня", value: fmtNum(t.sent),         tone: tone(t.sent) },
+      { label: "Ответили сегодня",   value: `${fmtNum(t.replied)}${t.reply_rate_pct ? ` · ${t.reply_rate_pct}%` : ""}`, tone: tone(t.replied) },
+      { label: "Автоответы сегодня", value: fmtNum(t.auto_replies), tone: tone(t.auto_replies) },
+      { label: "Активных рассылок",  value: fmtNum(r.count || 0),   tone: (r.count ? "up" : "") },
+      { label: "Заявок всего",       value: fmtNum(o.count || 0),   tone: "" },
     ];
     return cards.map(k => `
       <div class="card card--compact">
@@ -70,28 +68,14 @@
       .join(" ");
   }
 
-  function renderRunningTable(data) {
-    const camps = (data.running && data.running.campaigns) || [];
-    if (!camps.length) return `<tr><td colspan="5" class="empty">Активных рассылок нет.</td></tr>`;
-    return camps.map(c => `
-      <tr>
-        <td><strong>#${c.id}</strong> ${esc(c.name)}${c.two_step_mode ? ' <span class="badge badge--gray">2-этап</span>' : ''}</td>
-        <td>${c.status === "running" ? "▶️ running" : "⏸ paused"}</td>
-        <td class="num">${fmtNum(c.sent)} / ${fmtNum(c.total)} <small>(${c.progress_pct}%)</small></td>
-        <td class="num">${fmtNum(c.replied)}${c.autoreplied ? ` · 🤖${fmtNum(c.autoreplied)}` : ""}</td>
-        <td>${esc(c.started_at_msk || "—")}</td>
-      </tr>`).join("");
-  }
-
   function renderOrders(data) {
     const orders = (data.orders && data.orders.orders) || [];
-    if (!orders.length) return `<tr><td colspan="5" class="empty">Заявок пока нет.</td></tr>`;
-    return orders.slice(0, 8).map(o => `
+    if (!orders.length) return `<tr><td colspan="4" class="empty">Заявок пока нет.</td></tr>`;
+    return orders.slice(0, 6).map(o => `
       <tr>
-        <td>${esc(o.created_at_msk || "—")}</td>
+        <td>${esc((o.created_at_msk || "—").split(" ")[0])}</td>
         <td><strong>${esc(o.name || "—")}</strong>${o.tg_username ? ` · @${esc(o.tg_username)}` : ""}</td>
         <td>${esc(o.service_name || "—")}</td>
-        <td class="num">${esc(o.service_price || "—")}</td>
         <td>${esc(o.status || "new")}</td>
       </tr>`).join("");
   }
@@ -110,10 +94,11 @@
       setStatusBadge("offline — проверь Worker", "err");
       return;
     }
-    document.getElementById("botKpiCards").innerHTML  = renderKpi(data);
-    document.getElementById("botAccountsBadges").innerHTML = renderAccounts(data) || '<span class="muted">аккаунтов нет</span>';
-    document.getElementById("botRunningRows").innerHTML = renderRunningTable(data);
-    document.getElementById("botOrdersRows").innerHTML  = renderOrders(data);
+    document.getElementById("botKpiCards").innerHTML       = renderKpi(data);
+    const accEl = document.getElementById("botAccountsBadges");
+    if (accEl) accEl.innerHTML = renderAccounts(data) || '<span class="muted">аккаунтов нет</span>';
+    const ordEl = document.getElementById("botOrdersRows");
+    if (ordEl) ordEl.innerHTML = renderOrders(data);
     setStatusBadge(`обновлено ${new Date().toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}`, "ok");
   }
 

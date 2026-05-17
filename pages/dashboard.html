@@ -5,7 +5,25 @@
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>Дашборд — Mentori CRM</title>
   <link rel="stylesheet" href="../css/styles.css"/>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    /* Локальные тюнинги: всё в одно окно, минимум промежутков. */
+    .page-title { margin-bottom: 14px; }
+    .page-title h1 { font-size: 22px; }
+    .cards--compact { margin-bottom: 12px; gap: 8px; grid-template-columns: repeat(5, 1fr); }
+    .card--compact { padding: 10px 12px; }
+    .card--compact .card__value { font-size: 17px; }
+    .grid-2 { margin-bottom: 12px; gap: 12px; }
+    .panel__body { padding: 12px; }
+    .panel__header { padding: 10px 14px; }
+    .panel__header h3 { font-size: 13px; }
+    .chart-wrap { height: 220px; }
+    .table th, .table td { padding: 6px 10px; font-size: 12px; }
+    .accounts-row { display: flex; gap: 6px; flex-wrap: wrap; padding: 12px; }
+    .accounts-row .badge { font-size: 12px; }
+    @media (max-width: 1100px) {
+      .cards--compact { grid-template-columns: repeat(3, 1fr); }
+    }
+  </style>
 </head>
 <body>
   <div class="app">
@@ -16,17 +34,18 @@
 
       <main class="content">
         <div class="page-title">
-          <div>
-            <h1>Добро пожаловать 👋</h1>
-            <p>Быстрый обзор ключевых показателей бизнеса Mentori.</p>
-          </div>
+          <h1>Дашборд</h1>
         </div>
 
-        <section class="cards" id="kpiCards"></section>
-
-        <h2 class="section-title">Текущий месяц</h2>
+        <!-- Финансы за текущий месяц -->
         <section class="cards cards--compact" id="monthKpiCards"></section>
 
+        <!-- Telegram-рассыльщик -->
+        <section class="cards cards--compact" id="botKpiCards">
+          <div class="card card--compact"><div class="card__label">…</div></div>
+        </section>
+
+        <!-- Большой ряд: график + последние заявки из бота -->
         <div class="grid-2">
           <div class="panel">
             <div class="panel__header">
@@ -41,36 +60,28 @@
 
           <div class="panel">
             <div class="panel__header">
-              <h3>Структура расходов</h3>
-            </div>
-            <div class="panel__body">
-              <div class="chart-wrap"><canvas id="pieChart"></canvas></div>
-            </div>
-          </div>
-        </div>
-
-        <div class="grid-2">
-          <div class="panel">
-            <div class="panel__header">
-              <h3>Последние доходы</h3>
+              <h3>Заявки из @MentoriTG_bot</h3>
               <div class="spacer"></div>
-              <a href="finance.html" class="btn btn--ghost btn--sm">Все →</a>
+              <span id="botStatsStatus" class="badge badge--gray" style="font-weight:400">—</span>
             </div>
             <div class="table-wrap">
               <table class="table">
                 <thead>
                   <tr>
                     <th>Дата</th>
-                    <th>Клиент</th>
+                    <th>Имя</th>
                     <th>Услуга</th>
-                    <th class="num">Сумма</th>
+                    <th>Статус</th>
                   </tr>
                 </thead>
-                <tbody id="recentIncome"></tbody>
+                <tbody id="botOrdersRows"></tbody>
               </table>
             </div>
           </div>
+        </div>
 
+        <!-- Нижний ряд: подписки + статусы аккаунтов рассыльщика -->
+        <div class="grid-2" style="grid-template-columns: 1fr 1fr">
           <div class="panel">
             <div class="panel__header">
               <h3>Ближайшие платежи</h3>
@@ -90,86 +101,12 @@
               </table>
             </div>
           </div>
-        </div>
-
-        <!-- ────────────────────── Telegram-рассыльщик ─────────────────────── -->
-        <h2 class="section-title">
-          Telegram-рассыльщик
-          <span id="botStatsStatus" class="badge badge--gray" style="margin-left:8px;font-weight:400">—</span>
-        </h2>
-
-        <section class="cards cards--compact" id="botKpiCards"></section>
-
-        <div class="panel">
-          <div class="panel__header">
-            <h3>Аккаунты</h3>
-            <div class="spacer"></div>
-            <span id="botAccountsBadges" style="display:flex;gap:8px;flex-wrap:wrap"></span>
-          </div>
-        </div>
-
-        <div class="grid-2">
-          <div class="panel">
-            <div class="panel__header">
-              <h3>Активные рассылки</h3>
-            </div>
-            <div class="table-wrap">
-              <table class="table">
-                <thead>
-                  <tr>
-                    <th>Кампания</th>
-                    <th>Статус</th>
-                    <th class="num">Прогресс</th>
-                    <th class="num">Ответили</th>
-                    <th>Старт</th>
-                  </tr>
-                </thead>
-                <tbody id="botRunningRows"></tbody>
-              </table>
-            </div>
-          </div>
 
           <div class="panel">
             <div class="panel__header">
-              <h3>Заявки из @MentoriTG_bot</h3>
+              <h3>Аккаунты рассыльщика</h3>
             </div>
-            <div class="table-wrap">
-              <table class="table">
-                <thead>
-                  <tr>
-                    <th>Дата</th>
-                    <th>Имя</th>
-                    <th>Услуга</th>
-                    <th class="num">Цена</th>
-                    <th>Статус</th>
-                  </tr>
-                </thead>
-                <tbody id="botOrdersRows"></tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-
-        <div class="panel">
-          <div class="panel__header">
-            <h3>Внимание: клиенты с долгом / просрочкой</h3>
-            <div class="spacer"></div>
-            <a href="clients.html" class="btn btn--ghost btn--sm">Все клиенты →</a>
-          </div>
-          <div class="table-wrap">
-            <table class="table">
-              <thead>
-                <tr>
-                  <th>Клиент</th>
-                  <th>Площадка</th>
-                  <th>Тариф</th>
-                  <th class="num">Остаток</th>
-                  <th>Дедлайн</th>
-                  <th>Статус</th>
-                </tr>
-              </thead>
-              <tbody id="debtRows"></tbody>
-            </table>
+            <div class="accounts-row" id="botAccountsBadges"></div>
           </div>
         </div>
       </main>
@@ -190,48 +127,33 @@
 
   <script>
   /* ========================================================================
-     Дашборд v2: KPI / графики / последние доходы / подписки / долги
+     Compact-дашборд: финансы за месяц + рассыльщик + график + подписки.
+     Никаких «всё время», «сотрудники», «последние доходы», «должники» —
+     эти таблицы есть на своих страницах, главный экран не для них.
      ======================================================================== */
   document.addEventListener('DOMContentLoaded', () => {
     const { Store, fmtMoney, fmtDate, todayISO } = window.App;
     const state = Store.load();
 
-    /* ---- KPI ---- */
-    const t = Store.totals();
-    const kpis = [
-      { label: 'Общий доход',    value: fmtMoney(t.income),  trend: 'за всё время',                            icon: icoCash(),  tone: 'up' },
-      { label: 'Расходы',        value: fmtMoney(t.expense), trend: 'за всё время',                            icon: icoMinus(), tone: 'down' },
-      { label: 'Чистая прибыль', value: fmtMoney(t.profit),  trend: (t.income ? Math.round(t.profit / t.income * 100) : 0) + '% маржа', icon: icoTrend(), tone: t.profit >= 0 ? 'up' : 'down' },
-      { label: 'Клиенты',        value: t.clients,           trend: `в работе ${t.clientsActive}` + (t.clientsOverdue ? ` · просрочка ${t.clientsOverdue}` : ''), icon: icoClient(), tone: t.clientsOverdue ? 'down' : '' },
-      { label: 'Подписки',       value: fmtMoney(t.subsMonthly) + ' / мес', trend: `${t.subsCount} активных`,  icon: icoSub(),   tone: '' },
-      { label: 'Сотрудники',     value: t.employees,         trend: 'активных',                                icon: icoUsers(), tone: '' }
-    ];
-    document.getElementById('kpiCards').innerHTML = kpis.map(k => `
-      <div class="card">
-        <div class="card__label"><span class="icon">${k.icon}</span>${k.label}</div>
-        <div class="card__value">${k.value}</div>
-        <div class="card__trend ${k.tone}">${k.trend}</div>
-      </div>
-    `).join('');
-
-    /* ---- KPI: Текущий месяц ---- */
+    /* ---- Финансы за месяц + клиенты в работе ---- */
     function renderMonthKpis() {
       const st = Store.state;
+      const t  = Store.totals();
       const currMonthKey = todayISO().slice(0, 7);
       const monthIncome  = st.income.filter(r => (r.date||'').startsWith(currMonthKey))
-                                       .reduce((s, r) => s + (Number(r.amount) || 0), 0);
+                                    .reduce((s, r) => s + (Number(r.amount) || 0), 0);
       const monthExpense = st.expenses.filter(r => (r.date||'').startsWith(currMonthKey))
-                                         .reduce((s, r) => s + (Number(r.amount) || 0), 0);
+                                      .reduce((s, r) => s + (Number(r.amount) || 0), 0);
       const monthProfit  = monthIncome - monthExpense;
       const salaryDebt   = st.employees
           .filter(e => e.status === 'active')
           .reduce((s, e) => s + Math.max(0, (+e.reviewsDone||0) * (+e.ratePerReview||0) - (+e.paid||0)), 0);
-      const nastyaName = (st.employees.find(e => e.status === 'active') || {}).name || 'сотруднику';
       const monthKpis = [
-        { label: 'Доход за месяц',    value: fmtMoney(monthIncome),  tone: 'up'   },
-        { label: 'Расход за месяц',   value: fmtMoney(monthExpense), tone: 'down' },
-        { label: 'Прибыль за месяц',  value: fmtMoney(monthProfit),  tone: monthProfit >= 0 ? 'up' : 'down' },
-        { label: `ЗП ${nastyaName}`,  value: fmtMoney(salaryDebt),   tone: salaryDebt > 0 ? 'down' : '' }
+        { label: 'Доход за месяц',     value: fmtMoney(monthIncome),  tone: 'up'   },
+        { label: 'Расход за месяц',    value: fmtMoney(monthExpense), tone: 'down' },
+        { label: 'Прибыль за месяц',   value: fmtMoney(monthProfit),  tone: monthProfit >= 0 ? 'up' : 'down' },
+        { label: 'Клиентов в работе',  value: t.clientsActive + (t.clientsOverdue ? ` · ⚠ ${t.clientsOverdue}` : ''), tone: t.clientsOverdue ? 'down' : '' },
+        { label: 'ЗП долг',            value: fmtMoney(salaryDebt),   tone: salaryDebt > 0 ? 'down' : '' }
       ];
       document.getElementById('monthKpiCards').innerHTML = monthKpis.map(k => `
         <div class="card card--compact">
@@ -241,18 +163,17 @@
       `).join('');
     }
     renderMonthKpis();
-    // авто-перерисовка после одобрения отзыва (или прихода свежего state)
-    window.addEventListener('reviews:updated', renderMonthKpis);
+    window.addEventListener('reviews:updated',   renderMonthKpis);
     window.addEventListener('cloudstate:updated', renderMonthKpis);
 
-    /* ---- График по месяцам ---- */
+    /* ---- График доход/расход по месяцам ---- */
     const monthly = Store.monthlyStats();
     document.getElementById('chartMonths').textContent = monthly.length + ' мес.';
     const revCtx = document.getElementById('revChart').getContext('2d');
     Chart.defaults.color = '#a0a0a0';
     Chart.defaults.font.family = "-apple-system, Inter, sans-serif";
     const gradient = (ctx, from, to) => {
-      const g = ctx.createLinearGradient(0, 0, 0, 260);
+      const g = ctx.createLinearGradient(0, 0, 0, 220);
       g.addColorStop(0, from); g.addColorStop(1, to); return g;
     };
     new Chart(revCtx, {
@@ -260,119 +181,49 @@
       data: {
         labels: monthly.map(m => m.label),
         datasets: [
-          { label: 'Доход', data: monthly.map(m => m.income), backgroundColor: gradient(revCtx, 'rgba(255,122,0,0.9)', 'rgba(255,122,0,0.3)'), borderRadius: 6, maxBarThickness: 32 },
-          { label: 'Расход', data: monthly.map(m => m.expense), backgroundColor: 'rgba(239,68,68,0.75)', borderRadius: 6, maxBarThickness: 32 }
+          { label: 'Доход',  data: monthly.map(m => m.income),  backgroundColor: gradient(revCtx, 'rgba(255,122,0,0.9)', 'rgba(255,122,0,0.3)'), borderRadius: 6, maxBarThickness: 24 },
+          { label: 'Расход', data: monthly.map(m => m.expense), backgroundColor: 'rgba(239,68,68,0.75)', borderRadius: 6, maxBarThickness: 24 }
         ]
       },
       options: {
         responsive: true, maintainAspectRatio: false,
         plugins: {
-          legend: { position: 'bottom', labels: { usePointStyle: true, padding: 16 } },
+          legend: { position: 'bottom', labels: { usePointStyle: true, padding: 12, font: { size: 11 } } },
           tooltip: {
-            backgroundColor: '#181818', borderColor: '#2a2a2a', borderWidth: 1, padding: 12, cornerRadius: 8,
+            backgroundColor: '#181818', borderColor: '#2a2a2a', borderWidth: 1, padding: 10, cornerRadius: 8,
             callbacks: { label: c => c.dataset.label + ': ' + fmtMoney(c.parsed.y) }
           }
         },
         scales: {
-          x: { grid: { display: false }, ticks: { color: '#a0a0a0' } },
-          y: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#a0a0a0', callback: v => (v/1000) + 'k' } }
+          x: { grid: { display: false }, ticks: { color: '#a0a0a0', font: { size: 10 } } },
+          y: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#a0a0a0', font: { size: 10 }, callback: v => (v/1000) + 'k' } }
         }
       }
     });
 
-    /* ---- Pie расходов по категориям ---- */
-    const expMap = {};
-    state.expenses.forEach(e => { expMap[e.category] = (expMap[e.category] || 0) + (Number(e.amount) || 0); });
-    const labels = Object.keys(expMap);
-    const data = Object.values(expMap);
-    const palette = ['#ff7a00', '#ff9a3c', '#3b82f6', '#22c55e', '#a855f7', '#ef4444', '#14b8a6', '#eab308'];
-    if (labels.length) {
-      new Chart(document.getElementById('pieChart').getContext('2d'), {
-        type: 'doughnut',
-        data: { labels, datasets: [{ data, backgroundColor: palette, borderWidth: 0, hoverOffset: 6 }] },
-        options: {
-          responsive: true, maintainAspectRatio: false, cutout: '65%',
-          plugins: {
-            legend: { position: 'bottom', labels: { usePointStyle: true, padding: 10, font: { size: 11 } } },
-            tooltip: {
-              backgroundColor: '#181818', borderColor: '#2a2a2a', borderWidth: 1, padding: 12, cornerRadius: 8,
-              callbacks: { label: c => c.label + ': ' + fmtMoney(c.parsed) }
-            }
-          }
-        }
-      });
-    } else {
-      document.getElementById('pieChart').parentElement.innerHTML = '<div class="empty">Пока нет расходов</div>';
-    }
-
-    /* ---- Последние доходы ---- */
-    const recent = [...state.income].sort((a, b) => (b.date || '').localeCompare(a.date || '')).slice(0, 7);
-    const rows = document.getElementById('recentIncome');
-    rows.innerHTML = recent.length === 0
-      ? `<tr><td colspan="4" class="empty">Пока нет доходов.</td></tr>`
-      : recent.map(r => `
-          <tr>
-            <td>${fmtDate(r.date)}</td>
-            <td>${escapeHtml(r.client || '—')}</td>
-            <td><span class="badge badge--orange">${escapeHtml(r.service || '—')}</span></td>
-            <td class="num pos">${fmtMoney(r.amount)}</td>
-          </tr>`).join('');
-
-    /* ---- Ближайшие подписки ---- */
+    /* ---- Ближайшие платежи (5 строк) ---- */
     const today = new Date(todayISO());
     const subs = [...(state.subscriptions || [])]
       .filter(s => s.nextDate)
       .map(s => ({ ...s, days: Math.round((new Date(s.nextDate) - today) / 86400000) }))
       .sort((a, b) => a.days - b.days)
-      .slice(0, 7);
+      .slice(0, 5);
     const subRowsEl = document.getElementById('subRows');
     subRowsEl.innerHTML = subs.length === 0
       ? `<tr><td colspan="3" class="empty">Нет подписок.</td></tr>`
       : subs.map(s => {
           let badge;
-          if (s.days < 0) badge = `<span class="badge badge--red">просрочено ${-s.days} дн.</span>`;
+          if (s.days < 0)       badge = `<span class="badge badge--red">просрочено ${-s.days} дн.</span>`;
           else if (s.days === 0) badge = `<span class="badge badge--orange">сегодня</span>`;
           else if (s.days <= 7) badge = `<span class="badge badge--orange">через ${s.days} дн.</span>`;
-          else badge = `<span class="badge badge--gray">через ${s.days} дн.</span>`;
+          else                   badge = `<span class="badge badge--gray">через ${s.days} дн.</span>`;
           return `<tr><td>${escapeHtml(s.name)}</td><td class="num">${fmtMoney(s.amount)}</td><td>${badge}</td></tr>`;
-        }).join('');
-
-    /* ---- Клиенты с долгом ---- */
-    const debtors = (state.clients || [])
-      .filter(c => (Number(c.remain) || 0) > 0 || (Number(c.overdueDays) || 0) > 0)
-      .sort((a, b) => (Number(b.overdueDays) || 0) - (Number(a.overdueDays) || 0))
-      .slice(0, 8);
-    const debtEl = document.getElementById('debtRows');
-    debtEl.innerHTML = debtors.length === 0
-      ? `<tr><td colspan="6" class="empty">Все платежи в норме 🎉</td></tr>`
-      : debtors.map(c => {
-          const overdue = Number(c.overdueDays) || 0;
-          const statusHtml = overdue > 0
-            ? `<span class="badge badge--red"><span class="dot"></span>Просрочка ${overdue} дн.</span>`
-            : `<span class="badge badge--orange"><span class="dot"></span>Долг</span>`;
-          return `
-            <tr>
-              <td><strong>${escapeHtml(c.name)}</strong></td>
-              <td>${escapeHtml(c.platform || '—')}</td>
-              <td>${escapeHtml(c.tariff || '—')}</td>
-              <td class="num neg">${fmtMoney(c.remain || 0)}</td>
-              <td>${c.deadline ? fmtDate(c.deadline) : '—'}</td>
-              <td>${statusHtml}</td>
-            </tr>`;
         }).join('');
   });
 
   function escapeHtml(s) {
     return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   }
-
-  /* --- icons --- */
-  function icoCash()  { return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="2" x2="12" y2="22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>`; }
-  function icoMinus() { return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/></svg>`; }
-  function icoTrend() { return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/><polyline points="16 17 22 17 22 11"/></svg>`; }
-  function icoUsers() { return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/></svg>`; }
-  function icoClient(){ return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`; }
-  function icoSub()   { return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><polyline points="21 3 21 9 15 9"/></svg>`; }
   </script>
 </body>
 </html>
