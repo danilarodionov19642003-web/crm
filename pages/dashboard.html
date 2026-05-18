@@ -6,20 +6,61 @@
   <title>Дашборд — Mentori CRM</title>
   <link rel="stylesheet" href="../css/styles.css"/>
   <style>
-    /* Локальные тюнинги: всё в одно окно, минимум промежутков. */
-    .page-title { margin-bottom: 14px; }
+    /* Компактный дашборд + округлые формы + цветовая разбивка по блокам. */
+    .page-title { margin-bottom: 18px; }
     .page-title h1 { font-size: 22px; }
-    .cards--compact { margin-bottom: 12px; gap: 8px; grid-template-columns: repeat(5, 1fr); }
-    .card--compact { padding: 10px 12px; }
-    .card--compact .card__value { font-size: 17px; }
-    .grid-2 { margin-bottom: 12px; gap: 12px; }
-    .panel__body { padding: 12px; }
-    .panel__header { padding: 10px 14px; }
-    .panel__header h3 { font-size: 13px; }
+
+    /* Круглые «pill»-карточки и панели */
+    .card, .card--compact, .panel {
+      border-radius: 20px !important;
+    }
+    .card--compact { padding: 12px 16px; }
+    .card--compact .card__label {
+      font-size: 10px; letter-spacing: .06em; text-transform: uppercase; opacity: .7;
+    }
+    .card--compact .card__value { font-size: 18px; margin-top: 4px; font-weight: 600; }
+
+    .cards--compact { margin-bottom: 14px; gap: 10px; grid-template-columns: repeat(5, 1fr); }
+    .grid-2 { margin-bottom: 14px; gap: 14px; }
+    .panel__body { padding: 14px 16px; }
+    .panel__header { padding: 14px 18px 6px; border: 0; }
+    .panel__header h3 { font-size: 13px; font-weight: 600; }
     .chart-wrap { height: 220px; }
-    .table th, .table td { padding: 6px 10px; font-size: 12px; }
-    .accounts-row { display: flex; gap: 6px; flex-wrap: wrap; padding: 12px; }
-    .accounts-row .badge { font-size: 12px; }
+    .table th, .table td { padding: 7px 12px; font-size: 12px; }
+    .table th { font-size: 10px; letter-spacing: .05em; }
+
+    /* Заголовки разделов с цветным акцентом и иконкой */
+    .group-title {
+      display: flex; align-items: center; gap: 10px;
+      margin: 22px 0 12px;
+      font-size: 11px; font-weight: 700;
+      letter-spacing: .12em; text-transform: uppercase;
+      color: var(--text-2, #a0a0a0);
+    }
+    .group-title:first-child { margin-top: 6px; }
+    .group-title__dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      box-shadow: 0 0 0 4px rgba(255,255,255,0.04);
+    }
+    .group-title__line {
+      flex: 1; height: 1px; background: linear-gradient(to right, var(--border), transparent);
+    }
+    .group-finance  .group-title__dot { background: #ff7a00; box-shadow: 0 0 0 4px rgba(255,122,0,0.15); }
+    .group-mailer   .group-title__dot { background: #3b82f6; box-shadow: 0 0 0 4px rgba(59,130,246,0.15); }
+
+    /* Лёгкий цветной хайлайт фона для карточек каждой группы */
+    .group-finance .cards--compact .card--compact {
+      background: linear-gradient(180deg, rgba(255,122,0,0.04), rgba(255,122,0,0) 80%), var(--bg-elev);
+      border-color: rgba(255,122,0,0.18);
+    }
+    .group-mailer  .cards--compact .card--compact {
+      background: linear-gradient(180deg, rgba(59,130,246,0.05), rgba(59,130,246,0) 80%), var(--bg-elev);
+      border-color: rgba(59,130,246,0.18);
+    }
+
+    .accounts-row { display: flex; gap: 6px; flex-wrap: wrap; padding: 14px 18px 18px; }
+    .accounts-row .badge { font-size: 12px; padding: 6px 12px; border-radius: 999px; }
+
     @media (max-width: 1100px) {
       .cards--compact { grid-template-columns: repeat(3, 1fr); }
     }
@@ -37,76 +78,89 @@
           <h1>Дашборд</h1>
         </div>
 
-        <!-- Финансы за текущий месяц -->
-        <section class="cards cards--compact" id="monthKpiCards"></section>
-
-        <!-- Telegram-рассыльщик -->
-        <section class="cards cards--compact" id="botKpiCards">
-          <div class="card card--compact"><div class="card__label">…</div></div>
-        </section>
-
-        <!-- Большой ряд: график + последние заявки из бота -->
-        <div class="grid-2">
-          <div class="panel">
-            <div class="panel__header">
-              <h3>Доходы и расходы по месяцам</h3>
-              <div class="spacer"></div>
-              <span class="badge badge--gray" id="chartMonths">—</span>
-            </div>
-            <div class="panel__body">
-              <div class="chart-wrap"><canvas id="revChart"></canvas></div>
-            </div>
+        <!-- ════════════════════════ ФИНАНСЫ ═══════════════════════════════ -->
+        <div class="group-finance">
+          <div class="group-title">
+            <span class="group-title__dot"></span>
+            💰 Финансы · текущий месяц
+            <span class="group-title__line"></span>
           </div>
 
-          <div class="panel">
-            <div class="panel__header">
-              <h3>Заявки из @MentoriTG_bot</h3>
-              <div class="spacer"></div>
-              <span id="botStatsStatus" class="badge badge--gray" style="font-weight:400">—</span>
+          <section class="cards cards--compact" id="monthKpiCards"></section>
+
+          <div class="grid-2">
+            <div class="panel">
+              <div class="panel__header">
+                <h3>Доходы и расходы по месяцам</h3>
+                <div class="spacer"></div>
+                <span class="badge badge--gray" id="chartMonths">—</span>
+              </div>
+              <div class="panel__body">
+                <div class="chart-wrap"><canvas id="revChart"></canvas></div>
+              </div>
             </div>
-            <div class="table-wrap">
-              <table class="table">
-                <thead>
-                  <tr>
-                    <th>Дата</th>
-                    <th>Имя</th>
-                    <th>Услуга</th>
-                    <th>Статус</th>
-                  </tr>
-                </thead>
-                <tbody id="botOrdersRows"></tbody>
-              </table>
+
+            <div class="panel">
+              <div class="panel__header">
+                <h3>Ближайшие платежи</h3>
+                <div class="spacer"></div>
+                <a href="subscriptions.html" class="btn btn--ghost btn--sm">Все →</a>
+              </div>
+              <div class="table-wrap">
+                <table class="table" style="min-width:auto">
+                  <thead>
+                    <tr>
+                      <th>Подписка</th>
+                      <th class="num">Сумма</th>
+                      <th>Срок</th>
+                    </tr>
+                  </thead>
+                  <tbody id="subRows"></tbody>
+                </table>
+              </div>
             </div>
           </div>
         </div>
 
-        <!-- Нижний ряд: подписки + статусы аккаунтов рассыльщика -->
-        <div class="grid-2" style="grid-template-columns: 1fr 1fr">
-          <div class="panel">
-            <div class="panel__header">
-              <h3>Ближайшие платежи</h3>
-              <div class="spacer"></div>
-              <a href="subscriptions.html" class="btn btn--ghost btn--sm">Все →</a>
-            </div>
-            <div class="table-wrap">
-              <table class="table" style="min-width:auto">
-                <thead>
-                  <tr>
-                    <th>Подписка</th>
-                    <th class="num">Сумма</th>
-                    <th>Срок</th>
-                  </tr>
-                </thead>
-                <tbody id="subRows"></tbody>
-              </table>
-            </div>
+        <!-- ════════════════════════ РАССЫЛЬЩИК ════════════════════════════ -->
+        <div class="group-mailer">
+          <div class="group-title">
+            <span class="group-title__dot"></span>
+            📡 Telegram-рассыльщик
+            <span id="botStatsStatus" class="badge badge--gray" style="font-weight:400; text-transform:none; letter-spacing:normal">—</span>
+            <span class="group-title__line"></span>
           </div>
 
-          <div class="panel">
-            <div class="panel__header">
-              <h3>Аккаунты рассыльщика</h3>
+          <section class="cards cards--compact" id="botKpiCards">
+            <div class="card card--compact"><div class="card__label">…</div></div>
+          </section>
+
+          <div class="grid-2" style="grid-template-columns: 1fr 1fr">
+            <div class="panel">
+              <div class="panel__header">
+                <h3>Заявки из @MentoriTG_bot</h3>
+              </div>
+              <div class="table-wrap">
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th>Дата</th>
+                      <th>Имя</th>
+                      <th>Услуга</th>
+                      <th>Статус</th>
+                    </tr>
+                  </thead>
+                  <tbody id="botOrdersRows"></tbody>
+                </table>
+              </div>
             </div>
-            <div class="accounts-row" id="botAccountsBadges"></div>
+
+            <div class="panel">
+              <div class="panel__header">
+                <h3>Аккаунты рассыльщика</h3>
+              </div>
+              <div class="accounts-row" id="botAccountsBadges"></div>
+            </div>
           </div>
         </div>
       </main>
