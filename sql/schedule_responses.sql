@@ -10,13 +10,21 @@ CREATE TABLE IF NOT EXISTS public.schedule_responses (
     client_name     TEXT,
     client_code     TEXT,                          -- a9 / a10 (код анкеты)
     mentor_id       TEXT,
-    schedule_date   DATE NOT NULL,
+    schedule_date   DATE NOT NULL,                 -- дата ИЗНАЧАЛЬНО запланированного отзыва
     response        TEXT NOT NULL CHECK (response IN ('yes','no','pending','asked')),
     chat_id         BIGINT,                        -- telegram chat_id клиента
     notified_at     TIMESTAMPTZ,                   -- когда бот спросил
-    responded_at    TIMESTAMPTZ,                   -- когда клиент нажал кнопку
-    note            TEXT                           -- любой коммент от бота/клиента
+    responded_at    TIMESTAMPTZ,                   -- когда клиент нажал последнюю кнопку
+    note            TEXT,                          -- любой коммент от бота/клиента
+    chosen_time     TEXT,                          -- выбранное клиентом время «HH:MM»
+    chosen_date     DATE                           -- если перенёс — куда (на «нет→дата»)
 );
+
+-- Идемпотентный ALTER: для существующих установок добавим новые поля.
+ALTER TABLE public.schedule_responses
+    ADD COLUMN IF NOT EXISTS chosen_time TEXT;
+ALTER TABLE public.schedule_responses
+    ADD COLUMN IF NOT EXISTS chosen_date DATE;
 
 CREATE INDEX IF NOT EXISTS ix_sched_resp_date ON public.schedule_responses (schedule_date);
 CREATE INDEX IF NOT EXISTS ix_sched_resp_email ON public.schedule_responses (client_email);

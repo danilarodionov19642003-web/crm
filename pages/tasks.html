@@ -575,7 +575,7 @@
         const url = `${window.Supabase.URL}/rest/v1/schedule_responses` +
                     `?schedule_date=gte.${from.toISOString().slice(0,10)}` +
                     `&schedule_date=lte.${to.toISOString().slice(0,10)}` +
-                    `&select=client_code,mentor_id,schedule_date,response,responded_at,notified_at` +
+                    `&select=client_code,mentor_id,schedule_date,response,responded_at,notified_at,chosen_time,chosen_date` +
                     `&order=responded_at.desc.nullsfirst`;
         const res = await fetch(url, {
           headers: {
@@ -753,9 +753,24 @@
             const respKey = (r.mentorId || r.code || '') + '|' + schedState.selected;
             const resp = schedState.responses.get(respKey);
             const lbl = resp ? respLabel(resp.response) : null;
-            const respBadge = lbl
-              ? `<span class="sched-row__resp" data-tone="${lbl.tone}" title="${lbl.text}${resp.responded_at ? ' · ' + new Date(resp.responded_at).toLocaleString('ru-RU') : ''}">${lbl.icon} ${lbl.text}</span>`
-              : '';
+            let respBadge = '';
+            if (lbl) {
+              // Сборка строки времени: если есть chosen_time — показываем,
+              // если перенос на другую дату — показываем «→ 21.05 в 14:30».
+              let when = '';
+              if (resp.chosen_time) {
+                if (resp.chosen_date && resp.chosen_date !== resp.schedule_date) {
+                  const d = new Date(resp.chosen_date);
+                  when = ` · → ${d.getDate().toString().padStart(2,'0')}.${(d.getMonth()+1).toString().padStart(2,'0')} в ${resp.chosen_time}`;
+                } else {
+                  when = ` · в ${resp.chosen_time}`;
+                }
+              } else if (resp.chosen_date && resp.chosen_date !== resp.schedule_date) {
+                const d = new Date(resp.chosen_date);
+                when = ` · → ${d.getDate().toString().padStart(2,'0')}.${(d.getMonth()+1).toString().padStart(2,'0')}`;
+              }
+              respBadge = `<span class="sched-row__resp" data-tone="${lbl.tone}" title="${lbl.text}${resp.responded_at ? ' · ' + new Date(resp.responded_at).toLocaleString('ru-RU') : ''}">${lbl.icon} ${lbl.text}${when}</span>`;
+            }
             return `
               <div class="sched-row">
                 <span class="sched-row__dot" style="background:${r.color}"></span>
