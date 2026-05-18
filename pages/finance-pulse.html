@@ -438,8 +438,13 @@
     }
     function activeClients() {
       return (Store.state.clients || []).filter(c => {
+        if (c.closed === true) return false;                     // ручной флаг «закрыт»
         const ordered = +c.ordered || 0;
-        return ordered > 0 && deriveDone(c) < ordered;
+        const done    = deriveDone(c);
+        const remain  = +c.remain || 0;
+        if (ordered <= 0) return false;                          // без заказа — не активный
+        if (done >= ordered && remain <= 0) return false;        // всё доделано + полностью оплачен
+        return true;
       });
     }
 
