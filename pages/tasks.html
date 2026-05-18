@@ -55,6 +55,160 @@
       color: var(--text-mute); margin: 18px 0 6px 4px; font-weight: 600;
     }
     .task-group-title:first-child { margin-top: 0; }
+
+    /* ───── Агрегированный календарь по всем клиентам ───── */
+    .sched-wrap {
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 18px 20px;
+      margin-bottom: 22px;
+    }
+    .sched-head {
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 12px;
+    }
+    .sched-head h2 { margin: 0; font-size: 15px; font-weight: 700; }
+    .sched-head .spacer { flex: 1; }
+    .sched-nav-btn {
+      width: 30px; height: 30px;
+      background: transparent; border: 1px solid var(--border);
+      color: var(--text); border-radius: 999px;
+      font-size: 16px; line-height: 1; cursor: pointer;
+      transition: all .15s;
+    }
+    .sched-nav-btn:hover { border-color: var(--accent, #ff7a00); color: var(--accent, #ff7a00); }
+    .sched-month-label { font-weight: 600; font-size: 14px; min-width: 130px; text-align: center; }
+    .sched-today-btn {
+      background: transparent; border: 1px solid var(--border);
+      color: var(--text-mute); font-size: 11px;
+      padding: 5px 12px; border-radius: 999px; cursor: pointer;
+    }
+    .sched-today-btn:hover { border-color: var(--accent, #ff7a00); color: var(--accent, #ff7a00); }
+
+    .sched-summary {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
+      margin-bottom: 14px;
+    }
+    .sched-stat {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 10px 12px;
+    }
+    .sched-stat__label {
+      font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+      color: var(--text-mute); font-weight: 600;
+    }
+    .sched-stat__value { font-size: 20px; font-weight: 700; margin-top: 4px; font-variant-numeric: tabular-nums; }
+    .sched-stat__sub { font-size: 11px; color: var(--text-mute); margin-top: 2px; }
+    .sched-stat--today { border-color: rgba(255,122,0,0.35); background: linear-gradient(180deg, rgba(255,122,0,0.06), transparent 70%), var(--bg); }
+    .sched-stat--today .sched-stat__value { color: var(--accent, #ff7a00); }
+
+    .sched-weekdays {
+      display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px;
+      font-size: 10px; color: var(--text-mute);
+      text-transform: uppercase; letter-spacing: .08em;
+      text-align: center; font-weight: 600;
+      margin-bottom: 6px;
+    }
+    .sched-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+    .sched-cell {
+      position: relative; min-height: 64px;
+      background: var(--bg);
+      border: 1px solid transparent;
+      border-radius: 12px;
+      cursor: pointer; color: var(--text); font-family: inherit;
+      padding: 6px 6px 4px; text-align: left;
+      transition: background .12s, transform .12s;
+    }
+    .sched-cell:hover { background: var(--bg-elev-2, rgba(255,255,255,0.04)); transform: scale(1.02); }
+    .sched-cell--empty { background: transparent; cursor: default; pointer-events: none; }
+    .sched-cell.is-today { border-color: var(--accent, #ff7a00); }
+    .sched-cell.is-today .sched-cell__day { color: var(--accent, #ff7a00); font-weight: 800; }
+    .sched-cell.is-selected {
+      background: linear-gradient(135deg, rgba(255,122,0,0.18), rgba(255,154,60,0.08));
+      border-color: var(--accent, #ff7a00);
+    }
+    .sched-cell.has-plan { background: rgba(255,122,0,0.06); border-color: rgba(255,122,0,0.22); }
+    .sched-cell__day { font-size: 12px; font-variant-numeric: tabular-nums; line-height: 1.1; }
+    .sched-cell__count {
+      position: absolute; top: 4px; right: 5px;
+      background: rgba(255,122,0,0.18); color: var(--accent, #ff7a00);
+      font-size: 10px; font-weight: 800; line-height: 1;
+      padding: 3px 7px; border-radius: 999px;
+    }
+    .sched-cell__dots {
+      position: absolute; bottom: 4px; left: 6px; right: 6px;
+      display: flex; gap: 2px; flex-wrap: wrap;
+    }
+    .sched-cell__dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .sched-day-detail {
+      margin-top: 16px; padding-top: 14px;
+      border-top: 1px solid var(--border);
+    }
+    .sched-day-detail__title {
+      display: flex; align-items: center; gap: 8px;
+      font-weight: 700; font-size: 13px; margin-bottom: 10px;
+    }
+    .sched-day-detail__meta {
+      background: var(--bg); padding: 3px 9px; border-radius: 999px;
+      font-size: 10px; font-weight: 600; color: var(--text-mute);
+      text-transform: uppercase; letter-spacing: .05em;
+    }
+    .sched-row {
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 12px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      margin-bottom: 6px;
+    }
+    .sched-row__dot {
+      width: 12px; height: 12px; border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .sched-row__name {
+      flex: 1; min-width: 0;
+      font-size: 13px; font-weight: 600;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .sched-row__count {
+      font-size: 12px; font-weight: 700; color: var(--accent, #ff7a00);
+      font-variant-numeric: tabular-nums;
+      background: rgba(255,122,0,0.12); padding: 3px 9px; border-radius: 999px;
+    }
+    .sched-row__progress {
+      font-size: 11px; color: var(--text-mute);
+      font-variant-numeric: tabular-nums;
+    }
+    .sched-row__link {
+      font-size: 11px; padding: 4px 10px;
+      border-radius: 999px; background: transparent;
+      border: 1px solid var(--border); color: var(--text-mute);
+      cursor: pointer; transition: all .15s;
+      text-decoration: none;
+    }
+    .sched-row__link:hover { border-color: var(--accent, #ff7a00); color: var(--accent, #ff7a00); }
+    .sched-row__resp {
+      font-size: 11px; padding: 3px 9px; border-radius: 999px;
+      font-weight: 600; flex-shrink: 0;
+    }
+    .sched-row__resp[data-tone="pos"]  { background: rgba(34,197,94,0.12);  color: #22c55e; }
+    .sched-row__resp[data-tone="neg"]  { background: rgba(239,68,68,0.12);  color: #ef4444; }
+    .sched-row__resp[data-tone="mute"] { background: rgba(160,160,160,0.12); color: var(--text-mute); }
+    .sched-empty-day {
+      padding: 18px; text-align: center; color: var(--text-mute);
+      font-size: 12px; font-style: italic;
+      background: var(--bg); border-radius: 14px;
+    }
+    @media (max-width: 600px) {
+      .sched-summary { grid-template-columns: repeat(2, 1fr); }
+      .sched-cell { min-height: 54px; }
+    }
   </style>
 </head>
 <body>
@@ -74,6 +228,26 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             Новая задача
           </button>
+        </div>
+
+        <!-- ───── Агрегированный календарь по всем клиентам ───── -->
+        <div class="sched-wrap" data-owner-only style="display:none">
+          <div class="sched-head">
+            <h2>📅 План отзывов по всем клиентам</h2>
+            <div class="spacer"></div>
+            <button class="sched-nav-btn" id="schedPrev">‹</button>
+            <div class="sched-month-label" id="schedMonth">—</div>
+            <button class="sched-nav-btn" id="schedNext">›</button>
+            <button class="sched-today-btn" id="schedToday">сегодня</button>
+          </div>
+
+          <div class="sched-summary" id="schedSummary"></div>
+          <div class="sched-weekdays">
+            <span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span>
+          </div>
+          <div class="sched-grid" id="schedGrid"></div>
+
+          <div class="sched-day-detail" id="schedDayDetail"></div>
         </div>
 
         <section class="cards" id="taskKpis"></section>
@@ -378,6 +552,260 @@
     window.addEventListener('cloudstate:updated', render);
     window.addEventListener('store:reloaded', render);
     render();
+
+    /* ═══════════════════════════════════════════════════════════════════
+       Агрегированный календарь по всем клиентам (только для владельца).
+       Собирает ВСЕ client.schedule[] записи в один календарь. Видно
+       сколько отзывов в каждый день и для каких клиентов.
+       Тык на день → список «кто запланирован» с быстрыми ссылками
+       на график конкретного клиента.
+       Дополнительно подтягиваем ответы клиентов на утренний опрос бота
+       из таблицы schedule_responses (✅ согласие / ⏭ перенос / 📨 спросил).
+       ═══════════════════════════════════════════════════════════════════ */
+    const CAL_COLORS = ['#ff7a00','#22c55e','#3b82f6','#a855f7','#14b8a6','#eab308','#ef4444','#06b6d4'];
+    const schedState = { month: new Date(), selected: todayISO(), responses: new Map() };
+
+    // Подгружаем ответы клиентов (RLS anon SELECT на таблице schedule_responses).
+    async function loadScheduleResponses() {
+      try {
+        if (!window.Supabase || !window.Supabase.URL || !window.Supabase.KEY) return;
+        const today = new Date(); today.setHours(0,0,0,0);
+        const from = new Date(today); from.setDate(from.getDate() - 30);
+        const to   = new Date(today); to.setDate(to.getDate() + 60);
+        const url = `${window.Supabase.URL}/rest/v1/schedule_responses` +
+                    `?schedule_date=gte.${from.toISOString().slice(0,10)}` +
+                    `&schedule_date=lte.${to.toISOString().slice(0,10)}` +
+                    `&select=client_code,mentor_id,schedule_date,response,responded_at,notified_at` +
+                    `&order=responded_at.desc.nullsfirst`;
+        const res = await fetch(url, {
+          headers: {
+            'apikey': window.Supabase.KEY,
+            'Authorization': `Bearer ${window.Supabase.KEY}`,
+            'Accept': 'application/json',
+          },
+        });
+        if (!res.ok) { console.warn('[sched] responses fetch failed', res.status); return; }
+        const rows = await res.json();
+        // Берём ПОСЛЕДНИЙ ответ на пару (mentor_id, date). Сортировка уже desc
+        // по responded_at, поэтому первое вхождение — самое свежее.
+        const map = new Map();
+        for (const r of rows) {
+          const key = (r.mentor_id || r.client_code || '') + '|' + r.schedule_date;
+          if (!map.has(key)) map.set(key, r);
+        }
+        schedState.responses = map;
+      } catch (e) {
+        console.warn('[sched] responses load error', e);
+      }
+    }
+    function respLabel(resp) {
+      if (resp === 'yes')     return { icon: '✅', text: 'согласен', tone: 'pos' };
+      if (resp === 'no')      return { icon: '⏭',  text: 'отказ',    tone: 'neg' };
+      if (resp === 'asked')   return { icon: '📨', text: 'спросили', tone: 'mute' };
+      if (resp === 'pending') return { icon: '⏳', text: 'ждём',     tone: 'mute' };
+      return null;
+    }
+
+    /** Собирает {date → [{client, count, color}]} из всех client.schedule */
+    function collectScheduleByDate() {
+      const map = new Map();
+      const clients = (Store.state.clients || []).filter(c => !c.closed && Array.isArray(c.schedule) && c.schedule.length);
+      // Раскрашиваем стабильно — по индексу в отсортированном списке
+      const sorted = [...clients].sort((a,b) => (a.code||'').localeCompare(b.code||'','ru',{numeric:true}));
+      sorted.forEach((c, idx) => {
+        const color = CAL_COLORS[idx % CAL_COLORS.length];
+        (c.schedule || []).forEach(s => {
+          if (!s.date || !s.count) return;
+          if (!map.has(s.date)) map.set(s.date, []);
+          map.get(s.date).push({
+            clientId: c.id, code: c.code, name: c.name,
+            tariff: c.tariff || '', ordered: +c.ordered || 0,
+            done: deriveDoneLocal(c), count: +s.count || 0, color
+          });
+        });
+      });
+      return map;
+    }
+
+    /** Локальный аналог deriveDone из clients.html (для прогресс-подписи).
+     *  Считается на лету по reviews+statuses, чтобы цифра была актуальной. */
+    function deriveDoneLocal(c) {
+      const code = String(c.code||'').toLowerCase().trim();
+      if (!code) return 0;
+      const mentorIds = new Set((Store.state.mentors||[])
+        .filter(m => String(m.code||'').toLowerCase().trim() === code).map(m => m.id));
+      if (!mentorIds.size) return 0;
+      const approved = (Store.state.reviews||[])
+        .filter(r => mentorIds.has(r.mentorId) && r.moderation === 'approved');
+      const statuses = Store.state.profileStatuses||[];
+      return approved.filter(r => statuses.some(
+        s => s.mentorId === r.mentorId && s.profileId === r.profileId && s.status === '🎯 Готов'
+      )).length;
+    }
+
+    function fmtDateRu(iso) {
+      if (!iso) return '';
+      const d = new Date(iso);
+      if (isNaN(d)) return iso;
+      return d.toLocaleDateString('ru-RU', { day: '2-digit', month: 'long', year: 'numeric' });
+    }
+    function monthLabel(d) {
+      const months = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+      return `${months[d.getMonth()]} ${d.getFullYear()}`;
+    }
+
+    function renderSchedSummary(byDate) {
+      const today = todayISO();
+      const tomorrow = (() => { const d = new Date(); d.setDate(d.getDate()+1); return d.toISOString().slice(0,10); })();
+      const weekEnd  = (() => { const d = new Date(); d.setDate(d.getDate()+7); return d.toISOString().slice(0,10); })();
+      const monthEnd = (() => { const d = new Date(); d.setDate(d.getDate()+30); return d.toISOString().slice(0,10); })();
+      function sumIn(from, to) {
+        let n = 0, clientsSet = new Set();
+        byDate.forEach((rows, date) => {
+          if (date >= from && date <= to) {
+            rows.forEach(r => { n += r.count; clientsSet.add(r.clientId); });
+          }
+        });
+        return { n, clients: clientsSet.size };
+      }
+      const tdy = sumIn(today, today);
+      const tmr = sumIn(tomorrow, tomorrow);
+      const wk  = sumIn(today, weekEnd);
+      const mo  = sumIn(today, monthEnd);
+      document.getElementById('schedSummary').innerHTML = `
+        <div class="sched-stat sched-stat--today">
+          <div class="sched-stat__label">Сегодня</div>
+          <div class="sched-stat__value">${tdy.n}</div>
+          <div class="sched-stat__sub">${tdy.clients ? tdy.clients + ' клиент' + (tdy.clients === 1 ? '' : (tdy.clients < 5 ? 'а' : 'ов')) : 'нет планов'}</div>
+        </div>
+        <div class="sched-stat">
+          <div class="sched-stat__label">Завтра</div>
+          <div class="sched-stat__value">${tmr.n}</div>
+          <div class="sched-stat__sub">${tmr.clients ? tmr.clients + ' клиент' + (tmr.clients === 1 ? '' : (tmr.clients < 5 ? 'а' : 'ов')) : '—'}</div>
+        </div>
+        <div class="sched-stat">
+          <div class="sched-stat__label">Неделя</div>
+          <div class="sched-stat__value">${wk.n}</div>
+          <div class="sched-stat__sub">${wk.clients} клиент${wk.clients === 1 ? '' : (wk.clients < 5 ? 'а' : 'ов')}</div>
+        </div>
+        <div class="sched-stat">
+          <div class="sched-stat__label">30 дней</div>
+          <div class="sched-stat__value">${mo.n}</div>
+          <div class="sched-stat__sub">${mo.clients} клиент${mo.clients === 1 ? '' : (mo.clients < 5 ? 'а' : 'ов')}</div>
+        </div>
+      `;
+    }
+
+    function renderSchedGrid(byDate) {
+      const m = schedState.month;
+      const y = m.getFullYear(), mm = m.getMonth();
+      const first = new Date(y, mm, 1);
+      const last  = new Date(y, mm + 1, 0);
+      const firstDow = (first.getDay() + 6) % 7;
+      const daysInMonth = last.getDate();
+      const today = todayISO();
+
+      const cells = [];
+      for (let i = 0; i < firstDow; i++) cells.push(`<div class="sched-cell sched-cell--empty"></div>`);
+      for (let d = 1; d <= daysInMonth; d++) {
+        const iso = `${y}-${String(mm+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+        const rows = byDate.get(iso) || [];
+        const total = rows.reduce((s, r) => s + r.count, 0);
+        const uniqColors = [...new Set(rows.map(r => r.color))].slice(0, 5);
+        const dots = uniqColors.map(c => `<span class="sched-cell__dot" style="background:${c}"></span>`).join('');
+        const cls = [
+          'sched-cell',
+          iso === today ? 'is-today' : '',
+          iso === schedState.selected ? 'is-selected' : '',
+          total > 0 ? 'has-plan' : ''
+        ].filter(Boolean).join(' ');
+        cells.push(`
+          <button class="${cls}" data-iso="${iso}">
+            ${total > 0 ? `<span class="sched-cell__count">${total}</span>` : ''}
+            <span class="sched-cell__day">${d}</span>
+            ${dots ? `<span class="sched-cell__dots">${dots}</span>` : ''}
+          </button>
+        `);
+      }
+      const pad = (7 - ((firstDow + daysInMonth) % 7)) % 7;
+      for (let i = 0; i < pad; i++) cells.push(`<div class="sched-cell sched-cell--empty"></div>`);
+      document.getElementById('schedGrid').innerHTML = cells.join('');
+      document.getElementById('schedMonth').textContent = monthLabel(m);
+
+      document.querySelectorAll('.sched-cell[data-iso]').forEach(el => {
+        el.addEventListener('click', () => {
+          schedState.selected = el.dataset.iso;
+          renderSched();
+        });
+      });
+    }
+
+    function renderSchedDayDetail(byDate) {
+      const rows = byDate.get(schedState.selected) || [];
+      const totalCount = rows.reduce((s, r) => s + r.count, 0);
+      const meta = rows.length
+        ? `${rows.length} клиент${rows.length === 1 ? '' : (rows.length < 5 ? 'а' : 'ов')} · ${totalCount} отзыв${totalCount === 1 ? '' : (totalCount < 5 ? 'а' : 'ов')}`
+        : 'нет планов';
+      const body = rows.length
+        ? rows.map(r => {
+            const left = Math.max(0, r.ordered - r.done);
+            // Найдём ответ клиента по этой паре (mentor_id, date)
+            const respKey = (r.mentorId || r.code || '') + '|' + schedState.selected;
+            const resp = schedState.responses.get(respKey);
+            const lbl = resp ? respLabel(resp.response) : null;
+            const respBadge = lbl
+              ? `<span class="sched-row__resp" data-tone="${lbl.tone}" title="${lbl.text}${resp.responded_at ? ' · ' + new Date(resp.responded_at).toLocaleString('ru-RU') : ''}">${lbl.icon} ${lbl.text}</span>`
+              : '';
+            return `
+              <div class="sched-row">
+                <span class="sched-row__dot" style="background:${r.color}"></span>
+                <div class="sched-row__name">
+                  <strong>${escapeHtml(r.code || '')}</strong>
+                  ${r.name ? ` · ${escapeHtml(r.name)}` : ''}
+                  <span class="sched-row__progress">${r.tariff ? r.tariff + ' · ' : ''}${r.done}/${r.ordered} (${left} осталось)</span>
+                </div>
+                ${respBadge}
+                <span class="sched-row__count">${r.count}</span>
+                <a class="sched-row__link" href="clients.html?focus=${encodeURIComponent(r.clientId)}">График →</a>
+              </div>
+            `;
+          }).join('')
+        : `<div class="sched-empty-day">На этот день ничего не запланировано.</div>`;
+      document.getElementById('schedDayDetail').innerHTML = `
+        <div class="sched-day-detail__title">
+          ${fmtDateRu(schedState.selected)}
+          <span class="sched-day-detail__meta">${meta}</span>
+        </div>
+        ${body}
+      `;
+    }
+
+    async function renderSched() {
+      const byDate = collectScheduleByDate();
+      renderSchedSummary(byDate);
+      renderSchedGrid(byDate);
+      renderSchedDayDetail(byDate);
+      // ответы клиентов подтягиваем в фоне и перерендерим список дня
+      loadScheduleResponses().then(() => renderSchedDayDetail(byDate));
+    }
+
+    document.getElementById('schedPrev').addEventListener('click', () => {
+      schedState.month = new Date(schedState.month.getFullYear(), schedState.month.getMonth() - 1, 1);
+      renderSched();
+    });
+    document.getElementById('schedNext').addEventListener('click', () => {
+      schedState.month = new Date(schedState.month.getFullYear(), schedState.month.getMonth() + 1, 1);
+      renderSched();
+    });
+    document.getElementById('schedToday').addEventListener('click', () => {
+      const t = new Date();
+      schedState.month = new Date(t.getFullYear(), t.getMonth(), 1);
+      schedState.selected = todayISO();
+      renderSched();
+    });
+    window.addEventListener('cloudstate:updated', renderSched);
+    window.addEventListener('store:reloaded', renderSched);
+    renderSched();
   });
   </script>
 </body>
