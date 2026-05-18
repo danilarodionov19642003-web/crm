@@ -414,27 +414,27 @@
     }
 
     // ── Активные клиенты — заказано > сделано ────────────────────
+    // ВАЖНО: алгоритм identical with /pages/clients.html — там «Сделано»
+    // показывает фактическое число одобренных отзывов с правильным статусом.
+    // НЕ используем `client.done` как fallback — это поле в данных
+    // устаревшее (никто его не обновляет), даёт неверные цифры.
+    const DONE_STATUS = '🎯 Готов';
     function deriveDone(c) {
-      // У clients.html есть аналогичная логика. Здесь упрощённо:
-      // если done заполнен — берём его; иначе пробуем посчитать по reviews.
-      const stored = Number(c.done) || 0;
-      if (stored > 0) return stored;
       const code = String(c.code || '').toLowerCase().trim();
       if (!code) return 0;
       const mentorIds = new Set((Store.state.mentors || [])
         .filter(m => String(m.code || '').toLowerCase().trim() === code)
         .map(m => m.id));
       if (!mentorIds.size) return 0;
-      // считаем «Готов» по profileStatuses + approved reviews
-      const reviewedKeys = new Set();
-      (Store.state.reviews || []).forEach(r => {
-        if (r.moderation === 'approved' && mentorIds.has(r.mentorId)) {
-          reviewedKeys.add(r.mentorId + '::' + r.profileId);
-        }
-      });
-      return (Store.state.profileStatuses || [])
-        .filter(s => s.status === '🎯 Готов' && mentorIds.has(s.mentorId) && reviewedKeys.has(s.mentorId + '::' + s.profileId))
-        .length;
+      const reviews = (Store.state.reviews || []).filter(
+        r => mentorIds.has(r.mentorId) && r.moderation === 'approved'
+      );
+      const statuses = Store.state.profileStatuses || [];
+      // Считаем approved-отзывы у которых пара (mentorId, profileId)
+      // имеет статус «🎯 Готов» в текущем списке аккаунтов.
+      return reviews.filter(r => statuses.some(
+        s => s.mentorId === r.mentorId && s.profileId === r.profileId && s.status === DONE_STATUS
+      )).length;
     }
     function activeClients() {
       return (Store.state.clients || []).filter(c => {

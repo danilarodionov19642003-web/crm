@@ -206,22 +206,23 @@
     const state = Store.load();
 
     /* ---- Баннер «Свободный кэш» (синхронизирован с finance-pulse.html) ---- */
+    // Алгоритм идентичный с /pages/clients.html и /pages/finance-pulse.html —
+    // считаем фактическое число одобренных отзывов с правильным статусом.
+    // НЕ берём client.done как fallback — оно устаревшее.
+    const DONE_STATUS_DASH = '🎯 Готов';
     function deriveDone(c) {
-      const stored = Number(c.done) || 0;
-      if (stored > 0) return stored;
       const code = String(c.code || '').toLowerCase().trim();
       if (!code) return 0;
       const mentorIds = new Set((Store.state.mentors || [])
         .filter(m => String(m.code || '').toLowerCase().trim() === code).map(m => m.id));
       if (!mentorIds.size) return 0;
-      const reviewedKeys = new Set();
-      (Store.state.reviews || []).forEach(r => {
-        if (r.moderation === 'approved' && mentorIds.has(r.mentorId))
-          reviewedKeys.add(r.mentorId + '::' + r.profileId);
-      });
-      return (Store.state.profileStatuses || [])
-        .filter(s => s.status === '🎯 Готов' && mentorIds.has(s.mentorId) && reviewedKeys.has(s.mentorId + '::' + s.profileId))
-        .length;
+      const reviews = (Store.state.reviews || []).filter(
+        r => mentorIds.has(r.mentorId) && r.moderation === 'approved'
+      );
+      const statuses = Store.state.profileStatuses || [];
+      return reviews.filter(r => statuses.some(
+        s => s.mentorId === r.mentorId && s.profileId === r.profileId && s.status === DONE_STATUS_DASH
+      )).length;
     }
     function renderFreeCashBanner() {
       const f = Store.state.finance || {};
