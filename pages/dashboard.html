@@ -231,7 +231,18 @@
       const proxyMonthly = (+f.proxyCount || 3) * (+f.proxyEach || 2250);
       const fix = proxyMonthly + (+f.antidetectMonthly || 1200);
       const ratePerLeft = (f.scenario === 'nastya' ? nastyaRate : 0) + phoneCost;
-      const clients = (Store.state.clients || []).filter(c => (+c.ordered||0) > deriveDone(c));
+      // Фильтр activeClients — ИДЕНТИЧНЫЙ с /finance-pulse: пропускаем
+      // closed-флаг и доделанных+полностью оплаченных. Без этого дашборд
+      // считал на старом наборе клиентов и расходился с пульсом.
+      const clients = (Store.state.clients || []).filter(c => {
+        if (c.closed === true) return false;
+        const ordered = +c.ordered || 0;
+        const done    = deriveDone(c);
+        const remain  = +c.remain || 0;
+        if (ordered <= 0) return false;
+        if (done >= ordered && remain <= 0) return false;
+        return true;
+      });
       const obligations = clients.reduce((s, c) => s + Math.max(0, (+c.ordered||0) - deriveDone(c)) * ratePerLeft, 0);
       const free = (+f.balance || 0) - obligations - fix;
       const valueEl   = document.getElementById('freeCashValue');
