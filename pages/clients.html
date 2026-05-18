@@ -5,6 +5,54 @@
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>Клиенты — Mentori CRM</title>
   <link rel="stylesheet" href="../css/styles.css"/>
+  <style>
+    /* Календарь графика отзывов в модалке */
+    .sch-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 4px;
+      user-select: none;
+    }
+    .sch-grid__header {
+      font-size: 10px; letter-spacing: .05em; text-transform: uppercase;
+      opacity: .55; text-align: center; padding: 4px 0;
+    }
+    .sch-day {
+      position: relative;
+      min-height: 52px;
+      padding: 6px 8px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      cursor: pointer;
+      transition: border-color .12s, background .12s;
+      text-align: left;
+    }
+    .sch-day:hover { border-color: var(--border-strong); background: var(--bg-hover, var(--bg-elev-2)); }
+    .sch-day.is-other { opacity: .25; cursor: default; }
+    .sch-day.is-other:hover { border-color: var(--border); background: var(--bg); }
+    .sch-day.is-today { border-color: var(--accent, #ff7a00); }
+    .sch-day.is-past:not(.is-other) { opacity: .55; }
+    .sch-day.has-planned { background: linear-gradient(180deg, rgba(255,122,0,0.10), transparent), var(--bg); border-color: rgba(255,122,0,0.35); }
+    .sch-day.has-done    { background: linear-gradient(180deg, rgba(34,197,94,0.12),  transparent), var(--bg); border-color: rgba(34,197,94,0.4); }
+    .sch-day.has-both    { background: linear-gradient(180deg, rgba(34,197,94,0.14), rgba(255,122,0,0.10) 60%, transparent), var(--bg); border-color: rgba(34,197,94,0.5); }
+    .sch-day.is-overdue  { background: linear-gradient(180deg, rgba(239,68,68,0.12),  transparent), var(--bg); border-color: rgba(239,68,68,0.4); }
+    .sch-day__num { font-size: 11px; opacity: .65; }
+    .sch-day__planned, .sch-day__done {
+      position: absolute; bottom: 4px; font-size: 11px; font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      display: inline-flex; align-items: center; gap: 2px;
+    }
+    .sch-day__planned { left: 6px; color: #ff9a3c; }
+    .sch-day__done    { right: 6px; color: #22c55e; }
+    .sch-stat {
+      padding: 6px 10px; border-radius: 999px; background: var(--bg);
+      border: 1px solid var(--border); font-size: 11px;
+    }
+    .sch-stat.warn { border-color: rgba(255,122,0,0.4); color: #ff9a3c; }
+    .sch-stat.bad  { border-color: rgba(239,68,68,0.4); color: #ef4444; }
+    .sch-stat.ok   { border-color: rgba(34,197,94,0.4); color: #22c55e; }
+  </style>
 </head>
 <body>
   <div class="app">
@@ -157,6 +205,39 @@
       <div class="modal__footer">
         <button class="btn btn--ghost" data-close>Закрыть</button>
         <a class="btn btn--primary" href="finance.html" id="payToFinance">+ Добавить платёж</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Модалка графика отзывов клиента -->
+  <div class="modal-backdrop" id="scheduleModal">
+    <div class="modal" style="max-width:760px">
+      <div class="modal__header">
+        <h3 id="schTitle">График отзывов</h3>
+        <button class="btn--icon" data-close>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal__body">
+        <div id="schSummary" style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap"></div>
+
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+          <button class="btn btn--ghost btn--sm" id="schPrev">‹</button>
+          <strong id="schMonthLabel" style="flex:1;text-align:center;font-size:14px"></strong>
+          <button class="btn btn--ghost btn--sm" id="schNext">›</button>
+        </div>
+
+        <div id="schCalendar"></div>
+
+        <div class="muted" style="font-size:11px;margin-top:10px">
+          <strong>Подсказка:</strong> тык по дню = +1 запланированный отзыв.
+          Shift+тык или правый клик = −1.
+          ✓ автоматически появляется когда отзыв одобрен и попадает на эту дату.
+        </div>
+      </div>
+      <div class="modal__footer">
+        <button class="btn btn--ghost" data-close>Закрыть</button>
+        <button class="btn btn--ghost" id="schClear">Очистить план</button>
       </div>
     </div>
   </div>
@@ -381,6 +462,10 @@
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:3px;vertical-align:middle"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
               <span class="btn-label">Платежи (${Store.getPaymentsForClient(r.id).length})</span>
             </button>
+            <button class="btn btn--ghost btn--sm" data-act="schedule" title="График отзывов по дням">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:3px;vertical-align:middle"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+              <span class="btn-label">График (${countScheduledForClient(r)})</span>
+            </button>
             <button class="btn--icon" data-act="del" title="Удалить">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
             </button>
@@ -416,6 +501,49 @@
           };
         })
         .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    }
+
+    /* ─────────── График: helpers ─────────────────────────────────────────
+       Хранение: client.schedule = [{ date: 'YYYY-MM-DD', count: N }, ...]
+       Только запланированные. «Сделанные» считаются автоматически — по
+       approved reviews с этим mentorId, дата = review.moderatedAt[:10].
+       --------------------------------------------------------------------- */
+
+    function getSchedule(c) {
+      return Array.isArray(c.schedule) ? c.schedule : [];
+    }
+
+    /** Map даты YYYY-MM-DD → кол-во сделанных отзывов в эту дату.
+     *  Считаем только approved-reviews которые попали в статус «🎯 Готов». */
+    function getDoneByDateMap(c) {
+      const reviews = collectReviewsForClient(c);  // уже отфильтрованы по approved
+      const map = {};
+      reviews.forEach(r => {
+        const d = (r.date || '').slice(0, 10);
+        if (!d) return;
+        map[d] = (map[d] || 0) + 1;
+      });
+      return map;
+    }
+
+    /** Сколько ещё запланировано отзывов (≥ сегодня), не учитывая прошедшие. */
+    function countScheduledForClient(c) {
+      const today = todayISO();
+      return getSchedule(c).reduce((s, x) => s + (x.date >= today ? (+x.count || 0) : 0), 0);
+    }
+
+    /** Сумма count в schedule[]. Используется в footer-статистике модалки. */
+    function totalPlanned(c) {
+      return getSchedule(c).reduce((s, x) => s + (+x.count || 0), 0);
+    }
+
+    function updateSchedule(clientId, newSchedule) {
+      // нормализуем: убираем нули, сортируем по дате
+      const clean = (newSchedule || [])
+        .filter(x => x.date && (+x.count) > 0)
+        .map(x => ({ date: x.date, count: Math.max(0, +x.count) }))
+        .sort((a, b) => a.date.localeCompare(b.date));
+      Store.updateClient(clientId, { schedule: clean });
     }
 
     function statusBadge(r) {
@@ -480,6 +608,9 @@
 
         // история платежей
         tr.querySelector('[data-act="payments"]').addEventListener('click', () => openPayments(id));
+        // график отзывов
+        const schBtn = tr.querySelector('[data-act="schedule"]');
+        if (schBtn) schBtn.addEventListener('click', e => { e.stopPropagation(); openSchedule(id); });
         // опубликованные отзывы — биндим ВСЕ элементы (badge кода + кнопка),
         // их два в строке. e.stopPropagation чтобы не пытаться сделать ячейку
         // редактируемой через makeEditable.
@@ -591,6 +722,162 @@
 
       Modal.open('paymentsModal');
     }
+
+    /* ─────────── Модалка графика отзывов ───────────────────────────────────
+       Логика:
+         - Тык по дню → +1 к count в schedule[]
+         - Shift+тык / правый клик → −1 (с минимумом 0, тогда запись удалится)
+         - Прошлые дни кликабельны но визуально приглушены
+         - «Сделано» считается автоматически из approved-reviews по дате
+         - Снизу live-статистика «осталось разместить» = ordered − done_actual − planned_future
+       Состояние модалки:
+         curSchClientId — id клиента
+         curSchMonth   — какой месяц показываем (Date с 1м числом)
+       --------------------------------------------------------------------- */
+
+    let curSchClientId = null;
+    let curSchMonth = null;  // Date
+
+    function openSchedule(clientId) {
+      const c = Store.state.clients.find(x => x.id === clientId);
+      if (!c) return;
+      curSchClientId = clientId;
+      // По умолчанию — текущий месяц
+      const now = new Date();
+      curSchMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      renderScheduleModal();
+      Modal.open('scheduleModal');
+    }
+
+    function renderScheduleModal() {
+      const c = Store.state.clients.find(x => x.id === curSchClientId);
+      if (!c) return;
+
+      document.getElementById('schTitle').textContent =
+        `График · ${c.code ? c.code + ' · ' : ''}${c.name || 'Клиент'} · ${c.tariff || ''}`;
+
+      // Стата вверху
+      const ordered = +c.ordered || 0;
+      const doneActual = deriveDone(c);  // approved + статус Готов
+      const planned = totalPlanned(c);
+      const today = todayISO();
+      const plannedFuture = getSchedule(c).reduce((s, x) => s + (x.date >= today ? (+x.count || 0) : 0), 0);
+      const leftToPlace = Math.max(0, ordered - doneActual - plannedFuture);
+      const overplaced = ordered - doneActual - plannedFuture;  // < 0 если перепланировал
+      const summaryCls = leftToPlace > 0 ? 'warn' : (overplaced < 0 ? 'bad' : 'ok');
+      const summaryText = leftToPlace > 0
+        ? `📦 Осталось разместить: ${leftToPlace}`
+        : (overplaced < 0
+            ? `⚠ Перепланировал на ${-overplaced}`
+            : `✓ Всё запланировано`);
+
+      document.getElementById('schSummary').innerHTML = `
+        <span class="sch-stat"><strong>Заказано:</strong> ${ordered}</span>
+        <span class="sch-stat ok"><strong>Сделано:</strong> ${doneActual}</span>
+        <span class="sch-stat warn"><strong>Запланировано:</strong> ${planned}</span>
+        <span class="sch-stat ${summaryCls}">${summaryText}</span>
+      `;
+
+      // Заголовок месяца
+      const monthName = curSchMonth.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' });
+      document.getElementById('schMonthLabel').textContent =
+        monthName.charAt(0).toUpperCase() + monthName.slice(1);
+
+      // Сетка дней
+      const cal = document.getElementById('schCalendar');
+      const y = curSchMonth.getFullYear();
+      const m = curSchMonth.getMonth();
+      const first = new Date(y, m, 1);
+      const firstWeekday = (first.getDay() + 6) % 7;  // 0 = Пн
+      const daysInMonth = new Date(y, m + 1, 0).getDate();
+      const doneMap = getDoneByDateMap(c);
+      const planMap = {};
+      getSchedule(c).forEach(x => { planMap[x.date] = (+x.count || 0); });
+
+      const cells = [];
+      // Заголовки дней недели
+      ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'].forEach(d => cells.push(`<div class="sch-grid__header">${d}</div>`));
+      // Пустые ячейки до первого дня
+      for (let i = 0; i < firstWeekday; i++) cells.push(`<div class="sch-day is-other"></div>`);
+      // Дни месяца
+      for (let d = 1; d <= daysInMonth; d++) {
+        const date = new Date(y, m, d);
+        const iso = date.getFullYear() + '-' +
+                    String(date.getMonth() + 1).padStart(2, '0') + '-' +
+                    String(date.getDate()).padStart(2, '0');
+        const isToday = iso === today;
+        const isPast = iso < today;
+        const planned = planMap[iso] || 0;
+        const done = doneMap[iso] || 0;
+        let cls = 'sch-day';
+        if (isToday) cls += ' is-today';
+        if (isPast)  cls += ' is-past';
+        if (planned > 0 && done > 0)      cls += ' has-both';
+        else if (done > 0)                cls += ' has-done';
+        else if (planned > 0 && !isPast)  cls += ' has-planned';
+        else if (planned > 0 && isPast)   cls += ' is-overdue';  // план был — не сделали
+        cells.push(`
+          <div class="${cls}" data-date="${iso}">
+            <div class="sch-day__num">${d}</div>
+            ${planned > 0 ? `<div class="sch-day__planned">●${planned}</div>` : ''}
+            ${done > 0    ? `<div class="sch-day__done">✓${done}</div>`    : ''}
+          </div>
+        `);
+      }
+      // Заполнить хвост до конца недели для красоты
+      const totalCells = firstWeekday + daysInMonth;
+      const pad = (7 - (totalCells % 7)) % 7;
+      for (let i = 0; i < pad; i++) cells.push(`<div class="sch-day is-other"></div>`);
+
+      cal.innerHTML = `<div class="sch-grid">${cells.join('')}</div>`;
+
+      // Биндим клики
+      cal.querySelectorAll('.sch-day[data-date]').forEach(el => {
+        el.addEventListener('click',       e => onDayClick(el.dataset.date, e.shiftKey ? -1 : +1));
+        el.addEventListener('contextmenu', e => { e.preventDefault(); onDayClick(el.dataset.date, -1); });
+      });
+    }
+
+    function onDayClick(isoDate, delta) {
+      const c = Store.state.clients.find(x => x.id === curSchClientId);
+      if (!c) return;
+      const schedule = getSchedule(c).map(x => ({ ...x }));
+      const idx = schedule.findIndex(x => x.date === isoDate);
+      if (idx >= 0) {
+        schedule[idx].count = Math.max(0, (+schedule[idx].count || 0) + delta);
+        if (schedule[idx].count === 0) schedule.splice(idx, 1);
+      } else if (delta > 0) {
+        schedule.push({ date: isoDate, count: delta });
+      }
+      updateSchedule(curSchClientId, schedule);
+      renderScheduleModal();
+    }
+
+    // Навигация по месяцам
+    document.getElementById('schPrev').addEventListener('click', () => {
+      if (!curSchMonth) return;
+      curSchMonth = new Date(curSchMonth.getFullYear(), curSchMonth.getMonth() - 1, 1);
+      renderScheduleModal();
+    });
+    document.getElementById('schNext').addEventListener('click', () => {
+      if (!curSchMonth) return;
+      curSchMonth = new Date(curSchMonth.getFullYear(), curSchMonth.getMonth() + 1, 1);
+      renderScheduleModal();
+    });
+    document.getElementById('schClear').addEventListener('click', () => {
+      if (!confirm('Очистить ВЕСЬ план для этого клиента? Сделанные отзывы не пострадают.')) return;
+      updateSchedule(curSchClientId, []);
+      renderScheduleModal();
+      render();  // обновить счётчик «График (N)» в таблице
+    });
+
+    // Когда закрываем модалку — обновить таблицу (счётчик в кнопке)
+    document.getElementById('scheduleModal').addEventListener('click', e => {
+      if (e.target.dataset.close !== undefined || e.target.closest('[data-close]')) {
+        // даём Modal.close сработать, потом перерендерим
+        setTimeout(render, 50);
+      }
+    });
 
     /* ---- Фильтры ---- */
     document.getElementById('fTariff').addEventListener('change', e => { filters.tariff = e.target.value; render(); });

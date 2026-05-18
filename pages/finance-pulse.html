@@ -620,33 +620,56 @@
     }
 
     // ── Render: календарь нагрузки на 8 недель ───────────────────
+    // Логика: для каждой недели считаем суммарное число отзывов по всем
+    // активным клиентам. Если у клиента есть schedule[] (точный план по
+    // дням) — суммируем count'ы попадающие в неделю. Иначе fallback на
+    // weeklyPace (равномерное распределение).
+    function reviewsInWeek(c, wsDate, weDate) {
+      const sched = Array.isArray(c.schedule) ? c.schedule : [];
+      if (sched.length > 0) {
+        const wsISO = wsDate.toISOString().slice(0, 10);
+        const weISO = weDate.toISOString().slice(0, 10);
+        return sched.reduce((s, x) =>
+          s + ((x.date >= wsISO && x.date <= weISO) ? (+x.count || 0) : 0), 0);
+      }
+      return +c.weeklyPace || 0;
+    }
     function renderCalendar() {
       const f = fin();
       const ratePerLeft = rateForScenario(f);
       const fixWeekly = fixedMonthly(f) / 4.345; // средняя длина мес.
       const clients = activeClients();
-      // суммарный темп всех активных
-      const weeklyTotalPace = clients.reduce((s, c) => s + (+c.weeklyPace || 0), 0);
-      // сколько отзывов осталось всего
-      const totalLeft = clients.reduce((s, c) => s + Math.max(0, (+c.ordered||0) - deriveDone(c)), 0);
 
       const today = new Date(); today.setHours(0,0,0,0);
       const start = weekStart(today);
       const weeks = [];
-      let cumulativeLeft = totalLeft;
+      // Чтобы не «висеть» в будущем после исчерпания заказа — отдельно
+      // отслеживаем сколько отзывов осталось у каждого клиента в данный момент.
+      const leftByClient = new Map();
+      clients.forEach(c => leftByClient.set(c.id, Math.max(0, (+c.ordered||0) - deriveDone(c))));
+
       for (let i = 0; i < 8; i++) {
         const ws = new Date(start); ws.setDate(start.getDate() + i*7);
         const we = new Date(ws);    we.setDate(ws.getDate() + 6);
-        // в эту неделю сделаем min(весь темп, остаток)
-        const reviewsThisWeek = Math.min(weeklyTotalPace, cumulativeLeft);
-        cumulativeLeft -= reviewsThisWeek;
+        let reviewsThisWeek = 0;
+        clients.forEach(c => {
+          const plannedThisWeek = reviewsInWeek(c, ws, we);
+          const left = leftByClient.get(c.id) || 0;
+          const actual = Math.min(plannedThisWeek, left);
+          reviewsThisWeek += actual;
+          leftByClient.set(c.id, left - actual);
+        });
         const cost = reviewsThisWeek * ratePerLeft + fixWeekly;
         weeks.push({ ws, we, reviews: reviewsThisWeek, cost });
       }
       const totalCost = weeks.reduce((s, w) => s + w.cost, 0);
       const totalNum = weeks.reduce((s, w) => s + w.reviews, 0);
+
+      // Сообщим в подписи: используется точный schedule или fallback на pace
+      const hasAnySchedule = clients.some(c => Array.isArray(c.schedule) && c.schedule.length > 0);
       document.getElementById('calendarMeta').textContent =
-        `Σ ${totalNum} отзывов · ~${fmtMoney(totalCost)} расход / 8 нед`;
+        `Σ ${totalNum} отзывов · ~${fmtMoney(totalCost)} / 8 нед` +
+        (hasAnySchedule ? ' · по графику' : ' · по темпу (нет графиков)');
 
       const grid = document.getElementById('weekGrid');
       grid.innerHTML = weeks.map((w, i) => `
