@@ -1,0 +1,628 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Пульс кэша — Mentori CRM</title>
+  <link rel="stylesheet" href="../css/styles.css"/>
+  <style>
+    /* Стилистика согласована с дашбордом: круглые карточки, мягкие
+       цветовые акценты, минимум скролла. */
+    .pulse-grid { display: grid; gap: 12px; }
+    .pulse-grid--4 { grid-template-columns: repeat(4, 1fr); }
+    .pulse-grid--2 { grid-template-columns: 1fr 1fr; }
+    @media (max-width: 1100px) {
+      .pulse-grid--4 { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    .pulse-card {
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 14px 18px;
+    }
+    .pulse-card__label {
+      font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+      opacity: .65; margin-bottom: 6px;
+    }
+    .pulse-card__value {
+      font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums;
+    }
+    .pulse-card__sub {
+      font-size: 11px; opacity: .65; margin-top: 4px;
+    }
+
+    .pulse-card.up    { border-color: rgba(34,197,94,0.35);  background: linear-gradient(180deg, rgba(34,197,94,0.06), rgba(34,197,94,0) 80%), var(--bg-elev); }
+    .pulse-card.down  { border-color: rgba(239,68,68,0.4);   background: linear-gradient(180deg, rgba(239,68,68,0.08), rgba(239,68,68,0) 80%), var(--bg-elev); }
+    .pulse-card.warn  { border-color: rgba(255,122,0,0.4);   background: linear-gradient(180deg, rgba(255,122,0,0.06), rgba(255,122,0,0) 80%), var(--bg-elev); }
+    .pulse-card.up   .pulse-card__value { color: #22c55e; }
+    .pulse-card.down .pulse-card__value { color: #ef4444; }
+    .pulse-card.warn .pulse-card__value { color: #ff9a3c; }
+
+    .pulse-panel {
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      margin-bottom: 12px;
+    }
+    .pulse-panel__head {
+      display: flex; align-items: center; gap: 10px;
+      padding: 14px 18px 6px;
+    }
+    .pulse-panel__head h3 { font-size: 13px; font-weight: 600; margin: 0; }
+    .pulse-panel__head .spacer { flex: 1; }
+    .pulse-panel__body { padding: 12px 18px 16px; }
+
+    .balance-edit {
+      display: flex; align-items: center; gap: 8px;
+    }
+    .balance-edit input {
+      width: 140px; padding: 6px 10px;
+      font-size: 18px; font-weight: 700;
+      background: var(--bg);
+      border: 1px solid var(--border-strong);
+      border-radius: 10px;
+      color: var(--text);
+      font-variant-numeric: tabular-nums;
+    }
+    .balance-edit button {
+      padding: 6px 14px;
+      background: var(--accent, #ff7a00);
+      border: 0; border-radius: 10px;
+      color: white; font-weight: 600; cursor: pointer;
+    }
+
+    .toggle-row {
+      display: inline-flex; gap: 0;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 2px;
+    }
+    .toggle-row button {
+      padding: 6px 14px;
+      background: transparent;
+      border: 0; border-radius: 999px;
+      color: var(--text-2, #a0a0a0); font-size: 12px; cursor: pointer;
+      font-weight: 500;
+    }
+    .toggle-row button.is-on {
+      background: var(--accent, #ff7a00);
+      color: white;
+    }
+
+    .week-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; }
+    .week-cell {
+      padding: 10px 8px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      font-size: 11px;
+      text-align: center;
+    }
+    .week-cell__label { opacity: .6; font-size: 10px; margin-bottom: 4px; }
+    .week-cell__reviews { font-size: 18px; font-weight: 700; }
+    .week-cell__cost { color: #ef4444; font-size: 11px; margin-top: 4px; font-variant-numeric: tabular-nums; }
+    .week-cell.has-load { background: linear-gradient(180deg, rgba(255,122,0,0.08), transparent), var(--bg); border-color: rgba(255,122,0,0.3); }
+    @media (max-width: 1100px) { .week-grid { grid-template-columns: repeat(4, 1fr); } }
+
+    .table.pulse-table th, .table.pulse-table td { padding: 8px 12px; font-size: 12px; }
+    .table.pulse-table th { font-size: 10px; letter-spacing: .05em; text-transform: uppercase; opacity: .7; }
+    .num-mono { font-variant-numeric: tabular-nums; }
+    .muted { color: var(--text-2, #888); }
+    .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 10px; }
+    .pill.green { background: rgba(34,197,94,0.12); color: #22c55e; }
+    .pill.red   { background: rgba(239,68,68,0.12); color: #ef4444; }
+    .pill.gray  { background: rgba(160,160,160,0.12); color: #a0a0a0; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div data-component="sidebar" data-active="finance-pulse"></div>
+
+    <div class="main">
+      <div data-component="header" data-title="Пульс кэша"></div>
+
+      <main class="content">
+        <!-- ─────────── Верхний ряд: 4 ключевые цифры ─────────── -->
+        <div class="pulse-grid pulse-grid--4" style="margin-bottom:12px">
+          <div class="pulse-card" id="card-balance">
+            <div class="pulse-card__label">💳 Баланс счёта</div>
+            <div class="pulse-card__value num-mono" id="balanceValue">— ₽</div>
+            <div class="pulse-card__sub" id="balanceMeta">не вводился</div>
+          </div>
+          <div class="pulse-card" id="card-obligations">
+            <div class="pulse-card__label">⏳ Себестоимость остатка</div>
+            <div class="pulse-card__value num-mono" id="obligationsValue">— ₽</div>
+            <div class="pulse-card__sub" id="obligationsMeta">сколько ещё надо потратить</div>
+          </div>
+          <div class="pulse-card" id="card-free">
+            <div class="pulse-card__label">💰 Свободный кэш</div>
+            <div class="pulse-card__value num-mono" id="freeValue">— ₽</div>
+            <div class="pulse-card__sub">баланс − себест. остатка − фикс на месяц</div>
+          </div>
+          <div class="pulse-card" id="card-after-close">
+            <div class="pulse-card__label">🏁 Если закрыть всех</div>
+            <div class="pulse-card__value num-mono" id="afterCloseValue">— ₽</div>
+            <div class="pulse-card__sub">баланс + все вторые транши − себест. остатка</div>
+          </div>
+        </div>
+
+        <!-- ─────────── Управление: баланс / сценарий ─────────── -->
+        <div class="pulse-grid pulse-grid--2" style="margin-bottom:12px">
+          <div class="pulse-panel">
+            <div class="pulse-panel__head">
+              <h3>💵 Обновить баланс</h3>
+            </div>
+            <div class="pulse-panel__body">
+              <div class="balance-edit">
+                <input type="number" id="balanceInput" placeholder="0"/>
+                <span class="muted">₽</span>
+                <button id="balanceSave">Сохранить</button>
+              </div>
+              <p class="muted" style="margin-top:8px;font-size:11px">
+                Вводи остаток на карте + наличку. Хранится локально + в Supabase.
+              </p>
+            </div>
+          </div>
+
+          <div class="pulse-panel">
+            <div class="pulse-panel__head">
+              <h3>👤 Кто будет доделывать отзывы?</h3>
+              <div class="spacer"></div>
+              <div class="toggle-row" id="scenarioToggle">
+                <button data-scenario="self" class="is-on">Сам (100 ₽/отз)</button>
+                <button data-scenario="nastya">Настя (400 ₽/отз)</button>
+              </div>
+            </div>
+            <div class="pulse-panel__body">
+              <p class="muted" style="margin:0;font-size:11px">
+                Выбор влияет на «Себестоимость остатка», «Свободный кэш» и календарь нагрузки.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- ─────────── Таблица: «Что закроет деньги» ─────────── -->
+        <div class="pulse-panel">
+          <div class="pulse-panel__head">
+            <h3>📋 Активные клиенты — что закроет деньги</h3>
+            <div class="spacer"></div>
+            <span class="muted" style="font-size:11px" id="activeCount">—</span>
+          </div>
+          <div class="table-wrap">
+            <table class="table pulse-table">
+              <thead>
+                <tr>
+                  <th>Код</th>
+                  <th>Клиент / тариф</th>
+                  <th class="num">Готово / заказ</th>
+                  <th class="num">Темп / нед</th>
+                  <th class="num">Прогноз закрытия</th>
+                  <th class="num">Заплатил</th>
+                  <th class="num">Должен</th>
+                  <th class="num">Себест. остатка</th>
+                  <th class="num">Чистыми после закрытия</th>
+                </tr>
+              </thead>
+              <tbody id="closeTableRows"></tbody>
+              <tfoot id="closeTableFoot"></tfoot>
+            </table>
+          </div>
+        </div>
+
+        <!-- ─────────── Календарь нагрузки на 8 недель ─────────── -->
+        <div class="pulse-panel">
+          <div class="pulse-panel__head">
+            <h3>📅 Календарь на 8 недель — сколько отзывов / номеров</h3>
+            <div class="spacer"></div>
+            <span class="muted" style="font-size:11px" id="calendarMeta">—</span>
+          </div>
+          <div class="pulse-panel__body">
+            <div class="week-grid" id="weekGrid"></div>
+          </div>
+        </div>
+
+        <!-- ─────────── Калькулятор Настя vs Сам ─────────── -->
+        <div class="pulse-panel">
+          <div class="pulse-panel__head">
+            <h3>🤔 Сам vs Настя — стоимость передачи</h3>
+          </div>
+          <div class="pulse-panel__body" id="nastyaCalc"></div>
+        </div>
+
+        <!-- ─────────── Фикс расходы (сворачивающийся блок) ─────────── -->
+        <details class="pulse-panel" style="padding:0">
+          <summary style="padding:14px 18px;cursor:pointer;font-size:13px;font-weight:600">
+            ⚙️ Фикс. расходы в месяц (прокси, антидетект)
+          </summary>
+          <div class="pulse-panel__body" id="fixedBox" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
+            <!-- инпуты подставит JS -->
+          </div>
+        </details>
+      </main>
+    </div>
+  </div>
+
+  <script src="../data/seed.js"></script>
+  <script src="../js/app.js"></script>
+  <script src="../js/supabase-client.js"></script>
+  <script src="../js/auth-gate.js"></script>
+  <script src="../js/cloud-sync.js"></script>
+  <script src="../js/accounts-sync.js"></script>
+  <script src="../js/reviews-sync.js"></script>
+  <script src="../components/sidebar.js"></script>
+  <script src="../components/header.js"></script>
+  <script src="../components/table.js"></script>
+
+  <script>
+  /* ========================================================================
+     Пульс кэша:
+       - Свободный кэш (балас счёта − себест.остатка − фикс/мес)
+       - Что закроет деньги (по клиенту)
+       - Календарь нагрузки на 8 недель (по weeklyPace)
+       - Сам vs Настя
+       - Фикс расходы (3×прокси + антидетект)
+     Хранилище:
+       state.finance = {
+         balance: number,
+         balanceUpdatedAt: ISO string,
+         phoneCostPerReview: 100,
+         nastyaRate: 300,
+         proxyCount: 3,
+         proxyEach: 2250,
+         antidetectMonthly: 1200,
+         scenario: 'self' | 'nastya'
+       }
+     ======================================================================== */
+  document.addEventListener('DOMContentLoaded', () => {
+    const { Store, fmtMoney, todayISO } = window.App;
+    Store.load();
+
+    // ── State / defaults ─────────────────────────────────────────
+    const DEFAULTS = {
+      balance: 0,
+      balanceUpdatedAt: '',
+      phoneCostPerReview: 100,
+      nastyaRate: 300,
+      proxyCount: 3,
+      proxyEach: 2250,
+      antidetectMonthly: 1200,
+      scenario: 'self',
+    };
+    function fin() {
+      Store.state.finance ??= {};
+      const f = Store.state.finance;
+      for (const k in DEFAULTS) if (f[k] == null) f[k] = DEFAULTS[k];
+      return f;
+    }
+    function saveFin() {
+      Store.save();
+      // дашборд / другие открытые вкладки увидят изменение
+      window.dispatchEvent(new CustomEvent('finance:updated'));
+    }
+
+    function rateForScenario(f) {
+      return (f.scenario === 'nastya' ? f.nastyaRate : 0) + f.phoneCostPerReview;
+    }
+    function fixedMonthly(f) {
+      return (Number(f.proxyCount) || 0) * (Number(f.proxyEach) || 0) + (Number(f.antidetectMonthly) || 0);
+    }
+
+    // ── Активные клиенты — заказано > сделано ────────────────────
+    function deriveDone(c) {
+      // У clients.html есть аналогичная логика. Здесь упрощённо:
+      // если done заполнен — берём его; иначе пробуем посчитать по reviews.
+      const stored = Number(c.done) || 0;
+      if (stored > 0) return stored;
+      const code = String(c.code || '').toLowerCase().trim();
+      if (!code) return 0;
+      const mentorIds = new Set((Store.state.mentors || [])
+        .filter(m => String(m.code || '').toLowerCase().trim() === code)
+        .map(m => m.id));
+      if (!mentorIds.size) return 0;
+      // считаем «Готов» по profileStatuses + approved reviews
+      const reviewedKeys = new Set();
+      (Store.state.reviews || []).forEach(r => {
+        if (r.moderation === 'approved' && mentorIds.has(r.mentorId)) {
+          reviewedKeys.add(r.mentorId + '::' + r.profileId);
+        }
+      });
+      return (Store.state.profileStatuses || [])
+        .filter(s => s.status === '🎯 Готов' && mentorIds.has(s.mentorId) && reviewedKeys.has(s.mentorId + '::' + s.profileId))
+        .length;
+    }
+    function activeClients() {
+      return (Store.state.clients || []).filter(c => {
+        const ordered = +c.ordered || 0;
+        return ordered > 0 && deriveDone(c) < ordered;
+      });
+    }
+
+    // ── Утилиты по неделям ────────────────────────────────────────
+    function weekStart(d) {
+      // Понедельник как начало недели
+      const x = new Date(d);
+      const day = (x.getDay() + 6) % 7; // 0 = пн
+      x.setDate(x.getDate() - day);
+      x.setHours(0, 0, 0, 0);
+      return x;
+    }
+    function fmtDate(d) {
+      return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
+    }
+    function fmtDateFull(d) {
+      return d.toLocaleDateString('ru-RU', { day: '2-digit', month: 'short', year: 'numeric' });
+    }
+
+    // ── Render: верхние карточки ──────────────────────────────────
+    function renderTopCards() {
+      const f = fin();
+      const clients = activeClients();
+      const ratePerLeft = rateForScenario(f);
+      const obligations = clients.reduce((sum, c) => {
+        const left = Math.max(0, (+c.ordered || 0) - deriveDone(c));
+        return sum + left * ratePerLeft;
+      }, 0);
+      const futureRemain = clients.reduce((sum, c) => sum + (+c.remain || 0), 0);
+      const fix = fixedMonthly(f);
+      const free = (Number(f.balance) || 0) - obligations - fix;
+      const afterClose = (Number(f.balance) || 0) + futureRemain - obligations;
+
+      // Balance card
+      document.getElementById('balanceValue').textContent = fmtMoney(f.balance);
+      document.getElementById('balanceMeta').textContent = f.balanceUpdatedAt
+        ? 'обновлено: ' + new Date(f.balanceUpdatedAt).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+        : 'не вводился';
+
+      // Obligations
+      const obligationsEl = document.getElementById('card-obligations');
+      document.getElementById('obligationsValue').textContent = fmtMoney(obligations);
+      document.getElementById('obligationsMeta').textContent =
+        clients.length + ' активных клиентов · ' + clients.reduce((s, c) => s + Math.max(0, (+c.ordered||0) - deriveDone(c)), 0) + ' отзывов осталось';
+      obligationsEl.classList.toggle('warn', obligations > 0);
+
+      // Free cash
+      const freeCard = document.getElementById('card-free');
+      document.getElementById('freeValue').textContent = fmtMoney(free);
+      freeCard.classList.remove('up', 'down', 'warn');
+      if (free < 0)       freeCard.classList.add('down');
+      else if (free < fix) freeCard.classList.add('warn');
+      else                  freeCard.classList.add('up');
+
+      // After close
+      const afterCard = document.getElementById('card-after-close');
+      document.getElementById('afterCloseValue').textContent = fmtMoney(afterClose);
+      afterCard.classList.remove('up', 'down', 'warn');
+      if (afterClose < 0)  afterCard.classList.add('down');
+      else                  afterCard.classList.add('up');
+    }
+
+    // ── Render: таблица «что закроет» ─────────────────────────────
+    function renderCloseTable() {
+      const f = fin();
+      const clients = activeClients();
+      const ratePerLeft = rateForScenario(f);
+      const today = new Date(); today.setHours(0,0,0,0);
+      const tbody = document.getElementById('closeTableRows');
+      const tfoot = document.getElementById('closeTableFoot');
+      document.getElementById('activeCount').textContent = clients.length + ' активных';
+
+      if (!clients.length) {
+        tbody.innerHTML = '<tr><td colspan="9" class="empty">Нет активных клиентов 🎉</td></tr>';
+        tfoot.innerHTML = '';
+        return;
+      }
+
+      const rows = clients.map(c => {
+        const ordered = +c.ordered || 0;
+        const done = deriveDone(c);
+        const left = Math.max(0, ordered - done);
+        const pace = +c.weeklyPace || 0;
+        const cost = left * ratePerLeft;
+        const remain = +c.remain || 0;
+        const netAfterClose = remain - cost;
+        // Прогноз закрытия по темпу
+        let forecast = '—';
+        let forecastClass = 'muted';
+        if (pace > 0 && left > 0) {
+          const weeks = Math.ceil(left / pace);
+          const d = new Date(today); d.setDate(d.getDate() + weeks * 7);
+          forecast = fmtDateFull(d) + ' <span class="muted">(' + weeks + ' нед)</span>';
+        } else if (left === 0) {
+          forecast = 'готов';
+          forecastClass = 'pill green';
+        } else if (pace === 0) {
+          forecast = '<span class="pill red">темп = 0</span>';
+        }
+        return {
+          c, ordered, done, left, pace, cost, remain, netAfterClose, forecast
+        };
+      });
+
+      tbody.innerHTML = rows.map(r => `
+        <tr>
+          <td><span class="pill gray">${escapeHtml(r.c.code || '—')}</span></td>
+          <td><strong>${escapeHtml(r.c.name || '—')}</strong><br><span class="muted" style="font-size:10px">${escapeHtml(r.c.tariff || '')}</span></td>
+          <td class="num num-mono">${r.done} / ${r.ordered}</td>
+          <td class="num num-mono">${r.pace || '<span class="muted">—</span>'}</td>
+          <td class="num" style="font-size:11px">${r.forecast}</td>
+          <td class="num num-mono pos">${fmtMoney(r.c.paid || 0)}</td>
+          <td class="num num-mono ${(+r.remain) > 0 ? 'neg' : ''}">${fmtMoney(r.remain)}</td>
+          <td class="num num-mono ${r.cost > 0 ? 'neg' : ''}">${fmtMoney(r.cost)}</td>
+          <td class="num num-mono"><strong class="${r.netAfterClose > 0 ? 'pos' : 'neg'}">${fmtMoney(r.netAfterClose)}</strong></td>
+        </tr>
+      `).join('');
+
+      const tCost = rows.reduce((s, r) => s + r.cost, 0);
+      const tRemain = rows.reduce((s, r) => s + (+r.remain || 0), 0);
+      const tNet = rows.reduce((s, r) => s + r.netAfterClose, 0);
+      const tLeft = rows.reduce((s, r) => s + r.left, 0);
+      tfoot.innerHTML = `
+        <tr style="font-weight:600;border-top:1px solid var(--border-strong)">
+          <td colspan="2">ИТОГО</td>
+          <td class="num num-mono">${tLeft} осталось</td>
+          <td colspan="2"></td>
+          <td class="num num-mono pos">${fmtMoney(rows.reduce((s,r)=>s+(+r.c.paid||0),0))}</td>
+          <td class="num num-mono neg">${fmtMoney(tRemain)}</td>
+          <td class="num num-mono neg">${fmtMoney(tCost)}</td>
+          <td class="num num-mono"><strong class="${tNet > 0 ? 'pos' : 'neg'}">${fmtMoney(tNet)}</strong></td>
+        </tr>
+      `;
+    }
+
+    // ── Render: календарь нагрузки на 8 недель ───────────────────
+    function renderCalendar() {
+      const f = fin();
+      const ratePerLeft = rateForScenario(f);
+      const fixWeekly = fixedMonthly(f) / 4.345; // средняя длина мес.
+      const clients = activeClients();
+      // суммарный темп всех активных
+      const weeklyTotalPace = clients.reduce((s, c) => s + (+c.weeklyPace || 0), 0);
+      // сколько отзывов осталось всего
+      const totalLeft = clients.reduce((s, c) => s + Math.max(0, (+c.ordered||0) - deriveDone(c)), 0);
+
+      const today = new Date(); today.setHours(0,0,0,0);
+      const start = weekStart(today);
+      const weeks = [];
+      let cumulativeLeft = totalLeft;
+      for (let i = 0; i < 8; i++) {
+        const ws = new Date(start); ws.setDate(start.getDate() + i*7);
+        const we = new Date(ws);    we.setDate(ws.getDate() + 6);
+        // в эту неделю сделаем min(весь темп, остаток)
+        const reviewsThisWeek = Math.min(weeklyTotalPace, cumulativeLeft);
+        cumulativeLeft -= reviewsThisWeek;
+        const cost = reviewsThisWeek * ratePerLeft + fixWeekly;
+        weeks.push({ ws, we, reviews: reviewsThisWeek, cost });
+      }
+      const totalCost = weeks.reduce((s, w) => s + w.cost, 0);
+      const totalNum = weeks.reduce((s, w) => s + w.reviews, 0);
+      document.getElementById('calendarMeta').textContent =
+        `Σ ${totalNum} отзывов · ~${fmtMoney(totalCost)} расход / 8 нед`;
+
+      const grid = document.getElementById('weekGrid');
+      grid.innerHTML = weeks.map((w, i) => `
+        <div class="week-cell ${w.reviews > 0 ? 'has-load' : ''}">
+          <div class="week-cell__label">${fmtDate(w.ws)}–${fmtDate(w.we)}</div>
+          <div class="week-cell__reviews">${w.reviews}</div>
+          <div class="muted" style="font-size:10px">отзывов</div>
+          <div class="week-cell__cost">−${fmtMoney(w.cost)}</div>
+        </div>
+      `).join('');
+    }
+
+    // ── Render: Настя vs Сам ──────────────────────────────────────
+    function renderNastyaCalc() {
+      const f = fin();
+      const clients = activeClients();
+      const totalLeft = clients.reduce((s, c) => s + Math.max(0, (+c.ordered||0) - deriveDone(c)), 0);
+      const costSelf = totalLeft * f.phoneCostPerReview;
+      const costNastya = totalLeft * (f.phoneCostPerReview + f.nastyaRate);
+      const delta = costNastya - costSelf;
+      const minutesPerReview = 30;
+      const hours = Math.round(totalLeft * minutesPerReview / 60);
+      const perHour = hours > 0 ? Math.round(delta / hours) : 0;
+
+      document.getElementById('nastyaCalc').innerHTML = `
+        <div class="pulse-grid pulse-grid--2">
+          <div>
+            <div class="muted" style="font-size:11px;margin-bottom:6px">Делаешь сам</div>
+            <div class="num-mono" style="font-size:20px;font-weight:700">${fmtMoney(costSelf)}</div>
+            <div class="muted" style="font-size:11px">${totalLeft} × 100 ₽ (только номера)</div>
+          </div>
+          <div>
+            <div class="muted" style="font-size:11px;margin-bottom:6px">Делает Настя</div>
+            <div class="num-mono" style="font-size:20px;font-weight:700">${fmtMoney(costNastya)}</div>
+            <div class="muted" style="font-size:11px">${totalLeft} × (100 + 300) ₽</div>
+          </div>
+        </div>
+        <div style="margin-top:14px;padding:12px;background:var(--bg);border-radius:14px;font-size:12px">
+          <strong>Разница: ${fmtMoney(delta)}</strong> — стоимость передачи Насте.<br>
+          Условно ${hours} часов твоего времени (если ~${minutesPerReview} мин/отзыв) → ${fmtMoney(perHour)}/час.<br>
+          <span class="muted">Если за эти часы можешь привести нового клиента или сделать что-то ценнее — держи Настю. Иначе делай сам.</span>
+        </div>
+      `;
+    }
+
+    // ── Render: фикс расходы (редактируемые поля) ─────────────────
+    function renderFixedBox() {
+      const f = fin();
+      const box = document.getElementById('fixedBox');
+      const fields = [
+        { key: 'proxyCount',        label: 'Прокси, шт',         suffix: '' },
+        { key: 'proxyEach',         label: 'Цена за прокси, ₽',  suffix: '/мес' },
+        { key: 'antidetectMonthly', label: 'Антидетект, ₽',      suffix: '/мес' },
+      ];
+      box.innerHTML = fields.map(f2 => `
+        <label class="muted" style="font-size:11px">
+          ${f2.label}
+          <input type="number" data-key="${f2.key}" value="${f[f2.key]}"
+                 style="display:block;margin-top:4px;width:100%;padding:6px 10px;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--text);font-variant-numeric:tabular-nums">
+          <span style="font-size:10px">${f2.suffix}</span>
+        </label>
+      `).join('') + `
+        <div style="grid-column: 1 / -1; padding: 10px; background: var(--bg); border-radius: 10px; font-size: 12px">
+          <strong>Итого фикс в месяц:</strong> <span id="fixedTotal" class="num-mono"></span>
+        </div>
+      `;
+      box.querySelectorAll('input[data-key]').forEach(inp => {
+        inp.addEventListener('change', () => {
+          fin()[inp.dataset.key] = Number(inp.value) || 0;
+          saveFin();
+          renderAll();
+        });
+      });
+      document.getElementById('fixedTotal').textContent = fmtMoney(fixedMonthly(f));
+    }
+
+    // ── Render всё ────────────────────────────────────────────────
+    function renderAll() {
+      renderTopCards();
+      renderCloseTable();
+      renderCalendar();
+      renderNastyaCalc();
+      renderFixedBox();
+    }
+
+    // ── Wiring ────────────────────────────────────────────────────
+    // Balance input
+    const balanceInput = document.getElementById('balanceInput');
+    balanceInput.value = fin().balance || '';
+    document.getElementById('balanceSave').addEventListener('click', () => {
+      const v = Number(balanceInput.value) || 0;
+      const f = fin();
+      f.balance = v;
+      f.balanceUpdatedAt = new Date().toISOString();
+      saveFin();
+      renderAll();
+    });
+    balanceInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter') document.getElementById('balanceSave').click();
+    });
+
+    // Scenario toggle
+    document.querySelectorAll('#scenarioToggle button').forEach(btn => {
+      if (btn.dataset.scenario === fin().scenario) btn.classList.add('is-on');
+      else btn.classList.remove('is-on');
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('#scenarioToggle button').forEach(b => b.classList.remove('is-on'));
+        btn.classList.add('is-on');
+        fin().scenario = btn.dataset.scenario;
+        saveFin();
+        renderAll();
+      });
+    });
+
+    // Reactivity: при изменениях из других вкладок / cloud-sync
+    window.addEventListener('cloudstate:updated', renderAll);
+    window.addEventListener('reviews:updated', renderAll);
+
+    renderAll();
+  });
+
+  function escapeHtml(s) {
+    return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+  </script>
+</body>
+</html>

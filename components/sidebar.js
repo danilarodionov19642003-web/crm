@@ -12,6 +12,7 @@
   const NAV = [
     { id: 'dashboard',     label: 'Дашборд',    href: 'dashboard.html',     icon: icoGrid(),     ownerOnly: true },
     { id: 'finance',       label: 'Финансы',    href: 'finance.html',       icon: icoWallet(),   ownerOnly: true },
+    { id: 'finance-pulse', label: 'Пульс кэша', href: 'finance-pulse.html', icon: icoWallet(),   ownerOnly: true },
     { id: 'clients',       label: 'Клиенты',    href: 'clients.html',       icon: icoClient(),   ownerOnly: true },
     { id: 'subscriptions', label: 'Подписки',   href: 'subscriptions.html', icon: icoSub(),      ownerOnly: true },
     { id: 'employees',     label: 'Сотрудники', href: 'employees.html',     icon: icoUsers(),    ownerOnly: true },

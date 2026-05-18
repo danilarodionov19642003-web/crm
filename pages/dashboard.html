@@ -84,7 +84,21 @@
             <span class="group-title__dot"></span>
             💰 Финансы · текущий месяц
             <span class="group-title__line"></span>
+            <a href="finance-pulse.html" class="btn btn--ghost btn--sm" style="font-weight:500">Пульс кэша →</a>
           </div>
+
+          <!-- Баннер «Свободный кэш» — подтягивается с finance-pulse.html -->
+          <a href="finance-pulse.html" id="freeCashBanner"
+             style="display:flex;align-items:center;gap:18px;padding:14px 22px;margin-bottom:14px;
+                    background:var(--bg-elev); border:1px solid var(--border); border-radius:20px;
+                    text-decoration:none; color:inherit; transition: border-color .15s">
+            <div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;opacity:.65;flex-shrink:0">
+              💰 Свободный<br>кэш
+            </div>
+            <div style="font-size:26px;font-weight:700;font-variant-numeric:tabular-nums" id="freeCashValue">— ₽</div>
+            <div style="flex:1;font-size:11px;opacity:.65" id="freeCashFormula">баланс − себест. остатка − фикс</div>
+            <div style="font-size:11px;opacity:.5" id="freeCashMeta">→</div>
+          </a>
 
           <section class="cards cards--compact" id="monthKpiCards"></section>
 
@@ -188,6 +202,52 @@
   document.addEventListener('DOMContentLoaded', () => {
     const { Store, fmtMoney, fmtDate, todayISO } = window.App;
     const state = Store.load();
+
+    /* ---- Баннер «Свободный кэш» (синхронизирован с finance-pulse.html) ---- */
+    function deriveDone(c) {
+      const stored = Number(c.done) || 0;
+      if (stored > 0) return stored;
+      const code = String(c.code || '').toLowerCase().trim();
+      if (!code) return 0;
+      const mentorIds = new Set((Store.state.mentors || [])
+        .filter(m => String(m.code || '').toLowerCase().trim() === code).map(m => m.id));
+      if (!mentorIds.size) return 0;
+      const reviewedKeys = new Set();
+      (Store.state.reviews || []).forEach(r => {
+        if (r.moderation === 'approved' && mentorIds.has(r.mentorId))
+          reviewedKeys.add(r.mentorId + '::' + r.profileId);
+      });
+      return (Store.state.profileStatuses || [])
+        .filter(s => s.status === '🎯 Готов' && mentorIds.has(s.mentorId) && reviewedKeys.has(s.mentorId + '::' + s.profileId))
+        .length;
+    }
+    function renderFreeCashBanner() {
+      const f = Store.state.finance || {};
+      const phoneCost = +f.phoneCostPerReview || 100;
+      const nastyaRate = +f.nastyaRate || 300;
+      const proxyMonthly = (+f.proxyCount || 3) * (+f.proxyEach || 2250);
+      const fix = proxyMonthly + (+f.antidetectMonthly || 1200);
+      const ratePerLeft = (f.scenario === 'nastya' ? nastyaRate : 0) + phoneCost;
+      const clients = (Store.state.clients || []).filter(c => (+c.ordered||0) > deriveDone(c));
+      const obligations = clients.reduce((s, c) => s + Math.max(0, (+c.ordered||0) - deriveDone(c)) * ratePerLeft, 0);
+      const free = (+f.balance || 0) - obligations - fix;
+      const valueEl   = document.getElementById('freeCashValue');
+      const formulaEl = document.getElementById('freeCashFormula');
+      const metaEl    = document.getElementById('freeCashMeta');
+      const banner    = document.getElementById('freeCashBanner');
+      valueEl.textContent = fmtMoney(free);
+      valueEl.style.color = free < 0 ? '#ef4444' : (free < fix ? '#ff9a3c' : '#22c55e');
+      formulaEl.innerHTML = `Баланс <strong>${fmtMoney(f.balance || 0)}</strong> − Себест.остатка <strong>${fmtMoney(obligations)}</strong> − Фикс/мес <strong>${fmtMoney(fix)}</strong>`;
+      metaEl.innerHTML = f.balanceUpdatedAt
+        ? `обновлено: ${new Date(f.balanceUpdatedAt).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })} →`
+        : `<span style="color:#ff9a3c">⚠ Введи баланс →</span>`;
+      banner.style.borderColor = free < 0 ? 'rgba(239,68,68,0.4)' :
+                                 (free < fix ? 'rgba(255,154,60,0.4)' : 'rgba(34,197,94,0.4)');
+    }
+    renderFreeCashBanner();
+    window.addEventListener('finance:updated',     renderFreeCashBanner);
+    window.addEventListener('cloudstate:updated',  renderFreeCashBanner);
+    window.addEventListener('reviews:updated',     renderFreeCashBanner);
 
     /* ---- Финансы за месяц + клиенты в работе ---- */
     function renderMonthKpis() {

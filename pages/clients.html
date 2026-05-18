@@ -51,6 +51,8 @@
                   <th>Клиент</th>
                   <th>Площадка</th>
                   <th>Тариф</th>
+                  <th class="num" title="Сколько отзывов планируется делать в неделю">Темп / нед</th>
+                  <th title="Дата начала работы по клиенту">Старт</th>
                   <th class="num">Заказано</th>
                   <th class="num">Сделано</th>
                   <th class="num">Прогресс</th>
@@ -299,7 +301,7 @@
       const tfoot = document.getElementById('clFoot');
 
       if (rows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="13" class="empty">Нет клиентов под фильтр.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="14" class="empty">Нет клиентов под фильтр.</td></tr>`;
         tfoot.innerHTML = '';
       } else {
         tbody.innerHTML = rows.map(r => rowHtml(r)).join('');
@@ -308,15 +310,18 @@
         const totalRemain = rows.reduce((s, r) => s + (+r.remain || 0), 0);
         const totalOrdered = rows.reduce((s, r) => s + (+r.ordered || 0), 0);
         const totalDone = rows.reduce((s, r) => s + deriveDone(r), 0);
+        const totalPace = rows.reduce((s, r) => s + (+r.weeklyPace || 0), 0);
         tfoot.innerHTML = `
           <tr>
             <td colspan="4">ИТОГО</td>
+            <td class="num">${totalPace}</td>
+            <td></td>
             <td class="num">${totalOrdered}</td>
             <td class="num">${totalDone}</td>
             <td class="num">${totalOrdered ? Math.round(totalDone/totalOrdered*100) : 0}%</td>
             <td class="num pos">${fmtMoney(totalPaid)}</td>
             <td class="num ${totalRemain>0?'neg':''}">${fmtMoney(totalRemain)}</td>
-            <td colspan="4"></td>
+            <td colspan="3"></td>
           </tr>`;
         bindRowEditors();
       }
@@ -350,6 +355,10 @@
             <select class="select" style="padding:4px 8px" data-field="tariff">
               ${TARIFF_NAMES.map(t => `<option value="${t}" ${r.tariff===t?'selected':''}>${t}</option>`).join('')}
             </select>
+          </td>
+          <td class="num" data-field="weeklyPace" data-type="number" title="Сколько отзывов в неделю планируем делать (нужно для прогноза кассы)">${+r.weeklyPace || 0}</td>
+          <td>
+            <input type="date" class="input" style="padding:4px 6px;background:transparent;border:1px solid transparent" data-field="date" value="${r.date || ''}" title="Дата старта работы"/>
           </td>
           <td class="num" data-field="ordered" data-type="number">${ordered}</td>
           <td class="num" title="Рассчитывается автоматически: количество статусов «🎯 Готов» по клиенту ${escapeHtml(r.code || '')} на вкладке «Статусы»">
@@ -452,11 +461,12 @@
           });
         });
 
-        // date
-        const dateInput = tr.querySelector('input[data-field="deadline"]');
-        if (dateInput) dateInput.addEventListener('change', e => {
-          Store.updateClient(id, { deadline: e.target.value });
-          render();
+        // date — дедлайн и старт работы (data-field="deadline" | "date")
+        tr.querySelectorAll('input[type="date"][data-field]').forEach(inp => {
+          inp.addEventListener('change', e => {
+            Store.updateClient(id, { [inp.dataset.field]: e.target.value });
+            render();
+          });
         });
 
         // delete
