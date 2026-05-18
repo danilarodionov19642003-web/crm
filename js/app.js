@@ -1333,6 +1333,11 @@
         date: client ? (client.date || '') : '',
         deadline: client ? (client.deadline || '') : '',
         overdueDays: client ? Number(client.overdueDays) || 0 : 0,
+        // График работы по дням (Mentor проставляет на странице «Клиенты»
+        // → «📅 График»). Клиент в своём кабинете видит запланированные
+        // дни на календаре и понимает когда ждать следующих отзывов.
+        schedule:    client && Array.isArray(client.schedule) ? client.schedule : [],
+        weeklyPace:  client ? Number(client.weeklyPace) || 0 : 0,
         payments,
         statuses,
         reviews

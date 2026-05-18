@@ -8,7 +8,7 @@
   <meta http-equiv="Expires" content="0"/>
   <title>Личный кабинет — Mentori</title>
   <link rel="stylesheet" href="../../css/styles.css"/>
-  <link rel="stylesheet" href="client.css"/>
+  <link rel="stylesheet" href="client.css?v=20260518a"/>
 </head>
 <body class="cli-body">
   <div data-cli-header></div>
@@ -25,12 +25,11 @@
     <h2 class="cli-section-title">Календарь</h2>
     <div class="cli-cal" data-cli-calendar></div>
 
-    <h2 class="cli-section-title">Последние действия</h2>
-    <div class="cli-feed" data-cli-feed></div>
+    <div data-cli-feed style="margin-top:22px"></div>
   </main>
 
-  <script src="../../js/supabase-client.js?v=20260429b"></script>
-  <script src="./client-app.js?v=20260429b"></script>
+  <script src="../../js/supabase-client.js?v=20260518a"></script>
+  <script src="./client-app.js?v=20260518a"></script>
   <script>
   (async () => {
     const ok = await window.ClientApp.requireLogin();

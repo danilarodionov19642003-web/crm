@@ -1,9 +1,28 @@
 /* ==========================================================================
-   Client Portal — стили личного кабинета клиента (Флагман и т.п.).
-   Подключается ПОСЛЕ ../../css/styles.css.
-   Принцип: то же визуальное ощущение, что у employee-кабинета,
-   но palette более сдержанный (это «отчёт клиенту», а не рабочая панель).
+   Client Portal v2 — современный визуал.
+   Подключается ПОСЛЕ ../../css/styles.css (там переменные --bg, --border и т.д.).
+   Дизайн-принципы:
+     - Круглые формы (border-radius 20-24px на карточках, 999px на бейджах)
+     - Бренд-оранжевый Mentori #ff7a00 как акцент (был синий)
+     - Мягкие тени вместо резких границ
+     - Большие читаемые цифры на KPI
+     - SVG-donut для прогресса каждой анкеты (без Chart.js)
    ========================================================================== */
+
+:root {
+  --cli-accent: #ff7a00;
+  --cli-accent-soft: #ff9a3c;
+  --cli-green: #22c55e;
+  --cli-red:   #ef4444;
+  --cli-shadow: 0 4px 16px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.04);
+  --cli-shadow-hover: 0 8px 24px rgba(255,122,0,0.12), 0 2px 6px rgba(0,0,0,0.06);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --cli-shadow: 0 4px 16px rgba(0,0,0,0.4), 0 1px 3px rgba(0,0,0,0.3);
+    --cli-shadow-hover: 0 8px 24px rgba(255,122,0,0.15), 0 2px 6px rgba(0,0,0,0.4);
+  }
+}
 
 .cli-body {
   background: var(--bg);
@@ -18,391 +37,481 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 16px;
+  padding: 14px 18px;
   background: var(--bg-2);
   border-bottom: 1px solid var(--border);
   position: sticky;
   top: 0;
   z-index: 20;
+  backdrop-filter: saturate(180%) blur(8px);
 }
-.cli-header__brand { display: flex; align-items: center; gap: 10px; flex: 1; }
+.cli-header__brand { display: flex; align-items: center; gap: 12px; flex: 1; }
 .cli-header__logo {
-  width: 32px; height: 32px;
-  border-radius: 8px;
-  background: linear-gradient(135deg, #1d39c4, #2f54eb);
+  width: 40px; height: 40px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #ff7a00, #ff9a3c);
   color: #fff;
   display: flex; align-items: center; justify-content: center;
   font-weight: 800; font-size: 18px;
+  box-shadow: 0 4px 12px rgba(255,122,0,0.3);
 }
-.cli-header__hello { font-size: 14px; font-weight: 600; line-height: 1.1; }
-.cli-header__sub   { font-size: 11px; color: var(--text-mute); margin-top: 2px; }
+.cli-header__hello { font-size: 15px; font-weight: 600; line-height: 1.1; }
+.cli-header__sub   { font-size: 11px; color: var(--text-mute); margin-top: 3px; }
 
 .cli-header__logout {
   background: transparent; border: 1px solid var(--border);
-  color: var(--text); border-radius: 8px;
-  padding: 6px 12px; font-size: 12px; cursor: pointer;
+  color: var(--text); border-radius: 999px;
+  padding: 7px 14px; font-size: 12px; cursor: pointer;
+  transition: all .15s;
 }
-.cli-header__logout:hover { border-color: #ff4d4f; color: #ff4d4f; }
+.cli-header__logout:hover { border-color: var(--cli-red); color: var(--cli-red); }
 
 /* ---------- main ---------- */
-.cli-main { padding: 16px; max-width: 760px; margin: 0 auto; }
+.cli-main { padding: 20px 16px 40px; max-width: 820px; margin: 0 auto; }
 
 .cli-section-title {
-  font-size: 13px;
+  font-size: 11px;
   text-transform: uppercase;
-  letter-spacing: 0.6px;
+  letter-spacing: 0.12em;
   color: var(--text-mute);
-  margin: 22px 0 10px;
-  font-weight: 600;
+  margin: 26px 0 12px;
+  font-weight: 700;
+  display: flex; align-items: center; gap: 10px;
+}
+.cli-section-title::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(to right, var(--border), transparent);
 }
 
-/* ---------- KPI cards ---------- */
+/* ---------- KPI cards (top-level) ---------- */
 .cli-kpis {
   display: grid;
-  /* auto-fit: на широком экране влезает 4-в-ряд, на телефоне — 2×2 */
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
 }
 .cli-kpi {
   background: var(--bg-2);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 10px 12px;
-  text-align: center;
+  border-radius: 20px;
+  padding: 14px 16px;
+  text-align: left;
+  box-shadow: var(--cli-shadow);
+  transition: transform .15s;
 }
-.cli-kpi__label { font-size: 10px; text-transform: uppercase; color: var(--text-mute); margin-bottom: 4px; letter-spacing: .5px; }
-.cli-kpi__value { font-size: 18px; font-weight: 700; color: var(--text); }
-.cli-kpi__value.pos { color: #389e0d; }
-.cli-kpi__value.neg { color: #cf1322; }
+.cli-kpi:hover { transform: translateY(-1px); }
+.cli-kpi__label {
+  font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--text-mute); margin-bottom: 6px; font-weight: 600;
+}
+.cli-kpi__value { font-size: 22px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+.cli-kpi__value.pos { color: var(--cli-green); }
+.cli-kpi__value.neg { color: var(--cli-red); }
 
 /* ---------- список анкет ---------- */
-.cli-list { display: flex; flex-direction: column; gap: 10px; }
+.cli-list { display: flex; flex-direction: column; gap: 14px; }
 
 .cli-card {
   display: block;
   background: var(--bg-2);
   border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 14px;
+  border-radius: 24px;
+  padding: 18px;
   text-decoration: none;
   color: inherit;
-  transition: transform .12s ease, border-color .12s ease;
+  transition: transform .15s, box-shadow .15s, border-color .15s;
+  box-shadow: var(--cli-shadow);
 }
-.cli-card:active { transform: scale(.985); }
-.cli-card:hover  { border-color: #2f54eb; }
+.cli-card:active { transform: scale(.99); }
+.cli-card:hover  {
+  border-color: rgba(255,122,0,0.4);
+  box-shadow: var(--cli-shadow-hover);
+  transform: translateY(-2px);
+}
 
-.cli-card__top { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.cli-card__top {
+  display: flex; align-items: center; gap: 12px; margin-bottom: 14px;
+}
 .cli-card__code {
-  background: #e6f4ff; color: #1d39c4;
-  font-weight: 700; font-size: 12px;
-  padding: 3px 8px; border-radius: 6px;
-  letter-spacing: .5px;
+  background: linear-gradient(135deg, rgba(255,122,0,0.12), rgba(255,154,60,0.05));
+  color: var(--cli-accent);
+  font-weight: 700; font-size: 11px;
+  padding: 4px 10px; border-radius: 999px;
+  letter-spacing: .08em; text-transform: uppercase;
+  border: 1px solid rgba(255,122,0,0.18);
 }
 .cli-card__name {
-  flex: 1; font-weight: 600; font-size: 15px;
+  flex: 1; font-weight: 700; font-size: 16px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
+/* Анкета в виде «donut + цифры справа» */
+.cli-card__body {
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  gap: 18px;
+  align-items: center;
+}
+@media (max-width: 480px) {
+  .cli-card__body { grid-template-columns: 80px 1fr; gap: 12px; }
+}
+
+/* SVG-donut с прогрессом анкеты */
+.cli-donut { position: relative; width: 100px; height: 100px; flex-shrink: 0; }
+.cli-donut svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.cli-donut circle { fill: none; stroke-width: 11; }
+.cli-donut__track { stroke: var(--border); }
+.cli-donut__active { stroke: var(--cli-accent-soft); transition: stroke-dasharray .4s ease; }
+.cli-donut__done   { stroke: var(--cli-green); transition: stroke-dasharray .4s ease; }
+.cli-donut__center {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+}
+.cli-donut__pct { font-size: 22px; font-weight: 800; color: var(--text); line-height: 1; font-variant-numeric: tabular-nums; }
+.cli-donut__sub { font-size: 9px; text-transform: uppercase; color: var(--text-mute); letter-spacing: .08em; margin-top: 3px; }
+@media (max-width: 480px) {
+  .cli-donut { width: 80px; height: 80px; }
+  .cli-donut__pct { font-size: 18px; }
+}
+
+/* Цифры справа от donut */
 .cli-card__stats {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-  margin-bottom: 8px;
+  gap: 10px;
 }
 .cli-card__stat {
-  background: var(--bg);
+  background: rgba(255,255,255,0.02);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 6px 8px;
+  border-radius: 14px;
+  padding: 8px 10px;
   text-align: center;
 }
-.cli-card__stat-label { font-size: 10px; color: var(--text-mute); text-transform: uppercase; }
-.cli-card__stat-value { font-size: 14px; font-weight: 700; }
-
-/* progress bar */
-.cli-progress {
-  height: 6px; background: var(--border); border-radius: 999px; overflow: hidden;
-  margin-top: 6px;
+.cli-card__stat-label {
+  font-size: 9px; color: var(--text-mute);
+  text-transform: uppercase; letter-spacing: .05em; font-weight: 600;
 }
-.cli-progress__fill {
-  height: 100%; background: linear-gradient(90deg, #2f54eb, #722ed1);
-  width: 0%; transition: width .25s;
+.cli-card__stat-value {
+  font-size: 16px; font-weight: 700; margin-top: 2px;
+  font-variant-numeric: tabular-nums;
 }
 
-/* Стек-бар по статусам аккаунтов внутри карточки анкеты:
-   три цветных сегмента + легенда снизу с точками. */
+/* Stackbar — оставлен для detail-страницы */
 .cli-stackbar {
   display: flex; height: 8px; border-radius: 999px; overflow: hidden;
   background: var(--border);
   margin-top: 10px;
   position: relative;
 }
-.cli-stackbar__seg {
-  display: block; height: 100%;
-  transition: width .3s ease;
-}
+.cli-stackbar__seg { display: block; height: 100%; transition: width .3s ease; }
 .cli-stackbar__seg.planned { background: #8c8c8c; }
 .cli-stackbar__seg.active  { background: linear-gradient(90deg, #fa8c16, #ffa940); }
-.cli-stackbar__seg.done    { background: linear-gradient(90deg, #389e0d, #73d13d); }
+.cli-stackbar__seg.done    { background: linear-gradient(90deg, var(--cli-green), #73d13d); }
 .cli-stackbar__empty {
   position: absolute; inset: 0;
   display: flex; align-items: center; justify-content: center;
-  font-size: 10px; color: var(--text-mute);
-  font-style: italic;
+  font-size: 10px; color: var(--text-mute); font-style: italic;
 }
 .cli-stackbar__legend {
   display: flex; flex-wrap: wrap;
-  gap: 12px;
-  margin-top: 8px;
+  gap: 12px; margin-top: 10px;
   font-size: 11px; color: var(--text-mute);
 }
-.cli-stackbar__legend b { color: var(--text); font-weight: 600; }
+.cli-stackbar__legend b { color: var(--text); font-weight: 700; }
 .cli-dot {
   display: inline-block; width: 8px; height: 8px;
-  border-radius: 50%; margin-right: 4px;
-  vertical-align: middle;
+  border-radius: 50%; margin-right: 4px; vertical-align: middle;
 }
 .cli-dot.planned { background: #8c8c8c; }
-.cli-dot.active  { background: #fa8c16; }
-.cli-dot.done    { background: #389e0d; }
+.cli-dot.active  { background: var(--cli-accent-soft); }
+.cli-dot.done    { background: var(--cli-green); }
 
 .cli-card__remain {
-  margin-top: 10px;
-  padding-top: 8px;
+  margin-top: 14px;
+  padding-top: 12px;
   border-top: 1px dashed var(--border);
   font-size: 12px; color: var(--text-mute);
+  display: flex; align-items: center; justify-content: space-between;
 }
-.cli-card__remain b { color: var(--text); font-weight: 600; }
+.cli-card__remain b { color: var(--text); font-weight: 700; font-size: 13px; }
 
-/* ---------- фид активности ---------- */
-.cli-feed { display: flex; flex-direction: column; gap: 6px; }
+/* ---------- фид активности (свёрнутый <details>) ---------- */
+.cli-feed-wrap {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: var(--cli-shadow);
+}
+.cli-feed-wrap > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 16px 20px;
+  display: flex; align-items: center; gap: 10px;
+  font-weight: 600; font-size: 14px;
+  user-select: none;
+}
+.cli-feed-wrap > summary::-webkit-details-marker { display: none; }
+.cli-feed-wrap > summary::after {
+  content: '▼';
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--text-mute);
+  transition: transform .2s;
+}
+.cli-feed-wrap[open] > summary::after { transform: rotate(180deg); }
+.cli-feed-wrap > summary .cli-feed-count {
+  background: rgba(255,122,0,0.12); color: var(--cli-accent);
+  font-size: 11px; font-weight: 700;
+  padding: 2px 9px; border-radius: 999px;
+  margin-left: 4px;
+}
+.cli-feed { display: flex; flex-direction: column; gap: 6px; padding: 6px 16px 18px; }
 .cli-feed__item {
-  display: flex; gap: 10px; align-items: flex-start;
-  background: var(--bg-2); border: 1px solid var(--border);
-  border-radius: 10px; padding: 10px 12px;
+  display: flex; gap: 12px; align-items: flex-start;
+  padding: 10px 12px;
+  background: var(--bg);
+  border-radius: 14px;
 }
 .cli-feed__icon {
-  width: 28px; height: 28px; border-radius: 6px;
+  width: 32px; height: 32px; border-radius: 10px;
   display: flex; align-items: center; justify-content: center;
   font-size: 14px;
-  background: #f0f5ff; color: #1d39c4; flex-shrink: 0;
+  background: rgba(255,122,0,0.08); color: var(--cli-accent); flex-shrink: 0;
 }
-.cli-feed__icon.review { background: #f6ffed; color: #389e0d; }
-.cli-feed__text { flex: 1; font-size: 13px; line-height: 1.35; }
-.cli-feed__date { font-size: 11px; color: var(--text-mute); margin-top: 2px; }
+.cli-feed__icon.review { background: rgba(34,197,94,0.10); color: var(--cli-green); }
+.cli-feed__text { flex: 1; font-size: 13px; line-height: 1.4; }
+.cli-feed__date { font-size: 11px; color: var(--text-mute); margin-top: 3px; }
 
 /* ---------- profile detail ---------- */
 .cli-back {
   display: inline-flex; align-items: center; gap: 6px;
   color: var(--text-mute); text-decoration: none; font-size: 13px;
-  margin-bottom: 10px;
+  margin-bottom: 14px;
+  padding: 6px 14px; border-radius: 999px;
+  border: 1px solid var(--border);
+  transition: all .15s;
 }
-.cli-back:hover { color: #2f54eb; }
+.cli-back:hover { color: var(--cli-accent); border-color: rgba(255,122,0,0.4); }
 
-.cli-detail-title { font-size: 22px; font-weight: 700; margin: 0 0 4px; }
-.cli-detail-sub   { color: var(--text-mute); font-size: 13px; margin-bottom: 16px; }
+.cli-detail-title { font-size: 24px; font-weight: 800; margin: 0 0 6px; }
+.cli-detail-sub   { color: var(--text-mute); font-size: 13px; margin-bottom: 20px; }
 
-.cli-table { width: 100%; border-collapse: collapse; background: var(--bg-2); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
-.cli-table th, .cli-table td { padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--border); font-size: 13px; }
-.cli-table th { background: var(--bg); font-weight: 600; color: var(--text-mute); font-size: 11px; text-transform: uppercase; letter-spacing: .4px; }
+.cli-table {
+  width: 100%; border-collapse: collapse;
+  background: var(--bg-2); border: 1px solid var(--border);
+  border-radius: 16px; overflow: hidden;
+  box-shadow: var(--cli-shadow);
+}
+.cli-table th, .cli-table td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border); font-size: 13px; }
+.cli-table th {
+  background: rgba(255,255,255,0.02); font-weight: 700;
+  color: var(--text-mute); font-size: 10px;
+  text-transform: uppercase; letter-spacing: .08em;
+}
 .cli-table tr:last-child td { border-bottom: none; }
 .cli-table .num { text-align: right; font-variant-numeric: tabular-nums; }
 
 .cli-status-pill {
-  display: inline-block; padding: 2px 8px; border-radius: 999px;
-  font-size: 12px; font-weight: 600;
+  display: inline-block; padding: 3px 10px; border-radius: 999px;
+  font-size: 11px; font-weight: 600;
 }
-.cli-status-pill.готов { background: #f6ffed; color: #389e0d; border: 1px solid #b7eb8f; }
-.cli-status-pill.diag-end { background: #f0f5ff; color: #1d39c4; border: 1px solid #adc6ff; }
-.cli-status-pill.diag-start { background: #fff7e6; color: #ad6800; border: 1px solid #ffd591; }
 
 .cli-review {
   background: var(--bg-2); border: 1px solid var(--border);
-  border-radius: 10px; padding: 12px; margin-bottom: 8px;
+  border-radius: 16px; padding: 14px 16px; margin-bottom: 10px;
+  box-shadow: var(--cli-shadow);
 }
-.cli-review__head { display: flex; gap: 10px; align-items: center; margin-bottom: 6px; font-size: 12px; color: var(--text-mute); }
+.cli-review__head { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; font-size: 11px; color: var(--text-mute); }
 .cli-review__code {
-  background: #e6f4ff; color: #1d39c4; font-weight: 700;
-  padding: 1px 6px; border-radius: 4px;
+  background: rgba(255,122,0,0.12); color: var(--cli-accent);
+  font-weight: 700; padding: 3px 9px; border-radius: 999px;
+  font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
 }
-.cli-review__text { font-size: 13px; line-height: 1.45; white-space: pre-wrap; }
+.cli-review__text { font-size: 13px; line-height: 1.5; white-space: pre-wrap; }
 
-/* ---------- login ---------- */
+/* ---------- login (без переделки — это отдельный экран) ---------- */
 .cli-login { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px; }
 .cli-login__card {
   width: 100%; max-width: 380px;
   background: var(--bg-2); border: 1px solid var(--border);
-  border-radius: 14px; padding: 24px;
-  /* Flex с gap — иначе кнопка «Войти» прилипала к полю пароля без
-     никакого пространства между ними. */
+  border-radius: 24px; padding: 28px;
   display: flex; flex-direction: column; gap: 14px;
+  box-shadow: var(--cli-shadow);
 }
 .cli-login__brand { display: flex; gap: 12px; align-items: center; margin-bottom: 6px; }
 .cli-login__brand h1 { margin: 0; font-size: 20px; }
 .cli-login__brand p  { margin: 0; font-size: 12px; color: var(--text-mute); }
-
-/* Hero-блок на странице логина: большой логотип сверху + подпись.
-   Картинка (assets/logo.png) занимает всю ширину карточки за вычетом
-   паддингов; если файла нет — показываем «Mentori» текстом-fallback. */
 .cli-login__hero {
   display: flex; flex-direction: column; align-items: center;
-  gap: 8px;
-  padding: 4px 0 6px;
+  gap: 8px; padding: 4px 0 6px;
 }
-.cli-login__logo {
-  display: block;
-  max-width: 220px; width: 80%;
-  height: auto;
-  object-fit: contain;
-}
-.cli-login__hero-fallback {
-  font-size: 26px; font-weight: 800; letter-spacing: 2px;
-  color: #fa8c16;
-  text-transform: uppercase;
-}
-.cli-login__hero-sub {
-  font-size: 12px; color: var(--text-mute);
-  text-align: center;
-}
-/* Кнопка «Войти» в логин-карточке — компактная pill-кнопка по центру.
-   .btn у нас inline-flex; принудительно делаем flex с центровкой
-   контента, выравниваем саму кнопку по центру через align-self,
-   плюс margin-left:auto/right:auto на случай если flex-контекст
-   родителя не сработает. */
+.cli-login__logo { display: block; max-width: 220px; width: 80%; height: auto; object-fit: contain; }
+.cli-login__hero-fallback { font-size: 26px; font-weight: 800; letter-spacing: 2px; color: var(--cli-accent); text-transform: uppercase; }
+.cli-login__hero-sub { font-size: 12px; color: var(--text-mute); text-align: center; }
 .cli-login__btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  align-self: center;
-  margin-left: auto;
-  margin-right: auto;
-  margin-top: 14px;       /* такой же отступ как между Email и Паролем */
-  width: 50%;
-  min-width: 140px;
-  padding: 10px 18px;
-  font-size: 14px;
-  font-weight: 600;
-  border-radius: 9999px;
-  /* Сбрасываем gap из .btn (8px) и whitespace между потенциальными
-     детьми — иначе текст слегка смещается влево от центра. */
-  gap: 0;
-  text-align: center;
+  display: flex; align-items: center; justify-content: center;
+  align-self: center; margin: 14px auto 0;
+  width: 50%; min-width: 140px;
+  padding: 11px 20px;
+  font-size: 14px; font-weight: 700;
+  border-radius: 999px;
+  gap: 0; text-align: center;
+  background: linear-gradient(135deg, #ff7a00, #ff9a3c);
+  border: 0; color: white;
+  box-shadow: 0 4px 12px rgba(255,122,0,0.3);
 }
 .cli-login__btn > span { display: inline-block; }
 .cli-login__err {
-  margin-top: 0; padding: 8px 10px;
-  background: #fff1f0; border: 1px solid #ffa39e; color: #cf1322;
-  border-radius: 8px; font-size: 13px;
+  margin-top: 0; padding: 8px 12px;
+  background: rgba(239,68,68,0.1);
+  border: 1px solid rgba(239,68,68,0.3); color: var(--cli-red);
+  border-radius: 12px; font-size: 13px;
 }
 
 .cli-empty {
   text-align: center; color: var(--text-mute); padding: 40px 16px;
-  background: var(--bg-2); border: 1px dashed var(--border); border-radius: 12px;
+  background: var(--bg-2); border: 1px dashed var(--border); border-radius: 20px;
 }
 
-/* ---------- Calendar ---------- */
+/* ---------- Calendar v2 ---------- */
 .cli-cal {
   background: var(--bg-2);
   border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 14px;
+  border-radius: 24px;
+  padding: 18px;
+  box-shadow: var(--cli-shadow);
 }
 .cli-cal__nav {
-  display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
+  display: flex; align-items: center; gap: 8px; margin-bottom: 12px;
 }
 .cli-cal__nav-btn {
-  width: 30px; height: 30px;
+  width: 32px; height: 32px;
   background: transparent; border: 1px solid var(--border);
-  color: var(--text); border-radius: 6px;
+  color: var(--text); border-radius: 999px;
   font-size: 18px; line-height: 1; cursor: pointer;
+  transition: all .15s;
 }
-.cli-cal__nav-btn:hover { border-color: #2f54eb; color: #2f54eb; }
+.cli-cal__nav-btn:hover { border-color: var(--cli-accent); color: var(--cli-accent); }
 .cli-cal__month {
   flex: 1; text-align: center;
-  font-weight: 600; font-size: 15px;
+  font-weight: 700; font-size: 16px;
 }
 .cli-cal__today {
   background: transparent; border: 1px solid var(--border);
   color: var(--text-mute); font-size: 11px;
-  padding: 4px 10px; border-radius: 6px; cursor: pointer;
+  padding: 5px 12px; border-radius: 999px; cursor: pointer;
+  transition: all .15s;
 }
-.cli-cal__today:hover { border-color: #2f54eb; color: #2f54eb; }
+.cli-cal__today:hover { border-color: var(--cli-accent); color: var(--cli-accent); }
 
 .cli-cal__legend {
   display: flex; flex-wrap: wrap; gap: 10px;
   font-size: 11px; color: var(--text-mute);
-  margin-bottom: 10px;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  background: var(--bg);
+  border-radius: 12px;
 }
-.cli-cal__legend-item {
-  display: inline-flex; align-items: center; gap: 4px;
-}
+.cli-cal__legend-item { display: inline-flex; align-items: center; gap: 5px; }
 .cli-cal__dot {
   display: inline-block;
-  width: 6px; height: 6px; border-radius: 50%;
+  width: 7px; height: 7px; border-radius: 50%;
   flex-shrink: 0;
 }
 
 .cli-cal__weekdays {
   display: grid; grid-template-columns: repeat(7, 1fr);
-  gap: 2px; margin-bottom: 4px;
+  gap: 4px; margin-bottom: 6px;
   font-size: 10px; color: var(--text-mute);
-  text-transform: uppercase; text-align: center;
+  text-transform: uppercase; letter-spacing: .08em;
+  text-align: center; font-weight: 600;
 }
 .cli-cal__grid {
   display: grid; grid-template-columns: repeat(7, 1fr);
-  gap: 2px;
+  gap: 4px;
 }
 .cli-cal__cell {
-  position: relative; min-height: 42px;
+  position: relative; min-height: 52px;
   background: var(--bg);
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: 12px;
   display: flex; flex-direction: column;
   align-items: center; justify-content: flex-start;
-  padding: 4px 0 2px;
+  padding: 6px 0 4px;
   font-size: 13px; cursor: pointer;
   color: var(--text); font-family: inherit;
-  transition: background .12s;
+  transition: background .12s, transform .12s;
 }
-.cli-cal__cell:hover { background: var(--bg-elev-2, #2a2a2a); }
+.cli-cal__cell:hover { background: var(--bg-elev-2, rgba(255,255,255,0.04)); transform: scale(1.05); }
 .cli-cal__cell--empty { background: transparent; cursor: default; pointer-events: none; }
-.cli-cal__cell.is-today { border-color: #2f54eb; }
-.cli-cal__cell.is-today .cli-cal__day { color: #2f54eb; font-weight: 700; }
-.cli-cal__cell.is-selected { background: rgba(47,84,235,0.18); border-color: #2f54eb; }
+.cli-cal__cell.is-today { border-color: var(--cli-accent); }
+.cli-cal__cell.is-today .cli-cal__day { color: var(--cli-accent); font-weight: 800; }
+.cli-cal__cell.is-selected {
+  background: linear-gradient(135deg, rgba(255,122,0,0.18), rgba(255,154,60,0.08));
+  border-color: var(--cli-accent);
+}
 .cli-cal__cell.has-events { font-weight: 600; }
+.cli-cal__cell.is-planned {
+  background: rgba(255,122,0,0.06);
+  border-color: rgba(255,122,0,0.25);
+  border-style: dashed;
+}
+.cli-cal__cell.is-planned.is-selected {
+  background: linear-gradient(135deg, rgba(255,122,0,0.22), rgba(255,154,60,0.10));
+  border-style: solid;
+}
 
-.cli-cal__day { line-height: 1.2; }
+.cli-cal__day { line-height: 1.2; font-variant-numeric: tabular-nums; }
+.cli-cal__planned-badge {
+  position: absolute; top: 3px; right: 4px;
+  font-size: 9px; font-weight: 700;
+  color: var(--cli-accent);
+  background: rgba(255,122,0,0.15);
+  border-radius: 999px;
+  padding: 1px 5px;
+  line-height: 1.2;
+}
 .cli-cal__dots {
-  display: flex; gap: 2px; margin-top: 3px;
+  display: flex; gap: 3px; margin-top: 4px;
 }
 
 .cli-cal__sel-title {
-  margin-top: 14px; padding-top: 10px;
+  margin-top: 16px; padding-top: 12px;
   border-top: 1px solid var(--border);
-  font-size: 13px; font-weight: 600; color: var(--text-dim);
-  margin-bottom: 8px;
+  font-size: 13px; font-weight: 700;
+  margin-bottom: 10px;
+  display: flex; align-items: center; gap: 8px;
+}
+.cli-cal__sel-title-meta {
+  font-size: 10px; font-weight: 600; color: var(--text-mute);
+  background: var(--bg); padding: 2px 8px;
+  border-radius: 999px; text-transform: uppercase; letter-spacing: .05em;
 }
 .cli-cal__events {
-  display: flex; flex-direction: column; gap: 6px;
+  display: flex; flex-direction: column; gap: 8px;
 }
 .cli-cal__event {
-  display: flex; gap: 10px; align-items: flex-start;
+  display: flex; gap: 12px; align-items: flex-start;
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 8px; padding: 8px 10px;
+  border-radius: 14px; padding: 10px 14px;
+  transition: transform .12s;
 }
+.cli-cal__event:hover { transform: translateX(2px); }
 .cli-cal__event-icon {
-  width: 28px; height: 28px;
+  width: 32px; height: 32px;
   display: flex; align-items: center; justify-content: center;
-  font-size: 14px; border-radius: 6px;
+  font-size: 14px; border-radius: 10px;
   flex-shrink: 0;
 }
 .cli-cal__event-body { flex: 1; font-size: 13px; line-height: 1.4; }
-.cli-cal__event-title { font-weight: 600; }
-.cli-cal__event-meta {
-  font-size: 11px; color: var(--text-mute); margin-top: 2px;
-}
+.cli-cal__event-title { font-weight: 700; }
+.cli-cal__event-meta { font-size: 11px; color: var(--text-mute); margin-top: 3px; }
 .cli-cal__empty {
   text-align: center; color: var(--text-mute);
-  font-size: 12px; padding: 14px;
+  font-size: 12px; padding: 18px;
+  font-style: italic;
 }

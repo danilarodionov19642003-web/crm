@@ -168,6 +168,30 @@
     return { planned, active, done, total: planned + active + done };
   }
 
+  /** SVG-donut с двумя сегментами: «в работе» (оранжевый) и «готово» (зелёный).
+   *  Радиус 40 → периметр 2π·40 ≈ 251.33. На него и опираемся при расчёте
+   *  stroke-dasharray. */
+  function _donutSvg(active, done, ordered) {
+    const CIRC = 2 * Math.PI * 40;  // = 251.33
+    const total = ordered || 0;
+    const aFrac = total > 0 ? Math.min(1, active / total) : 0;
+    const dFrac = total > 0 ? Math.min(1, done   / total) : 0;
+    const aLen  = CIRC * aFrac;
+    const dLen  = CIRC * dFrac;
+    // segments: done сначала (0..dLen), потом active сразу за ним.
+    // stroke-dasharray трюк: dash=сегмент, gap=всё остальное. offset сдвигает.
+    return `
+      <svg viewBox="0 0 100 100" aria-hidden="true">
+        <circle class="cli-donut__track" cx="50" cy="50" r="40"></circle>
+        <circle class="cli-donut__done"   cx="50" cy="50" r="40"
+                stroke-dasharray="${dLen.toFixed(2)} ${(CIRC - dLen).toFixed(2)}"
+                stroke-dashoffset="0"></circle>
+        <circle class="cli-donut__active" cx="50" cy="50" r="40"
+                stroke-dasharray="${aLen.toFixed(2)} ${(CIRC - aLen).toFixed(2)}"
+                stroke-dashoffset="-${dLen.toFixed(2)}"></circle>
+      </svg>`;
+  }
+
   function renderAnketas(anketas) {
     const el = document.querySelector('[data-cli-anketas]');
     if (!el) return;
@@ -177,43 +201,41 @@
     }
     el.innerHTML = anketas.map(a => {
       const br = _statusBreakdown(a.statuses);
-      // Шкала считается от «Заказано» — чтобы клиент читал её как
-      // «сколько из заказа уже сделано». Оранжевый = в работе,
-      // зелёный = готово, остаток фона = ещё не начато.
       const ordered = a.ordered || 0;
-      const wActive = ordered ? Math.min(100, (br.active / ordered) * 100) : 0;
-      const wDone   = ordered ? Math.min(100, (br.done   / ordered) * 100) : 0;
+      const pct = ordered > 0 ? Math.round(((br.active + br.done) / ordered) * 100) : 0;
       return `
         <a class="cli-card" href="./profile.html?id=${encodeURIComponent(a.mentorId)}">
           <div class="cli-card__top">
             <span class="cli-card__code">${escapeHtml(a.code)}</span>
             <span class="cli-card__name">${escapeHtml(a.name || a.code)}</span>
           </div>
-          <div class="cli-card__stats">
-            <div class="cli-card__stat">
-              <div class="cli-card__stat-label">Заказано</div>
-              <div class="cli-card__stat-value">${a.ordered || 0}</div>
+          <div class="cli-card__body">
+            <div class="cli-donut" title="Прогресс заказа: сделано и в работе">
+              ${_donutSvg(br.active, br.done, ordered)}
+              <div class="cli-donut__center">
+                <div class="cli-donut__pct">${pct}%</div>
+                <div class="cli-donut__sub">прогресс</div>
+              </div>
             </div>
-            <div class="cli-card__stat">
-              <div class="cli-card__stat-label">Сделано</div>
-              <div class="cli-card__stat-value" style="color:#389e0d">${a.done || 0}</div>
-            </div>
-            <div class="cli-card__stat">
-              <div class="cli-card__stat-label">В работе</div>
-              <div class="cli-card__stat-value" style="color:#fa8c16">${br.active}</div>
+            <div class="cli-card__stats">
+              <div class="cli-card__stat">
+                <div class="cli-card__stat-label">Заказано</div>
+                <div class="cli-card__stat-value">${a.ordered || 0}</div>
+              </div>
+              <div class="cli-card__stat">
+                <div class="cli-card__stat-label">Готово</div>
+                <div class="cli-card__stat-value" style="color:var(--cli-green,#22c55e)">${a.done || 0}</div>
+              </div>
+              <div class="cli-card__stat">
+                <div class="cli-card__stat-label">В работе</div>
+                <div class="cli-card__stat-value" style="color:var(--cli-accent,#ff7a00)">${br.active}</div>
+              </div>
             </div>
           </div>
-          <div class="cli-stackbar" title="Прогресс по заказу: сделано и в работе">
-            ${br.active ? `<span class="cli-stackbar__seg active" style="width:${wActive}%"></span>` : ''}
-            ${br.done   ? `<span class="cli-stackbar__seg done"   style="width:${wDone}%"></span>`   : ''}
-            ${ordered === 0 && br.total === 0 ? '<span class="cli-stackbar__empty">Аккаунты ещё не подключены</span>' : ''}
+          <div class="cli-card__remain">
+            <span>Остаток к оплате</span>
+            <b>${fmtMoney(a.remain || 0)}</b>
           </div>
-          <div class="cli-stackbar__legend">
-            <span><span class="cli-dot planned"></span>Запланировано · <b>${br.planned}</b></span>
-            <span><span class="cli-dot active"></span>В работе · <b>${br.active}</b></span>
-            <span><span class="cli-dot done"></span>Готово · <b>${br.done}</b></span>
-          </div>
-          <div class="cli-card__remain">Остаток к оплате: <b>${fmtMoney(a.remain || 0)}</b></div>
         </a>
       `;
     }).join('');
@@ -222,30 +244,46 @@
   function renderFeed(feed) {
     const el = document.querySelector('[data-cli-feed]');
     if (!el) return;
-    if (!feed || !feed.length) {
-      el.innerHTML = '<div class="cli-empty">Активности пока нет.</div>';
+    // Корневой элемент превращается в свёрнутый <details> со счётчиком.
+    // Чтобы при перерендере не плодить вложенность — каждый раз заново
+    // строим разметку и заменяем innerHTML контейнера-обёртки.
+    const list = (feed || []).slice(0, 30);
+    if (!list.length) {
+      el.innerHTML = `
+        <details class="cli-feed-wrap">
+          <summary>📋 Последние действия <span class="cli-feed-count">0</span></summary>
+          <div class="cli-feed"><div class="cli-empty" style="margin:6px 0 12px">Активности пока нет.</div></div>
+        </details>`;
       return;
     }
-    el.innerHTML = feed.slice(0, 30).map(f => {
-      // Показываем имя анкеты (например «ФЛ1»), а не служебный код «a21».
-      const anketaLabel = f.anketaName || f.anketa || '';
-      return `
-      <div class="cli-feed__item">
-        <div class="cli-feed__icon ${f.kind === 'review' ? 'review' : ''}">${f.kind === 'review' ? '✍️' : '📋'}</div>
-        <div class="cli-feed__text">
-          <div><strong>${escapeHtml(anketaLabel)}</strong> · ${escapeHtml(f.text || '')}</div>
-          <div class="cli-feed__date">${fmtDate(f.date)}</div>
+    el.innerHTML = `
+      <details class="cli-feed-wrap">
+        <summary>📋 Последние действия <span class="cli-feed-count">${list.length}</span></summary>
+        <div class="cli-feed">
+          ${list.map(f => {
+            const anketaLabel = f.anketaName || f.anketa || '';
+            return `
+              <div class="cli-feed__item">
+                <div class="cli-feed__icon ${f.kind === 'review' ? 'review' : ''}">${f.kind === 'review' ? '✍️' : '📋'}</div>
+                <div class="cli-feed__text">
+                  <div><strong>${escapeHtml(anketaLabel)}</strong> · ${escapeHtml(f.text || '')}</div>
+                  <div class="cli-feed__date">${fmtDate(f.date)}</div>
+                </div>
+              </div>`;
+          }).join('')}
         </div>
-      </div>`;
-    }).join('');
+      </details>`;
   }
 
   /* --- Calendar widget ---
-     Месячная сетка со статусами и опубликованными отзывами. Каждый день
-     с событиями подсвечен точками по цвету анкеты. Тап на день → список
-     событий за этот день. Идея — клиент видит активность по своим
-     анкетам в календарном виде, не вчитываясь в ленту. */
-  const CAL_COLORS = ['#2f54eb', '#52c41a', '#fa8c16', '#722ed1', '#13c2c2'];
+     Месячная сетка с тремя типами событий:
+       1. status — изменение статуса аккаунта (📋)
+       2. review — опубликованный отзыв (✍️)
+       3. planned — запланированный отзыв (📅, новый!) — из client.schedule[]
+     Запланированные дни в будущем подсвечены пунктирной оранжевой рамкой
+     и счётчиком в углу. Идея — клиент видит и активность, и план,
+     понимает когда ждать следующих отзывов. */
+  const CAL_COLORS = ['#ff7a00', '#22c55e', '#3b82f6', '#a855f7', '#14b8a6'];
   const calState = { month: new Date(), selected: new Date().toISOString().slice(0, 10) };
 
   function _gatherEvents(snap) {
@@ -253,7 +291,7 @@
     if (!snap || !snap.anketas) return events;
     snap.anketas.forEach((a, idx) => {
       const color = CAL_COLORS[idx % CAL_COLORS.length];
-      a.statuses.forEach(s => {
+      (a.statuses || []).forEach(s => {
         if (!s.date) return;
         events.push({
           date: String(s.date).slice(0, 10),
@@ -264,7 +302,7 @@
           comment: s.comment || ''
         });
       });
-      a.reviews.forEach(r => {
+      (a.reviews || []).forEach(r => {
         if (!r.date) return;
         events.push({
           date: String(r.date).slice(0, 10),
@@ -273,6 +311,19 @@
           title: 'Опубликован отзыв',
           sub: r.profileName || '',
           comment: ''
+        });
+      });
+      // Запланированные дни — из admin'ского графика (client.schedule).
+      // Получаем через snapshot.anketas[].schedule.
+      (a.schedule || []).forEach(p => {
+        if (!p.date || !p.count) return;
+        events.push({
+          date: String(p.date).slice(0, 10),
+          color, anketa: a.name || a.code,
+          kind: 'planned', icon: '📅',
+          title: `Запланировано отзыв${p.count > 1 ? 'ов' : ''} · ${p.count}`,
+          sub: '', comment: '',
+          plannedCount: p.count
         });
       });
     });
@@ -303,13 +354,21 @@
     const daysInMonth = last.getDate();
     const todayStr = new Date().toISOString().slice(0, 10);
 
-    // Легенда по анкетам
+    // Легенда: анкеты + пояснение «Запланировано».
+    // Если ни одна анкета не имеет schedule[] — легенду про план не показываем,
+    // чтобы не путать клиента (по умолчанию старые анкеты без графика).
+    const hasAnyPlanned = events.some(e => e.kind === 'planned');
     const legend = (snap.anketas || []).map((a, idx) => `
       <span class="cli-cal__legend-item">
         <span class="cli-cal__dot" style="background:${CAL_COLORS[idx % CAL_COLORS.length]}"></span>
         ${escapeHtml(a.name || a.code)}
       </span>
-    `).join('');
+    `).join('') + (hasAnyPlanned ? `
+      <span class="cli-cal__legend-item" style="margin-left:auto">
+        <span class="cli-cal__dot" style="background:transparent;border:1px dashed var(--cli-accent,#ff7a00)"></span>
+        Запланировано
+      </span>
+    ` : '');
 
     // Сетка
     const cells = [];
@@ -317,27 +376,42 @@
     for (let d = 1; d <= daysInMonth; d++) {
       const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
       const dayEvents = byDate.get(dateStr) || [];
-      // уникальные цвета
-      const uniqColors = [...new Set(dayEvents.map(e => e.color))];
+      // Разделяем планируемые от фактических — план показываем счётчиком в углу,
+      // факты — точками по цвету анкеты.
+      const factEvents    = dayEvents.filter(e => e.kind !== 'planned');
+      const plannedEvents = dayEvents.filter(e => e.kind === 'planned');
+      const plannedCount  = plannedEvents.reduce((s, e) => s + (e.plannedCount || 1), 0);
+      const uniqColors = [...new Set(factEvents.map(e => e.color))];
       const dotsHtml = uniqColors.slice(0, 3).map(c =>
         `<span class="cli-cal__dot" style="background:${c}"></span>`
       ).join('');
+      const hasOnlyPlan = plannedCount > 0 && factEvents.length === 0;
       const cls = [
         'cli-cal__cell',
         dateStr === todayStr ? 'is-today' : '',
         dateStr === calState.selected ? 'is-selected' : '',
-        dayEvents.length > 0 ? 'has-events' : ''
+        (factEvents.length || plannedCount) ? 'has-events' : '',
+        hasOnlyPlan ? 'is-planned' : ''
       ].filter(Boolean).join(' ');
       cells.push(`
         <button class="${cls}" data-date="${dateStr}">
+          ${plannedCount > 0 ? `<span class="cli-cal__planned-badge" title="Запланировано отзывов">${plannedCount}</span>` : ''}
           <span class="cli-cal__day">${d}</span>
           ${dotsHtml ? `<span class="cli-cal__dots">${dotsHtml}</span>` : ''}
         </button>
       `);
     }
 
-    // События за выбранный день
-    const selEvents = byDate.get(calState.selected) || [];
+    // События за выбранный день — сортируем «планируемые» вниз, «факт» наверх,
+    // потому что факт важнее.
+    const selEvents = [...(byDate.get(calState.selected) || [])].sort((a, b) => {
+      const order = { review: 0, status: 1, planned: 2 };
+      return (order[a.kind] || 9) - (order[b.kind] || 9);
+    });
+    const selPlannedTotal = selEvents
+      .filter(e => e.kind === 'planned')
+      .reduce((s, e) => s + (e.plannedCount || 1), 0);
+    const selFactTotal = selEvents.filter(e => e.kind !== 'planned').length;
     const selEventsHtml = selEvents.length
       ? selEvents.map(e => `
           <div class="cli-cal__event">
@@ -345,13 +419,17 @@
             <div class="cli-cal__event-body">
               <div class="cli-cal__event-title">${escapeHtml(e.title)}</div>
               <div class="cli-cal__event-meta">
-                <strong>${escapeHtml(e.anketa)}</strong> · ${escapeHtml(e.sub)}
+                <strong>${escapeHtml(e.anketa)}</strong>${e.sub ? ' · ' + escapeHtml(e.sub) : ''}
                 ${e.comment ? ' · <span style="color:var(--text-mute)">' + escapeHtml(e.comment) + '</span>' : ''}
               </div>
             </div>
           </div>
         `).join('')
-      : `<div class="cli-cal__empty">Событий за этот день нет.</div>`;
+      : `<div class="cli-cal__empty">Событий и планов на этот день нет.</div>`;
+    const selMeta = [
+      selFactTotal ? `${selFactTotal} событи${selFactTotal === 1 ? 'е' : (selFactTotal < 5 ? 'я' : 'й')}` : null,
+      selPlannedTotal ? `📅 план: ${selPlannedTotal}` : null,
+    ].filter(Boolean).join(' · ');
 
     el.innerHTML = `
       <div class="cli-cal__nav">
@@ -365,7 +443,10 @@
         <span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span>
       </div>
       <div class="cli-cal__grid">${cells.join('')}</div>
-      <div class="cli-cal__sel-title">${fmtDate(calState.selected)}</div>
+      <div class="cli-cal__sel-title">
+        ${fmtDate(calState.selected)}
+        ${selMeta ? `<span class="cli-cal__sel-title-meta">${escapeHtml(selMeta)}</span>` : ''}
+      </div>
       <div class="cli-cal__events">${selEventsHtml}</div>
     `;
 
