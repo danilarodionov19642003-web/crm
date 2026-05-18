@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>Дашборд — Mentori CRM</title>
   <link rel="stylesheet" href="../css/styles.css"/>
+  <!-- Chart.js self-hosted (jsdelivr иногда подзаблочен в РФ). -->
+  <script src="../vendor/chart.umd.min.js"></script>
   <style>
     /* Компактный дашборд + округлые формы + цветовая разбивка по блокам. */
     .page-title { margin-bottom: 18px; }
@@ -281,6 +283,12 @@
     window.addEventListener('cloudstate:updated', renderMonthKpis);
 
     /* ---- График доход/расход по месяцам ---- */
+    try {
+    if (typeof Chart === 'undefined') {
+      document.getElementById('revChart').parentElement.innerHTML =
+        '<div class="empty">Chart.js не загрузился. Проверь что /vendor/chart.umd.min.js доступен.</div>';
+      throw new Error('Chart undefined');
+    }
     const monthly = Store.monthlyStats();
     document.getElementById('chartMonths').textContent = monthly.length + ' мес.';
     const revCtx = document.getElementById('revChart').getContext('2d');
@@ -314,8 +322,10 @@
         }
       }
     });
+    } catch (e) { console.warn('Chart render failed:', e); }
 
     /* ---- Ближайшие платежи (5 строк) ---- */
+    try {
     const today = new Date(todayISO());
     const subs = [...(state.subscriptions || [])]
       .filter(s => s.nextDate)
@@ -333,6 +343,7 @@
           else                   badge = `<span class="badge badge--gray">через ${s.days} дн.</span>`;
           return `<tr><td>${escapeHtml(s.name)}</td><td class="num">${fmtMoney(s.amount)}</td><td>${badge}</td></tr>`;
         }).join('');
+    } catch (e) { console.warn('Subs render failed:', e); }
   });
 
   function escapeHtml(s) {

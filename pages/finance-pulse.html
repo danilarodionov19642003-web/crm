@@ -211,6 +211,42 @@
           </div>
         </div>
 
+        <!-- ─────────── Lifecycle себестоимости (прокси × месяцы работы) ─────────── -->
+        <div class="pulse-panel">
+          <div class="pulse-panel__head">
+            <h3>📉 Lifecycle — реальная себестоимость с учётом прокси</h3>
+            <div class="spacer"></div>
+            <span class="muted" style="font-size:11px">фикс размазывается по месяцам активности</span>
+          </div>
+          <div class="pulse-panel__body" style="padding-top:4px">
+            <p class="muted" style="margin:0 0 10px;font-size:11px">
+              Каждый месяц фикс (прокси+антидетект) делится между активными клиентами этого месяца.
+              Чем дольше клиент в работе — тем больше фикса на нём накопилось. Отзывы оцениваются по
+              фактической ставке исполнителя (через <code>review.authorEmail</code>).
+            </p>
+          </div>
+          <div class="table-wrap">
+            <table class="table pulse-table">
+              <thead>
+                <tr>
+                  <th>Код</th>
+                  <th>Клиент</th>
+                  <th class="num">Старт</th>
+                  <th class="num">Мес.</th>
+                  <th class="num">Готово</th>
+                  <th class="num">Расход на отзывы</th>
+                  <th class="num">Доля фикса</th>
+                  <th class="num">Σ потрачено</th>
+                  <th class="num">Заплатил</th>
+                  <th class="num">Маржа сейчас</th>
+                </tr>
+              </thead>
+              <tbody id="lifecycleRows"></tbody>
+              <tfoot id="lifecycleFoot"></tfoot>
+            </table>
+          </div>
+        </div>
+
         <!-- ─────────── Календарь нагрузки на 8 недель ─────────── -->
         <div class="pulse-panel">
           <div class="pulse-panel__head">
@@ -471,6 +507,106 @@
       `;
     }
 
+    // ── Helpers: реальная себестоимость с учётом фикса ────────────
+    function reviewsForClient(c) {
+      const code = String(c.code || '').toLowerCase().trim();
+      if (!code) return [];
+      const mentorIds = new Set((Store.state.mentors || [])
+        .filter(m => String(m.code || '').toLowerCase().trim() === code).map(m => m.id));
+      if (!mentorIds.size) return [];
+      // Считаем «Готов»: approved review + статус 🎯 Готов
+      const doneKeys = new Set();
+      (Store.state.profileStatuses || []).forEach(s => {
+        if (s.status === '🎯 Готов' && mentorIds.has(s.mentorId))
+          doneKeys.add(s.mentorId + '::' + s.profileId);
+      });
+      return (Store.state.reviews || []).filter(r =>
+        r.moderation === 'approved' &&
+        mentorIds.has(r.mentorId) &&
+        doneKeys.has(r.mentorId + '::' + r.profileId)
+      );
+    }
+    function rateForAuthor(email) {
+      const e = String(email || '').toLowerCase().trim();
+      const emp = (Store.state.employees || []).find(x => String(x.email || '').toLowerCase().trim() === e);
+      return Number(emp && emp.ratePerReview) || 0;  // 0 если сам/email не найден
+    }
+    function monthsBetween(startISO) {
+      if (!startISO) return 0;
+      const start = new Date(startISO);
+      if (isNaN(start)) return 0;
+      const now = new Date();
+      const ms = now - start;
+      const days = ms / 86400000;
+      return Math.max(1, Math.ceil(days / 30.4375));
+    }
+    function spentOnReviewsActual(c, phoneCost) {
+      // По факту: сумма (100 ₽ номер + ставка автора) по каждому done-отзыву
+      const reviews = reviewsForClient(c);
+      return reviews.reduce((sum, r) =>
+        sum + Number(phoneCost) + rateForAuthor(r.authorEmail), 0);
+    }
+
+    // ── Render: Lifecycle (реальная себест-сть по клиенту) ────────
+    function renderLifecycleTable() {
+      const f = fin();
+      const clients = activeClients();
+      const numActive = clients.length || 1;
+      const fixMonthly = fixedMonthly(f);
+      const fixPerClientPerMonth = fixMonthly / numActive;
+      const tbody = document.getElementById('lifecycleRows');
+      const tfoot = document.getElementById('lifecycleFoot');
+
+      if (!clients.length) {
+        tbody.innerHTML = '<tr><td colspan="10" class="empty">Нет активных клиентов</td></tr>';
+        tfoot.innerHTML = '';
+        return;
+      }
+
+      const rows = clients.map(c => {
+        const startISO = c.date || '';
+        const months = monthsBetween(startISO);
+        const fixShare = months * fixPerClientPerMonth;
+        const reviewCost = spentOnReviewsActual(c, f.phoneCostPerReview);
+        const totalSpent = reviewCost + fixShare;
+        const paid = +c.paid || 0;
+        const margin = paid - totalSpent;
+        const done = deriveDone(c);
+        return { c, startISO, months, fixShare, reviewCost, totalSpent, paid, margin, done };
+      });
+
+      tbody.innerHTML = rows.map(r => `
+        <tr>
+          <td><span class="pill gray">${escapeHtml(r.c.code || '—')}</span></td>
+          <td><strong>${escapeHtml(r.c.name || '—')}</strong></td>
+          <td class="num" style="font-size:11px">${r.startISO ? new Date(r.startISO).toLocaleDateString('ru-RU', {day:'2-digit',month:'2-digit',year:'2-digit'}) : '<span class="pill red">не задан</span>'}</td>
+          <td class="num num-mono">${r.months || '<span class="muted">—</span>'}</td>
+          <td class="num num-mono">${r.done}</td>
+          <td class="num num-mono ${r.reviewCost > 0 ? 'neg' : ''}">${fmtMoney(r.reviewCost)}</td>
+          <td class="num num-mono ${r.fixShare > 0 ? 'neg' : ''}">${fmtMoney(r.fixShare)}</td>
+          <td class="num num-mono"><strong class="neg">${fmtMoney(r.totalSpent)}</strong></td>
+          <td class="num num-mono pos">${fmtMoney(r.paid)}</td>
+          <td class="num num-mono"><strong class="${r.margin >= 0 ? 'pos' : 'neg'}">${fmtMoney(r.margin)}</strong></td>
+        </tr>
+      `).join('');
+
+      const tFix    = rows.reduce((s, r) => s + r.fixShare, 0);
+      const tReview = rows.reduce((s, r) => s + r.reviewCost, 0);
+      const tSpent  = rows.reduce((s, r) => s + r.totalSpent, 0);
+      const tPaid   = rows.reduce((s, r) => s + r.paid, 0);
+      const tMargin = rows.reduce((s, r) => s + r.margin, 0);
+      tfoot.innerHTML = `
+        <tr style="font-weight:600;border-top:1px solid var(--border-strong)">
+          <td colspan="5">ИТОГО · фикс/клиент/мес: ${fmtMoney(fixPerClientPerMonth)}</td>
+          <td class="num num-mono neg">${fmtMoney(tReview)}</td>
+          <td class="num num-mono neg">${fmtMoney(tFix)}</td>
+          <td class="num num-mono"><strong class="neg">${fmtMoney(tSpent)}</strong></td>
+          <td class="num num-mono pos">${fmtMoney(tPaid)}</td>
+          <td class="num num-mono"><strong class="${tMargin >= 0 ? 'pos' : 'neg'}">${fmtMoney(tMargin)}</strong></td>
+        </tr>
+      `;
+    }
+
     // ── Render: календарь нагрузки на 8 недель ───────────────────
     function renderCalendar() {
       const f = fin();
@@ -577,11 +713,12 @@
 
     // ── Render всё ────────────────────────────────────────────────
     function renderAll() {
-      renderTopCards();
-      renderCloseTable();
-      renderCalendar();
-      renderNastyaCalc();
-      renderFixedBox();
+      try { renderTopCards(); }      catch (e) { console.warn('topCards:', e); }
+      try { renderCloseTable(); }    catch (e) { console.warn('closeTable:', e); }
+      try { renderLifecycleTable();} catch (e) { console.warn('lifecycle:', e); }
+      try { renderCalendar(); }      catch (e) { console.warn('calendar:', e); }
+      try { renderNastyaCalc(); }    catch (e) { console.warn('nastyaCalc:', e); }
+      try { renderFixedBox(); }      catch (e) { console.warn('fixedBox:', e); }
     }
 
     // ── Wiring ────────────────────────────────────────────────────
