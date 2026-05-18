@@ -247,7 +247,15 @@
   let pullCompleted = false;         // true после первого успешного fetchRemote
   let remoteSnapshot = null;         // последний известный облачный state — для safety-check
   let serverUpdatedAt = null;        // updated_at последней версии, которую мы видели/писали
-  const BIG_COLLECTIONS = ['mentors','profiles','ipLogs','phones','accountRegs','profileStatuses'];
+  // «Большие» коллекции — те потеря которых однозначно катастрофа.
+  // anti-wipe защита: если ВСЕ они пусты, а в облаке хоть какая-то — push
+  // блокируется. Список расширен на clients/income/expenses потому что
+  // финансовые данные так же критичны, как и аккаунты.
+  const BIG_COLLECTIONS = [
+    'mentors', 'profiles', 'ipLogs', 'phones',
+    'accountRegs', 'profileStatuses',
+    'clients', 'income', 'expenses', 'subscriptions', 'reviews',
+  ];
 
   /** Возвращает true, если state подозрительно пуст по всем «большим» коллекциям. */
   function isEffectivelyEmpty(s) {
