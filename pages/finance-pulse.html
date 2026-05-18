@@ -247,6 +247,70 @@
           </div>
         </div>
 
+        <!-- ─────────── KPI / индикаторы ─────────── -->
+        <div class="group-title" style="display:flex;align-items:center;gap:10px;margin:22px 0 12px;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--text-2,#a0a0a0)">
+          <span style="width:8px;height:8px;border-radius:50%;background:#3b82f6;box-shadow:0 0 0 4px rgba(59,130,246,0.15)"></span>
+          📊 Финансовые показатели
+          <span style="flex:1;height:1px;background:linear-gradient(to right,var(--border),transparent)"></span>
+        </div>
+
+        <div class="pulse-grid pulse-grid--4" style="margin-bottom:12px">
+          <div class="pulse-card" id="kpiMargin">
+            <div class="pulse-card__label">📈 Маржинальность Σ</div>
+            <div class="pulse-card__value num-mono" id="kpiMarginValue">— %</div>
+            <div class="pulse-card__sub" id="kpiMarginSub">по активным клиентам</div>
+          </div>
+          <div class="pulse-card" id="kpiBreakeven">
+            <div class="pulse-card__label">🎯 Выход из минуса</div>
+            <div class="pulse-card__value num-mono" id="kpiBreakevenValue">—</div>
+            <div class="pulse-card__sub" id="kpiBreakevenSub">прогноз даты по графику</div>
+          </div>
+          <div class="pulse-card" id="kpiBurn">
+            <div class="pulse-card__label">🔥 Burn-rate</div>
+            <div class="pulse-card__value num-mono" id="kpiBurnValue">— ₽</div>
+            <div class="pulse-card__sub" id="kpiBurnSub">расход в месяц при текущих</div>
+          </div>
+          <div class="pulse-card" id="kpiRunway">
+            <div class="pulse-card__label">⏳ Runway</div>
+            <div class="pulse-card__value num-mono" id="kpiRunwayValue">—</div>
+            <div class="pulse-card__sub" id="kpiRunwaySub">сколько месяцев протянем</div>
+          </div>
+        </div>
+
+        <!-- Маржинальность по клиентам -->
+        <div class="pulse-panel">
+          <div class="pulse-panel__head">
+            <h3>🚦 Маржинальность по клиентам</h3>
+            <div class="spacer"></div>
+            <span class="muted" style="font-size:11px">🟢 ≥ 30% · 🟡 15–30% · 🔴 &lt; 15%</span>
+          </div>
+          <div class="table-wrap">
+            <table class="table pulse-table">
+              <thead>
+                <tr>
+                  <th>Код</th>
+                  <th>Клиент / тариф</th>
+                  <th class="num">Выручка (полная)</th>
+                  <th class="num">Себест. полная</th>
+                  <th class="num">Маржа абс.</th>
+                  <th class="num">Маржа %</th>
+                  <th>Статус</th>
+                </tr>
+              </thead>
+              <tbody id="marginRows"></tbody>
+              <tfoot id="marginFoot"></tfoot>
+            </table>
+          </div>
+        </div>
+
+        <!-- Алерты -->
+        <div class="pulse-panel" id="alertsBox">
+          <div class="pulse-panel__head">
+            <h3>⚠ Алерты и рекомендации</h3>
+          </div>
+          <div class="pulse-panel__body" id="alertsList"></div>
+        </div>
+
         <!-- ─────────── Календарь нагрузки на 8 недель ─────────── -->
         <div class="pulse-panel">
           <div class="pulse-panel__head">
@@ -619,6 +683,286 @@
       `;
     }
 
+    // ── Helpers: полная экономика клиента (для KPI/маржинальности) ───────
+    // Полная себестоимость = (сделанные отзывы по фактической ставке автора)
+    //                       + (оставшиеся × выбранный сценарий ставки)
+    //                       + (доля фикса за месяцы активности с trackingStart)
+    function fullEconomicsForClient(c) {
+      const f = fin();
+      const numActive = activeClients().length || 1;
+      const fixPerClientPerMonth = fixedMonthly(f) / numActive;
+      const months = monthsBetween(c.date);
+      const ordered = +c.ordered || 0;
+      const done = deriveDone(c);
+      const left = Math.max(0, ordered - done);
+      const ratePerLeft = rateForScenario(f);  // 100 + scenario
+      const reviewCostActual = spentOnReviewsActual(c, f.phoneCostPerReview);
+      const reviewCostFuture = left * ratePerLeft;
+      const fixShare = months * fixPerClientPerMonth;
+      const totalCost = reviewCostActual + reviewCostFuture + fixShare;
+      const totalRevenue = (+c.paid || 0) + (+c.remain || 0);
+      const margin = totalRevenue - totalCost;
+      const marginPct = totalRevenue > 0 ? (margin / totalRevenue * 100) : 0;
+      return { totalRevenue, totalCost, margin, marginPct };
+    }
+    function marginTier(pct) {
+      if (pct >= 30) return { tier: 'green', label: '🟢 Отлично', cls: 'pos' };
+      if (pct >= 15) return { tier: 'yellow', label: '🟡 Норма',  cls: '' };
+      return                  { tier: 'red',    label: '🔴 Режь косты', cls: 'neg' };
+    }
+
+    // ── Прогноз кассы по неделям (для «выход из минуса») ──────────────────
+    // Идём вперёд недельным шагом, на каждой неделе:
+    //   приходы  = remain клиента в неделю, когда у него заканчиваются отзывы
+    //              (последний отзыв по графику или просто пропорционально темпу)
+    //   расходы  = reviewsThisWeek × ratePerLeft + fixWeekly
+    //   cumulative = balance + Σприход − Σрасход
+    // Возвращаем дату когда cumulative впервые >= 0 (или null если > 52 нед).
+    function forecastBreakeven(maxWeeks = 52) {
+      const f = fin();
+      const ratePerLeft = rateForScenario(f);
+      const fixWeekly = fixedMonthly(f) / 4.345;
+      const clients = activeClients();
+      const today = new Date(); today.setHours(0,0,0,0);
+      const ws0 = weekStart(today);
+      // Состояние по клиенту: сколько осталось отзывов, выплачен ли второй транш
+      const state = clients.map(c => ({
+        c,
+        left: Math.max(0, (+c.ordered||0) - deriveDone(c)),
+        remainCash: +c.remain || 0,
+        paidOut: false,
+      }));
+      let cum = +f.balance || 0;
+      if (cum >= 0 && clients.every(c => (+c.remain||0) === 0)) return { weeks: 0, alreadyPositive: true };
+
+      for (let wk = 0; wk < maxWeeks; wk++) {
+        const ws = new Date(ws0); ws.setDate(ws.getDate() + wk*7);
+        const we = new Date(ws);  we.setDate(ws.getDate() + 6);
+        let reviewsThisWeek = 0;
+        // приходы: клиенты которые ИМЕННО на этой неделе доделывают последний отзыв
+        let incomeThisWeek = 0;
+        state.forEach(st => {
+          if (st.left <= 0) return;
+          const planned = reviewsInWeek(st.c, ws, we);
+          const actual = Math.min(planned, st.left);
+          reviewsThisWeek += actual;
+          st.left -= actual;
+          if (st.left === 0 && !st.paidOut) {
+            incomeThisWeek += st.remainCash;
+            st.paidOut = true;
+          }
+        });
+        const costThisWeek = reviewsThisWeek * ratePerLeft + fixWeekly;
+        cum = cum + incomeThisWeek - costThisWeek;
+        if (cum >= 0) {
+          const d = new Date(ws); d.setDate(d.getDate() + 7);  // конец этой недели
+          return { weeks: wk + 1, date: d, alreadyPositive: false };
+        }
+      }
+      return { weeks: maxWeeks, date: null, neverInRange: true };
+    }
+
+    // ── Render: KPI карточки + таблица + алерты ──────────────────────────
+    function renderKpiSection() {
+      const f = fin();
+      const clients = activeClients();
+      if (!clients.length) {
+        document.getElementById('kpiMarginValue').textContent = '—';
+        document.getElementById('kpiBurnValue').textContent = '—';
+        document.getElementById('kpiRunwayValue').textContent = '—';
+        document.getElementById('kpiBreakevenValue').textContent = '—';
+        document.getElementById('marginRows').innerHTML = '<tr><td colspan="7" class="empty">Нет активных клиентов</td></tr>';
+        document.getElementById('marginFoot').innerHTML = '';
+        document.getElementById('alertsList').innerHTML = '<p class="muted" style="margin:0;font-size:12px">Нет активных клиентов — нечего анализировать.</p>';
+        return;
+      }
+
+      const econs = clients.map(c => ({ c, ...fullEconomicsForClient(c) }));
+      const tRev    = econs.reduce((s, e) => s + e.totalRevenue, 0);
+      const tCost   = econs.reduce((s, e) => s + e.totalCost, 0);
+      const tMargin = tRev - tCost;
+      const tMarginPct = tRev > 0 ? (tMargin / tRev * 100) : 0;
+
+      // 1) Маржинальность Σ
+      const mTier = marginTier(tMarginPct);
+      const marginCard = document.getElementById('kpiMargin');
+      const marginValueEl = document.getElementById('kpiMarginValue');
+      marginValueEl.textContent = tMarginPct.toFixed(1) + ' %';
+      marginCard.classList.remove('up','down','warn');
+      if (mTier.tier === 'green')  marginCard.classList.add('up');
+      else if (mTier.tier === 'yellow') marginCard.classList.add('warn');
+      else                                marginCard.classList.add('down');
+      document.getElementById('kpiMarginSub').innerHTML =
+        `${fmtMoney(tMargin)} с ${clients.length} активных · ${mTier.label}`;
+
+      // 2) Burn-rate (₽/мес при текущих)
+      const ratePerLeft = rateForScenario(f);
+      const weeklyTotalPace = clients.reduce((s, c) => s + (+c.weeklyPace || 0), 0);
+      // Если есть schedule — используем средний reviewsPerWeek за ближайшие 4 нед
+      const today = new Date(); today.setHours(0,0,0,0);
+      const wsNow = weekStart(today);
+      let nextMonthReviews = 0;
+      const hasSched = clients.some(c => Array.isArray(c.schedule) && c.schedule.length > 0);
+      if (hasSched) {
+        for (let i = 0; i < 4; i++) {
+          const ws = new Date(wsNow); ws.setDate(ws.getDate() + i*7);
+          const we = new Date(ws);    we.setDate(ws.getDate() + 6);
+          clients.forEach(c => nextMonthReviews += reviewsInWeek(c, ws, we));
+        }
+      } else {
+        nextMonthReviews = weeklyTotalPace * 4.345;
+      }
+      const burnMonthly = nextMonthReviews * ratePerLeft + fixedMonthly(f);
+      const burnCard = document.getElementById('kpiBurn');
+      document.getElementById('kpiBurnValue').textContent = fmtMoney(Math.round(burnMonthly));
+      document.getElementById('kpiBurnSub').textContent =
+        `${Math.round(nextMonthReviews)} отзывов/мес × ${ratePerLeft}₽ + фикс ${fmtMoney(fixedMonthly(f))}`;
+      burnCard.classList.remove('up','down','warn');
+
+      // 3) Runway (мес = balance / burn)
+      const runwayCard = document.getElementById('kpiRunway');
+      const runwayMonths = burnMonthly > 0 ? ((+f.balance || 0) / burnMonthly) : 0;
+      document.getElementById('kpiRunwayValue').textContent = (runwayMonths >= 0 ? runwayMonths.toFixed(1) : '0') + ' мес';
+      runwayCard.classList.remove('up','down','warn');
+      if (runwayMonths < 0.5)      runwayCard.classList.add('down');
+      else if (runwayMonths < 1.5) runwayCard.classList.add('warn');
+      else                          runwayCard.classList.add('up');
+      document.getElementById('kpiRunwaySub').textContent =
+        `при балансе ${fmtMoney(f.balance || 0)} без новых клиентов`;
+
+      // 4) Выход из минуса
+      const be = forecastBreakeven();
+      const beCard = document.getElementById('kpiBreakeven');
+      beCard.classList.remove('up','down','warn');
+      if (be.alreadyPositive) {
+        document.getElementById('kpiBreakevenValue').textContent = '✓ В плюсе';
+        document.getElementById('kpiBreakevenSub').textContent = 'свободный кэш ≥ 0 + долгов нет';
+        beCard.classList.add('up');
+      } else if (be.date) {
+        document.getElementById('kpiBreakevenValue').textContent =
+          be.date.toLocaleDateString('ru-RU', {day:'2-digit', month:'short'});
+        document.getElementById('kpiBreakevenSub').textContent =
+          `через ${be.weeks} нед · по ${hasSched ? 'графику' : 'темпу'}`;
+        if (be.weeks <= 4)       beCard.classList.add('up');
+        else if (be.weeks <= 12) beCard.classList.add('warn');
+        else                      beCard.classList.add('down');
+      } else {
+        document.getElementById('kpiBreakevenValue').textContent = '> 1 года';
+        document.getElementById('kpiBreakevenSub').textContent =
+          'нужно больше клиентов или резать костs';
+        beCard.classList.add('down');
+      }
+
+      // ── Таблица маржинальности по клиентам ─────────────────────────────
+      const sorted = [...econs].sort((a, b) => a.marginPct - b.marginPct);
+      document.getElementById('marginRows').innerHTML = sorted.map(e => {
+        const t = marginTier(e.marginPct);
+        return `
+          <tr>
+            <td><span class="pill gray">${escapeHtml(e.c.code || '—')}</span></td>
+            <td><strong>${escapeHtml(e.c.name || '—')}</strong><br><span class="muted" style="font-size:10px">${escapeHtml(e.c.tariff || '')}</span></td>
+            <td class="num num-mono">${fmtMoney(e.totalRevenue)}</td>
+            <td class="num num-mono neg">${fmtMoney(e.totalCost)}</td>
+            <td class="num num-mono"><strong class="${e.margin > 0 ? 'pos' : 'neg'}">${fmtMoney(e.margin)}</strong></td>
+            <td class="num num-mono"><strong class="${t.cls}">${e.marginPct.toFixed(1)}%</strong></td>
+            <td><span class="pill ${t.tier === 'green' ? 'green' : (t.tier === 'red' ? 'red' : 'gray')}">${t.label}</span></td>
+          </tr>
+        `;
+      }).join('');
+      document.getElementById('marginFoot').innerHTML = `
+        <tr style="font-weight:600;border-top:1px solid var(--border-strong)">
+          <td colspan="2">ИТОГО</td>
+          <td class="num num-mono">${fmtMoney(tRev)}</td>
+          <td class="num num-mono neg">${fmtMoney(tCost)}</td>
+          <td class="num num-mono"><strong class="${tMargin > 0 ? 'pos' : 'neg'}">${fmtMoney(tMargin)}</strong></td>
+          <td class="num num-mono"><strong class="${marginTier(tMarginPct).cls}">${tMarginPct.toFixed(1)}%</strong></td>
+          <td><span class="pill ${marginTier(tMarginPct).tier === 'green' ? 'green' : (marginTier(tMarginPct).tier === 'red' ? 'red' : 'gray')}">${marginTier(tMarginPct).label}</span></td>
+        </tr>
+      `;
+
+      // ── Алерты ─────────────────────────────────────────────────────────
+      const alerts = [];
+      // 1. Клиенты с отрицательной маржой
+      const negClients = econs.filter(e => e.margin < 0);
+      if (negClients.length) {
+        alerts.push({
+          level: 'red',
+          icon: '🔴',
+          text: `<strong>${negClients.length} клиент${negClients.length === 1 ? '' : (negClients.length < 5 ? 'а' : 'ов')}</strong> с отрицательной маржой: ${negClients.map(e => e.c.code || e.c.name).join(', ')}. Пересмотри тариф или ускорь работу — каждый месяц этот клиент жрёт фикс.`
+        });
+      }
+      // 2. Низкомаржинальные (15-30%)
+      const lowClients = econs.filter(e => e.marginPct >= 0 && e.marginPct < 15);
+      if (lowClients.length) {
+        alerts.push({
+          level: 'yellow',
+          icon: '🟡',
+          text: `<strong>${lowClients.length}</strong> клиент${lowClients.length === 1 ? '' : 'ов'} с маржой меньше 15%: ${lowClients.map(e => e.c.code).join(', ')}. Подними цену на следующих или ускорь темп.`
+        });
+      }
+      // 3. Runway критичный
+      if (runwayMonths < 1 && burnMonthly > 0) {
+        alerts.push({
+          level: 'red',
+          icon: '⏳',
+          text: `Runway меньше месяца (<strong>${runwayMonths.toFixed(1)} мес</strong>). НЕ бери новых клиентов пока не получишь второй транш минимум с 2 текущих.`
+        });
+      } else if (runwayMonths < 2 && burnMonthly > 0) {
+        alerts.push({
+          level: 'yellow',
+          icon: '⏳',
+          text: `Runway низкий (${runwayMonths.toFixed(1)} мес). Следи за поступлениями, не бери крупных новых обязательств.`
+        });
+      }
+      // 4. Темп / график не проставлен
+      const noPaceClients = clients.filter(c => !(+c.weeklyPace || 0) && !(Array.isArray(c.schedule) && c.schedule.length > 0));
+      if (noPaceClients.length) {
+        alerts.push({
+          level: 'gray',
+          icon: '📅',
+          text: `У <strong>${noPaceClients.length}</strong> активных клиентов не задан темп или график (${noPaceClients.slice(0, 5).map(c => c.code || c.name).join(', ')}${noPaceClients.length > 5 ? '…' : ''}). Прогноз кассы для них будет 0 — лучше проставить.`
+        });
+      }
+      // 5. Старт работы не задан
+      const noStartClients = clients.filter(c => !c.date);
+      if (noStartClients.length) {
+        alerts.push({
+          level: 'gray',
+          icon: '🗓',
+          text: `У <strong>${noStartClients.length}</strong> клиентов не задан старт работы — фикс на них не размазывается. Заполни «Старт» в таблице клиентов.`
+        });
+      }
+      // 6. Маржинальность Σ упала
+      // (без истории — простое предупреждение если общая < 20%)
+      if (tMarginPct < 20 && tMarginPct > 0) {
+        alerts.push({
+          level: 'yellow',
+          icon: '📉',
+          text: `Общая маржинальность всего ${tMarginPct.toFixed(1)}% — низковато. Цель: ≥ 30%. Подумай о пересмотре цен или ставки Насти.`
+        });
+      } else if (tMarginPct >= 35) {
+        alerts.push({
+          level: 'green',
+          icon: '✅',
+          text: `Общая маржинальность ${tMarginPct.toFixed(1)}% — здоровый показатель. Можно думать о росте: больше клиентов / повышение ставок.`
+        });
+      }
+
+      if (!alerts.length) {
+        document.getElementById('alertsList').innerHTML =
+          '<p class="muted" style="margin:0;font-size:12px">🟢 Всё в норме, критичных проблем не вижу.</p>';
+      } else {
+        const colorMap = { red: 'rgba(239,68,68,0.4)', yellow: 'rgba(255,154,60,0.4)', green: 'rgba(34,197,94,0.4)', gray: 'rgba(160,160,160,0.3)' };
+        const bgMap    = { red: 'rgba(239,68,68,0.06)', yellow: 'rgba(255,154,60,0.06)', green: 'rgba(34,197,94,0.06)', gray: 'rgba(160,160,160,0.04)' };
+        document.getElementById('alertsList').innerHTML = alerts.map(a => `
+          <div style="display:flex;gap:10px;padding:10px 12px;margin-bottom:8px;background:${bgMap[a.level]};border:1px solid ${colorMap[a.level]};border-radius:14px;font-size:12px">
+            <div style="font-size:16px;line-height:1">${a.icon}</div>
+            <div>${a.text}</div>
+          </div>
+        `).join('');
+      }
+    }
+
     // ── Render: календарь нагрузки на 8 недель ───────────────────
     // Логика: для каждой недели считаем суммарное число отзывов по всем
     // активным клиентам. Если у клиента есть schedule[] (точный план по
@@ -758,6 +1102,7 @@
       try { renderTopCards(); }      catch (e) { console.warn('topCards:', e); }
       try { renderCloseTable(); }    catch (e) { console.warn('closeTable:', e); }
       try { renderLifecycleTable();} catch (e) { console.warn('lifecycle:', e); }
+      try { renderKpiSection(); }    catch (e) { console.warn('kpiSection:', e); }
       try { renderCalendar(); }      catch (e) { console.warn('calendar:', e); }
       try { renderNastyaCalc(); }    catch (e) { console.warn('nastyaCalc:', e); }
       try { renderFixedBox(); }      catch (e) { console.warn('fixedBox:', e); }
