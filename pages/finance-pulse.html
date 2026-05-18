@@ -216,13 +216,13 @@
           <div class="pulse-panel__head">
             <h3>📉 Lifecycle — реальная себестоимость с учётом прокси</h3>
             <div class="spacer"></div>
-            <span class="muted" style="font-size:11px">фикс размазывается по месяцам активности</span>
+            <span class="muted" style="font-size:11px" id="lifecycleMeta">учёт фикса с —</span>
           </div>
           <div class="pulse-panel__body" style="padding-top:4px">
             <p class="muted" style="margin:0 0 10px;font-size:11px">
-              Каждый месяц фикс (прокси+антидетект) делится между активными клиентами этого месяца.
-              Чем дольше клиент в работе — тем больше фикса на нём накопилось. Отзывы оцениваются по
-              фактической ставке исполнителя (через <code>review.authorEmail</code>).
+              Фикс (прокси+антидетект) накапливается на клиенте с момента «даты начала учёта» (см. блок
+              ⚙️ ниже). Всё что было до этой даты — не вешается, считается сожжённым прошлым.
+              Отзывы оцениваются по фактической ставке исполнителя (через <code>review.authorEmail</code>).
             </p>
           </div>
           <div class="table-wrap">
@@ -325,6 +325,10 @@
       proxyEach: 2250,
       antidetectMonthly: 1200,
       scenario: 'self',
+      // Дата с которой начинаем учитывать фикс (прокси/антидетект).
+      // До этой даты — считаем как «сожжённое прошлое», не вешаем на клиентов.
+      // По умолчанию: 1 мая 2026 = когда внедрили отчётность.
+      trackingStart: '2026-05-01',
     };
     function fin() {
       Store.state.finance ??= {};
@@ -532,13 +536,16 @@
       return Number(emp && emp.ratePerReview) || 0;  // 0 если сам/email не найден
     }
     function monthsBetween(startISO) {
-      if (!startISO) return 0;
-      const start = new Date(startISO);
-      if (isNaN(start)) return 0;
+      // Эффективный старт = max(client.date, trackingStart).
+      // Всё что до trackingStart — не считаем (сожжённое прошлое).
+      const f = fin();
+      const trackingStart = new Date(f.trackingStart || '2026-05-01');
+      let start = startISO ? new Date(startISO) : null;
+      if (!start || isNaN(start) || start < trackingStart) start = trackingStart;
       const now = new Date();
-      const ms = now - start;
-      const days = ms / 86400000;
-      return Math.max(1, Math.ceil(days / 30.4375));
+      if (now <= start) return 0;
+      const days = (now - start) / 86400000;
+      return Math.max(0, Math.ceil(days / 30.4375));
     }
     function spentOnReviewsActual(c, phoneCost) {
       // По факту: сумма (100 ₽ номер + ставка автора) по каждому done-отзыву
@@ -556,6 +563,11 @@
       const fixPerClientPerMonth = fixMonthly / numActive;
       const tbody = document.getElementById('lifecycleRows');
       const tfoot = document.getElementById('lifecycleFoot');
+
+      // Подпись над таблицей: с какой даты считаем
+      const ts = f.trackingStart || '2026-05-01';
+      document.getElementById('lifecycleMeta').textContent =
+        'учёт фикса с ' + new Date(ts).toLocaleDateString('ru-RU', {day:'2-digit', month:'long', year:'numeric'});
 
       if (!clients.length) {
         tbody.innerHTML = '<tr><td colspan="10" class="empty">Нет активных клиентов</td></tr>';
@@ -697,13 +709,20 @@
           <span style="font-size:10px">${f2.suffix}</span>
         </label>
       `).join('') + `
+        <label class="muted" style="font-size:11px; grid-column: 1 / -1">
+          Дата начала учёта фикса (прокси/антидетект)
+          <input type="date" data-key="trackingStart" value="${f.trackingStart || '2026-05-01'}"
+                 style="display:block;margin-top:4px;width:200px;padding:6px 10px;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--text)">
+          <span style="font-size:10px">всё что до этой даты — не вешается на клиентов (сожжённое прошлое)</span>
+        </label>
         <div style="grid-column: 1 / -1; padding: 10px; background: var(--bg); border-radius: 10px; font-size: 12px">
           <strong>Итого фикс в месяц:</strong> <span id="fixedTotal" class="num-mono"></span>
         </div>
       `;
       box.querySelectorAll('input[data-key]').forEach(inp => {
         inp.addEventListener('change', () => {
-          fin()[inp.dataset.key] = Number(inp.value) || 0;
+          const v = inp.type === 'date' ? inp.value : (Number(inp.value) || 0);
+          fin()[inp.dataset.key] = v;
           saveFin();
           renderAll();
         });
