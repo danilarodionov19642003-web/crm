@@ -586,13 +586,24 @@
         });
         if (!res.ok) { console.warn('[sched] responses fetch failed', res.status); return; }
         const rows = await res.json();
-        // Берём ПОСЛЕДНИЙ ответ на пару (mentor_id, date). Сортировка уже desc
-        // по responded_at, поэтому первое вхождение — самое свежее.
-        const map = new Map();
+        // Дедуп: для пары (mentor_id, date) приоритет финальным ответам
+        // (yes/no) над asked. ВНУТРИ финальных — самый свежий по responded_at.
+        // ВНУТРИ asked — самый свежий по notified_at. Это нужно потому что
+        // если /run_morning запустить ПОВТОРНО после того как клиент уже
+        // ответил, в БД появится новая строка `asked` и без приоритета она
+        // перетёрла бы реальный ответ в дедупе.
+        const finals = new Map();
+        const askeds = new Map();
         for (const r of rows) {
           const key = (r.mentor_id || r.client_code || '') + '|' + r.schedule_date;
-          if (!map.has(key)) map.set(key, r);
+          if (r.response === 'yes' || r.response === 'no') {
+            if (!finals.has(key)) finals.set(key, r);     // первый — самый свежий по responded_at desc
+          } else {
+            if (!askeds.has(key)) askeds.set(key, r);
+          }
         }
+        const map = new Map(askeds);
+        for (const [k, v] of finals) map.set(k, v);        // финальный перекрывает asked
         schedState.responses = map;
       } catch (e) {
         console.warn('[sched] responses load error', e);
@@ -614,11 +625,18 @@
       const sorted = [...clients].sort((a,b) => (a.code||'').localeCompare(b.code||'','ru',{numeric:true}));
       sorted.forEach((c, idx) => {
         const color = CAL_COLORS[idx % CAL_COLORS.length];
+        // Резолвим mentor.id по client.code (бот пишет в БД именно mentor_id)
+        const cCode = String(c.code || '').toLowerCase().trim();
+        const mentor = (Store.state.mentors || []).find(
+          m => String(m.code || '').toLowerCase().trim() === cCode
+        );
+        const mentorId = mentor ? mentor.id : null;
         (c.schedule || []).forEach(s => {
           if (!s.date || !s.count) return;
           if (!map.has(s.date)) map.set(s.date, []);
           map.get(s.date).push({
             clientId: c.id, code: c.code, name: c.name,
+            mentorId,                                       // ← добавлено для match с schedule_responses.mentor_id
             tariff: c.tariff || '', ordered: +c.ordered || 0,
             done: deriveDoneLocal(c), count: +s.count || 0, color
           });
