@@ -587,19 +587,25 @@
         });
         if (!res.ok) { console.warn('[sched] responses fetch failed', res.status); return; }
         const rows = await res.json();
-        // Дедуп: для пары (mentor_id, date) приоритет финальным ответам
-        // (yes/no) над asked. ВНУТРИ финальных — самый свежий по responded_at.
-        // ВНУТРИ asked — самый свежий по notified_at. Это нужно потому что
-        // если /run_morning запустить ПОВТОРНО после того как клиент уже
-        // ответил, в БД появится новая строка `asked` и без приоритета она
-        // перетёрла бы реальный ответ в дедупе.
+        // Дедуп с учётом ПЕРЕНОСОВ:
+        //   • финальный ответ с chosen_date != schedule_date «приписывается»
+        //     к chosen_date (на исходной дате запись из client.schedule уже
+        //     удалена через schedule-apply.js).
+        //   • финальный ответ с chosen_date == schedule_date (yes без переноса)
+        //     остаётся на schedule_date.
+        //   • asked — на schedule_date.
+        // Ключ дедупа: (mentor_id, day_anchor), где day_anchor — фактический
+        // день записи в client.schedule[].
         const finals = new Map();
         const askeds = new Map();
         for (const r of rows) {
-          const key = (r.mentor_id || r.client_code || '') + '|' + r.schedule_date;
+          const mid = r.mentor_id || r.client_code || '';
           if (r.response === 'yes' || r.response === 'no') {
-            if (!finals.has(key)) finals.set(key, r);     // первый — самый свежий по responded_at desc
+            const anchor = r.chosen_date || r.schedule_date;
+            const key = mid + '|' + anchor;
+            if (!finals.has(key)) finals.set(key, r);
           } else {
+            const key = mid + '|' + r.schedule_date;
             if (!askeds.has(key)) askeds.set(key, r);
           }
         }
@@ -771,24 +777,22 @@
             // Найдём ответ клиента по этой паре (mentor_id, date)
             const respKey = (r.mentorId || r.code || '') + '|' + schedState.selected;
             const resp = schedState.responses.get(respKey);
-            const lbl = resp ? respLabel(resp.response) : null;
             let respBadge = '';
-            if (lbl) {
-              // Сборка строки времени: если есть chosen_time — показываем,
-              // если перенос на другую дату — показываем «→ 21.05 в 14:30».
-              let when = '';
-              if (resp.chosen_time) {
-                if (resp.chosen_date && resp.chosen_date !== resp.schedule_date) {
-                  const d = new Date(resp.chosen_date);
-                  when = ` · → ${d.getDate().toString().padStart(2,'0')}.${(d.getMonth()+1).toString().padStart(2,'0')} в ${resp.chosen_time}`;
-                } else {
-                  when = ` · в ${resp.chosen_time}`;
-                }
-              } else if (resp.chosen_date && resp.chosen_date !== resp.schedule_date) {
-                const d = new Date(resp.chosen_date);
-                when = ` · → ${d.getDate().toString().padStart(2,'0')}.${(d.getMonth()+1).toString().padStart(2,'0')}`;
+            if (resp) {
+              // Если смотрим день-ЦЕЛЬ переноса (chosen_date != schedule_date
+              // и selected совпадает с chosen_date) — визуально это «согласие
+              // на эту дату», а не «отказ». Текст бейджа делаем зелёный.
+              const isMovedTo = (resp.response === 'no'
+                                  && resp.chosen_date
+                                  && resp.chosen_date !== resp.schedule_date
+                                  && resp.chosen_date === schedState.selected);
+              const effectiveResp = isMovedTo ? 'yes' : resp.response;
+              const lbl = respLabel(effectiveResp);
+              if (lbl) {
+                let when = resp.chosen_time ? ` · в ${resp.chosen_time}` : '';
+                const title = `${lbl.text}${resp.responded_at ? ' · ' + new Date(resp.responded_at).toLocaleString('ru-RU') : ''}`;
+                respBadge = `<span class="sched-row__resp" data-tone="${lbl.tone}" title="${title}">${lbl.icon} ${lbl.text}${when}</span>`;
               }
-              respBadge = `<span class="sched-row__resp" data-tone="${lbl.tone}" title="${lbl.text}${resp.responded_at ? ' · ' + new Date(resp.responded_at).toLocaleString('ru-RU') : ''}">${lbl.icon} ${lbl.text}${when}</span>`;
             }
             return `
               <div class="sched-row">

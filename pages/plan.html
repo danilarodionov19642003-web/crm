@@ -1,0 +1,494 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>План откликов — Mentori CRM</title>
+  <link rel="stylesheet" href="../css/styles.css"/>
+  <style>
+    /* План-страница: ровно то же чувство что в /tasks (агрегированный
+       календарь), но это primary content. Доступна только owner'у.
+       Дублируем стили локально чтобы не зависеть от /tasks. */
+    .plan-wrap { background: var(--bg-elev); border: 1px solid var(--border);
+                 border-radius: 22px; padding: 20px; margin-bottom: 18px; }
+    .plan-head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+    .plan-head h2 { margin: 0; font-size: 16px; font-weight: 700; }
+    .plan-head .spacer { flex: 1; }
+    .plan-nav-btn { width: 32px; height: 32px; background: transparent;
+                    border: 1px solid var(--border); color: var(--text);
+                    border-radius: 999px; font-size: 16px; line-height: 1;
+                    cursor: pointer; transition: all .15s; }
+    .plan-nav-btn:hover { border-color: var(--accent, #ff7a00); color: var(--accent, #ff7a00); }
+    .plan-month-label { font-weight: 600; font-size: 15px; min-width: 150px; text-align: center; }
+    .plan-mode-toggle { display: inline-flex; gap: 0;
+                        background: var(--bg); border: 1px solid var(--border);
+                        border-radius: 999px; padding: 2px; }
+    .plan-mode-toggle button { padding: 6px 14px; background: transparent; border: 0;
+                               border-radius: 999px; color: var(--text-mute);
+                               font-size: 12px; cursor: pointer; font-weight: 500; }
+    .plan-mode-toggle button.is-on { background: var(--accent, #ff7a00); color: white; }
+
+    .plan-summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 16px; }
+    .plan-stat { background: var(--bg); border: 1px solid var(--border);
+                 border-radius: 16px; padding: 12px 14px; }
+    .plan-stat__label { font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+                        color: var(--text-mute); font-weight: 600; }
+    .plan-stat__value { font-size: 22px; font-weight: 700; margin-top: 4px; font-variant-numeric: tabular-nums; }
+    .plan-stat__sub { font-size: 11px; color: var(--text-mute); margin-top: 2px; }
+    .plan-stat--today { border-color: rgba(255,122,0,0.4); background: linear-gradient(180deg, rgba(255,122,0,0.06), transparent 70%), var(--bg); }
+    .plan-stat--today .plan-stat__value { color: var(--accent, #ff7a00); }
+
+    .plan-weekdays { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px;
+                     font-size: 10px; color: var(--text-mute); text-transform: uppercase;
+                     letter-spacing: .08em; text-align: center; font-weight: 600; margin-bottom: 6px; }
+    .plan-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
+    .plan-cell { position: relative; min-height: 78px; background: var(--bg);
+                 border: 1px solid transparent; border-radius: 14px;
+                 cursor: pointer; color: var(--text); font-family: inherit;
+                 padding: 7px; text-align: left; transition: background .12s, transform .12s; }
+    .plan-cell:hover { background: var(--bg-elev-2, rgba(255,255,255,0.04)); transform: scale(1.02); }
+    .plan-cell--empty { background: transparent; cursor: default; pointer-events: none; }
+    .plan-cell.is-today { border-color: var(--accent, #ff7a00); }
+    .plan-cell.is-today .plan-cell__day { color: var(--accent, #ff7a00); font-weight: 800; }
+    .plan-cell.is-selected { background: linear-gradient(135deg, rgba(255,122,0,0.18), rgba(255,154,60,0.08)); border-color: var(--accent, #ff7a00); }
+    .plan-cell.has-plan { background: rgba(255,122,0,0.06); border-color: rgba(255,122,0,0.22); }
+    .plan-cell__day { font-size: 13px; font-variant-numeric: tabular-nums; line-height: 1.1; font-weight: 600; }
+    .plan-cell__count { position: absolute; top: 5px; right: 6px;
+                        background: rgba(255,122,0,0.18); color: var(--accent, #ff7a00);
+                        font-size: 11px; font-weight: 800; line-height: 1; padding: 3px 8px; border-radius: 999px; }
+    .plan-cell__list { position: absolute; left: 7px; right: 7px; bottom: 4px;
+                       font-size: 9px; line-height: 1.25; color: var(--text-mute); overflow: hidden;
+                       max-height: 36px; }
+    .plan-cell__list span { display: inline-block; padding: 1px 6px; margin: 1px 2px 0 0;
+                            border-radius: 999px; background: rgba(255,255,255,0.05); }
+
+    /* Week-view: 7 широких ячеек (одна неделя крупно) */
+    .plan-week-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+    .plan-week-cell { background: var(--bg); border: 1px solid var(--border);
+                      border-radius: 16px; padding: 12px; min-height: 200px;
+                      display: flex; flex-direction: column; gap: 8px; }
+    .plan-week-cell__head { display: flex; align-items: baseline; gap: 6px; }
+    .plan-week-cell__wd { font-size: 10px; color: var(--text-mute); text-transform: uppercase; font-weight: 700; letter-spacing: .05em; }
+    .plan-week-cell__date { font-size: 18px; font-weight: 800; font-variant-numeric: tabular-nums; }
+    .plan-week-cell.is-today .plan-week-cell__date { color: var(--accent, #ff7a00); }
+    .plan-week-cell.is-today { border-color: var(--accent, #ff7a00); }
+    .plan-week-cell__total { font-size: 11px; color: var(--text-mute); margin-left: auto; }
+    .plan-week-cell__rows { display: flex; flex-direction: column; gap: 4px; flex: 1; overflow-y: auto; }
+    .plan-week-cell__row { display: flex; align-items: center; gap: 6px;
+                           background: rgba(255,255,255,0.03); border-radius: 10px;
+                           padding: 6px 8px; font-size: 11px; }
+    .plan-week-cell__dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .plan-week-cell__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .plan-week-cell__count { font-weight: 700; color: var(--accent, #ff7a00); font-variant-numeric: tabular-nums; }
+
+    .plan-day-detail { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); }
+    .plan-day-detail__title { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; margin-bottom: 10px; }
+    .plan-day-detail__meta { background: var(--bg); padding: 3px 9px; border-radius: 999px;
+                              font-size: 10px; font-weight: 600; color: var(--text-mute);
+                              text-transform: uppercase; letter-spacing: .05em; }
+    .plan-row { display: flex; align-items: center; gap: 12px; padding: 10px 14px;
+                background: var(--bg); border: 1px solid var(--border); border-radius: 14px;
+                margin-bottom: 6px; }
+    .plan-row__dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+    .plan-row__name { flex: 1; min-width: 0; font-size: 13px; font-weight: 600;
+                       overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .plan-row__progress { font-size: 11px; color: var(--text-mute); font-variant-numeric: tabular-nums; }
+    .plan-row__count { font-size: 12px; font-weight: 700; color: var(--accent, #ff7a00);
+                       font-variant-numeric: tabular-nums;
+                       background: rgba(255,122,0,0.12); padding: 3px 9px; border-radius: 999px; }
+    .plan-row__resp { font-size: 11px; padding: 3px 9px; border-radius: 999px; font-weight: 600; flex-shrink: 0; }
+    .plan-row__resp[data-tone="pos"]  { background: rgba(34,197,94,0.12);  color: #22c55e; }
+    .plan-row__resp[data-tone="neg"]  { background: rgba(239,68,68,0.12);  color: #ef4444; }
+    .plan-row__resp[data-tone="mute"] { background: rgba(160,160,160,0.12); color: var(--text-mute); }
+    .plan-empty-day { padding: 18px; text-align: center; color: var(--text-mute);
+                      font-size: 12px; font-style: italic; background: var(--bg); border-radius: 14px; }
+
+    @media (max-width: 1000px) {
+      .plan-summary { grid-template-columns: repeat(2, 1fr); }
+      .plan-week-grid { grid-template-columns: 1fr; }
+      .plan-week-cell { min-height: auto; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div data-component="sidebar" data-active="plan"></div>
+
+    <div class="main">
+      <div data-component="header" data-title="План откликов"></div>
+
+      <main class="content">
+        <div class="page-title">
+          <div>
+            <h1>📅 План откликов</h1>
+            <p>Сводный календарь по всем активным клиентам — на день, на неделю, на месяц.</p>
+          </div>
+        </div>
+
+        <div class="plan-wrap">
+          <div class="plan-head">
+            <h2 id="planHeading">План</h2>
+            <div class="plan-mode-toggle" id="planModeToggle">
+              <button data-mode="week" class="is-on">Неделя</button>
+              <button data-mode="month">Месяц</button>
+            </div>
+            <div class="spacer"></div>
+            <button class="plan-nav-btn" id="planPrev">‹</button>
+            <div class="plan-month-label" id="planLabel">—</div>
+            <button class="plan-nav-btn" id="planNext">›</button>
+            <button class="plan-nav-btn" id="planToday" title="К сегодня" style="width:auto;padding:0 12px;font-size:12px">сегодня</button>
+          </div>
+
+          <div class="plan-summary" id="planSummary"></div>
+
+          <!-- Месячный вид -->
+          <div id="planMonthView" style="display:none">
+            <div class="plan-weekdays">
+              <span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span>
+            </div>
+            <div class="plan-grid" id="planGrid"></div>
+            <div class="plan-day-detail" id="planDayDetail"></div>
+          </div>
+
+          <!-- Недельный вид -->
+          <div id="planWeekView">
+            <div class="plan-week-grid" id="planWeekGrid"></div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <script src="../data/seed.js"></script>
+  <script src="../js/app.js"></script>
+  <script src="../js/supabase-client.js"></script>
+  <script src="../js/auth-gate.js"></script>
+  <script src="../js/cloud-sync.js"></script>
+  <script src="../js/accounts-sync.js"></script>
+  <script src="../js/reviews-sync.js"></script>
+  <script src="../js/schedule-apply.js"></script>
+  <script src="../components/sidebar.js"></script>
+  <script src="../components/header.js"></script>
+
+  <script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const { Store, todayISO } = window.App;
+    Store.load();
+
+    const CAL_COLORS = ['#ff7a00','#22c55e','#3b82f6','#a855f7','#14b8a6','#eab308','#ef4444','#06b6d4'];
+    const state = {
+      mode: 'week',                  // 'week' | 'month'
+      anchor: new Date(),            // понедельник недели (для week) / 1-е число (для month)
+      selected: todayISO(),          // для month view детализация
+      responses: new Map(),
+    };
+    state.anchor = mondayOf(new Date());
+
+    function mondayOf(d) {
+      const x = new Date(d);
+      x.setHours(0,0,0,0);
+      const dow = (x.getDay() + 6) % 7;
+      x.setDate(x.getDate() - dow);
+      return x;
+    }
+    function escapeHtml(s) {
+      return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+    function fmtDateRu(iso) {
+      const d = new Date(iso);
+      return d.toLocaleDateString('ru-RU', { day:'2-digit', month:'long', year:'numeric' });
+    }
+    function monthLabel(d) {
+      const ms = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+      return `${ms[d.getMonth()]} ${d.getFullYear()}`;
+    }
+
+    function deriveDoneLocal(c) {
+      const code = String(c.code||'').toLowerCase().trim();
+      if (!code) return 0;
+      const mentorIds = new Set((Store.state.mentors||[])
+        .filter(m => String(m.code||'').toLowerCase().trim() === code).map(m => m.id));
+      if (!mentorIds.size) return 0;
+      const approved = (Store.state.reviews||[])
+        .filter(r => mentorIds.has(r.mentorId) && r.moderation === 'approved');
+      const statuses = Store.state.profileStatuses||[];
+      return approved.filter(r => statuses.some(
+        s => s.mentorId === r.mentorId && s.profileId === r.profileId && s.status === '🎯 Готов'
+      )).length;
+    }
+
+    function collectScheduleByDate() {
+      const map = new Map();
+      const clients = (Store.state.clients||[]).filter(
+        c => !c.closed && Array.isArray(c.schedule) && c.schedule.length
+      );
+      const sorted = [...clients].sort((a,b) => (a.code||'').localeCompare(b.code||'','ru',{numeric:true}));
+      sorted.forEach((c, idx) => {
+        const color = CAL_COLORS[idx % CAL_COLORS.length];
+        const ccode = String(c.code||'').toLowerCase().trim();
+        const mentor = (Store.state.mentors||[]).find(
+          m => String(m.code||'').toLowerCase().trim() === ccode
+        );
+        const mentorId = mentor ? mentor.id : null;
+        (c.schedule||[]).forEach(s => {
+          if (!s.date || !s.count) return;
+          if (!map.has(s.date)) map.set(s.date, []);
+          map.get(s.date).push({
+            clientId: c.id, code: c.code, name: c.name, mentorId,
+            tariff: c.tariff||'', ordered: +c.ordered||0,
+            done: deriveDoneLocal(c), count: +s.count||0, color
+          });
+        });
+      });
+      return map;
+    }
+
+    async function loadResponses() {
+      try {
+        if (!window.Supabase || !window.Supabase.URL) return;
+        const today = new Date(); today.setHours(0,0,0,0);
+        const from = new Date(today); from.setDate(from.getDate() - 30);
+        const to   = new Date(today); to.setDate(to.getDate() + 60);
+        const url = `${window.Supabase.URL}/rest/v1/schedule_responses` +
+                    `?schedule_date=gte.${from.toISOString().slice(0,10)}` +
+                    `&schedule_date=lte.${to.toISOString().slice(0,10)}` +
+                    `&select=client_code,mentor_id,schedule_date,response,responded_at,notified_at,chosen_time,chosen_date` +
+                    `&order=responded_at.desc.nullsfirst`;
+        const res = await fetch(url, {
+          headers: { 'apikey': window.Supabase.KEY, 'Authorization': `Bearer ${window.Supabase.KEY}` }
+        });
+        if (!res.ok) return;
+        const rows = await res.json();
+        const finals = new Map();
+        const askeds = new Map();
+        for (const r of rows) {
+          const mid = r.mentor_id || r.client_code || '';
+          if (r.response === 'yes' || r.response === 'no') {
+            const anchor = r.chosen_date || r.schedule_date;
+            const key = mid + '|' + anchor;
+            if (!finals.has(key)) finals.set(key, r);
+          } else {
+            const key = mid + '|' + r.schedule_date;
+            if (!askeds.has(key)) askeds.set(key, r);
+          }
+        }
+        const m = new Map(askeds);
+        for (const [k, v] of finals) m.set(k, v);
+        state.responses = m;
+      } catch (e) { console.warn('[plan] responses load failed', e); }
+    }
+
+    function respLabel(resp) {
+      if (resp === 'yes')     return { icon: '✅', text: 'согласен',  tone: 'pos' };
+      if (resp === 'no')      return { icon: '⏭',  text: 'отказ',    tone: 'neg' };
+      if (resp === 'asked')   return { icon: '📨', text: 'спросили', tone: 'mute' };
+      return null;
+    }
+
+    function renderSummary(byDate) {
+      const today = todayISO();
+      const tomorrow = (() => { const d = new Date(); d.setDate(d.getDate()+1); return d.toISOString().slice(0,10); })();
+      const weekEnd  = (() => { const d = new Date(); d.setDate(d.getDate()+7); return d.toISOString().slice(0,10); })();
+      const monthEnd = (() => { const d = new Date(); d.setDate(d.getDate()+30); return d.toISOString().slice(0,10); })();
+      function sumIn(from, to) {
+        let n=0, set=new Set();
+        byDate.forEach((rows, date) => {
+          if (date >= from && date <= to) rows.forEach(r => { n += r.count; set.add(r.clientId); });
+        });
+        return { n, clients: set.size };
+      }
+      const t = sumIn(today, today), tm = sumIn(tomorrow, tomorrow),
+            wk = sumIn(today, weekEnd), mo = sumIn(today, monthEnd);
+      function fmt(c) { return c ? c + ' клиент' + (c===1?'':(c<5?'а':'ов')) : '—'; }
+      document.getElementById('planSummary').innerHTML = `
+        <div class="plan-stat plan-stat--today"><div class="plan-stat__label">Сегодня</div><div class="plan-stat__value">${t.n}</div><div class="plan-stat__sub">${fmt(t.clients)}</div></div>
+        <div class="plan-stat"><div class="plan-stat__label">Завтра</div><div class="plan-stat__value">${tm.n}</div><div class="plan-stat__sub">${fmt(tm.clients)}</div></div>
+        <div class="plan-stat"><div class="plan-stat__label">Неделя</div><div class="plan-stat__value">${wk.n}</div><div class="plan-stat__sub">${fmt(wk.clients)}</div></div>
+        <div class="plan-stat"><div class="plan-stat__label">30 дней</div><div class="plan-stat__value">${mo.n}</div><div class="plan-stat__sub">${fmt(mo.clients)}</div></div>
+      `;
+    }
+
+    function renderWeek(byDate) {
+      const today = todayISO();
+      const start = state.anchor;
+      const end = new Date(start); end.setDate(start.getDate()+6);
+      document.getElementById('planLabel').textContent =
+        `${start.getDate().toString().padStart(2,'0')}.${(start.getMonth()+1).toString().padStart(2,'0')} – ` +
+        `${end.getDate().toString().padStart(2,'0')}.${(end.getMonth()+1).toString().padStart(2,'0')}`;
+      document.getElementById('planHeading').textContent = 'Неделя';
+      const wd = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
+      const cells = [];
+      for (let i = 0; i < 7; i++) {
+        const d = new Date(start); d.setDate(start.getDate()+i);
+        const iso = d.toISOString().slice(0,10);
+        const rows = byDate.get(iso) || [];
+        const total = rows.reduce((s,r) => s + r.count, 0);
+        const isToday = iso === today;
+        const items = rows.map(r => {
+          const respKey = (r.mentorId || r.code || '') + '|' + iso;
+          const resp = state.responses.get(respKey);
+          let chosen_time = '';
+          let respIcon = '';
+          if (resp) {
+            const isMovedTo = (resp.response === 'no' && resp.chosen_date && resp.chosen_date !== resp.schedule_date && resp.chosen_date === iso);
+            const eff = isMovedTo ? 'yes' : resp.response;
+            const lbl = respLabel(eff);
+            if (lbl) respIcon = lbl.icon;
+            if (resp.chosen_time) chosen_time = ' ' + resp.chosen_time;
+          }
+          return `
+            <div class="plan-week-cell__row">
+              <span class="plan-week-cell__dot" style="background:${r.color}"></span>
+              <span class="plan-week-cell__name">${escapeHtml(r.code)}${respIcon ? ' ' + respIcon : ''}${chosen_time}</span>
+              <span class="plan-week-cell__count">${r.count}</span>
+            </div>`;
+        }).join('');
+        cells.push(`
+          <div class="plan-week-cell ${isToday ? 'is-today' : ''}">
+            <div class="plan-week-cell__head">
+              <span class="plan-week-cell__wd">${wd[i]}</span>
+              <span class="plan-week-cell__date">${d.getDate().toString().padStart(2,'0')}</span>
+              <span class="plan-week-cell__total">${total ? total + ' откл.' : ''}</span>
+            </div>
+            <div class="plan-week-cell__rows">
+              ${items || '<div style="font-size:11px;color:var(--text-mute);font-style:italic">—</div>'}
+            </div>
+          </div>`);
+      }
+      document.getElementById('planWeekGrid').innerHTML = cells.join('');
+    }
+
+    function renderMonth(byDate) {
+      const m = state.anchor;
+      const y = m.getFullYear(), mm = m.getMonth();
+      const first = new Date(y, mm, 1);
+      const last = new Date(y, mm + 1, 0);
+      const firstDow = (first.getDay() + 6) % 7;
+      const daysInMonth = last.getDate();
+      const today = todayISO();
+      document.getElementById('planLabel').textContent = monthLabel(m);
+      document.getElementById('planHeading').textContent = 'Месяц';
+      const cells = [];
+      for (let i = 0; i < firstDow; i++) cells.push(`<div class="plan-cell plan-cell--empty"></div>`);
+      for (let d = 1; d <= daysInMonth; d++) {
+        const iso = `${y}-${String(mm+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+        const rows = byDate.get(iso) || [];
+        const total = rows.reduce((s,r) => s + r.count, 0);
+        const cls = ['plan-cell',
+          iso === today ? 'is-today' : '',
+          iso === state.selected ? 'is-selected' : '',
+          total > 0 ? 'has-plan' : ''
+        ].filter(Boolean).join(' ');
+        const listHtml = rows.slice(0, 4).map(r =>
+          `<span style="color:${r.color}">${escapeHtml(r.code)}·${r.count}</span>`
+        ).join('');
+        cells.push(`
+          <button class="${cls}" data-iso="${iso}">
+            ${total > 0 ? `<span class="plan-cell__count">${total}</span>` : ''}
+            <span class="plan-cell__day">${d}</span>
+            ${listHtml ? `<span class="plan-cell__list">${listHtml}</span>` : ''}
+          </button>`);
+      }
+      const pad = (7 - ((firstDow + daysInMonth) % 7)) % 7;
+      for (let i = 0; i < pad; i++) cells.push(`<div class="plan-cell plan-cell--empty"></div>`);
+      document.getElementById('planGrid').innerHTML = cells.join('');
+      document.querySelectorAll('.plan-cell[data-iso]').forEach(el => {
+        el.addEventListener('click', () => { state.selected = el.dataset.iso; renderAll(); });
+      });
+      renderDayDetail(byDate);
+    }
+
+    function renderDayDetail(byDate) {
+      const rows = byDate.get(state.selected) || [];
+      const total = rows.reduce((s,r) => s + r.count, 0);
+      const meta = rows.length
+        ? `${rows.length} клиент${rows.length===1?'':(rows.length<5?'а':'ов')} · ${total} откл.`
+        : 'нет планов';
+      const body = rows.length ? rows.map(r => {
+        const respKey = (r.mentorId || r.code || '') + '|' + state.selected;
+        const resp = state.responses.get(respKey);
+        let respBadge = '';
+        if (resp) {
+          const isMovedTo = (resp.response === 'no' && resp.chosen_date
+                              && resp.chosen_date !== resp.schedule_date
+                              && resp.chosen_date === state.selected);
+          const eff = isMovedTo ? 'yes' : resp.response;
+          const lbl = respLabel(eff);
+          if (lbl) {
+            const when = resp.chosen_time ? ' · в ' + resp.chosen_time : '';
+            respBadge = `<span class="plan-row__resp" data-tone="${lbl.tone}">${lbl.icon} ${lbl.text}${when}</span>`;
+          }
+        }
+        const left = Math.max(0, r.ordered - r.done);
+        return `
+          <div class="plan-row">
+            <span class="plan-row__dot" style="background:${r.color}"></span>
+            <span class="plan-row__name">
+              <strong>${escapeHtml(r.code)}</strong>${r.name ? ' · ' + escapeHtml(r.name) : ''}
+              <span class="plan-row__progress"> · ${r.tariff ? r.tariff + ' · ' : ''}${r.done}/${r.ordered} (${left})</span>
+            </span>
+            ${respBadge}
+            <span class="plan-row__count">${r.count}</span>
+          </div>`;
+      }).join('') : `<div class="plan-empty-day">На этот день ничего не запланировано.</div>`;
+      document.getElementById('planDayDetail').innerHTML = `
+        <div class="plan-day-detail__title">${fmtDateRu(state.selected)} <span class="plan-day-detail__meta">${meta}</span></div>
+        ${body}
+      `;
+    }
+
+    async function renderAll() {
+      const byDate = collectScheduleByDate();
+      renderSummary(byDate);
+      document.getElementById('planWeekView').style.display  = state.mode === 'week' ? '' : 'none';
+      document.getElementById('planMonthView').style.display = state.mode === 'month' ? '' : 'none';
+      document.querySelectorAll('#planModeToggle button').forEach(b => {
+        b.classList.toggle('is-on', b.dataset.mode === state.mode);
+      });
+      if (state.mode === 'week') renderWeek(byDate);
+      else renderMonth(byDate);
+      // подгружаем ответы клиентов
+      await loadResponses();
+      if (state.mode === 'week') renderWeek(byDate);
+      else renderDayDetail(byDate);
+    }
+
+    // Навигация
+    document.getElementById('planPrev').addEventListener('click', () => {
+      if (state.mode === 'week') {
+        state.anchor = new Date(state.anchor); state.anchor.setDate(state.anchor.getDate() - 7);
+      } else {
+        state.anchor = new Date(state.anchor.getFullYear(), state.anchor.getMonth() - 1, 1);
+      }
+      renderAll();
+    });
+    document.getElementById('planNext').addEventListener('click', () => {
+      if (state.mode === 'week') {
+        state.anchor = new Date(state.anchor); state.anchor.setDate(state.anchor.getDate() + 7);
+      } else {
+        state.anchor = new Date(state.anchor.getFullYear(), state.anchor.getMonth() + 1, 1);
+      }
+      renderAll();
+    });
+    document.getElementById('planToday').addEventListener('click', () => {
+      const t = new Date();
+      state.anchor = state.mode === 'week' ? mondayOf(t) : new Date(t.getFullYear(), t.getMonth(), 1);
+      state.selected = todayISO();
+      renderAll();
+    });
+    document.querySelectorAll('#planModeToggle button').forEach(b => {
+      b.addEventListener('click', () => {
+        state.mode = b.dataset.mode;
+        const t = new Date();
+        state.anchor = state.mode === 'week' ? mondayOf(t) : new Date(t.getFullYear(), t.getMonth(), 1);
+        renderAll();
+      });
+    });
+
+    window.addEventListener('cloudstate:updated', renderAll);
+    window.addEventListener('store:reloaded', renderAll);
+    renderAll();
+  });
+  </script>
+</body>
+</html>
