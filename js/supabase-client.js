@@ -9,11 +9,16 @@
   // Авто-фолбэк: на старте пингуем PRIMARY (наш Yandex VPS).
   // Если за 4с не отвечает — переключаемся на FALLBACK (старый Supabase).
   // Выбор кэшируется в localStorage на 5 минут чтобы не пинговать каждый
-  // переход страницы. Это решает: РФ без VPN → api.mentori.tech не достижим
-  // у некоторых операторов из-за DNS-кэша / РКН-блока → авто-переход на
-  // supabase.co (он тоже не всегда работает в РФ, но другой ресолвер часто).
+  // переход страницы.
+  //
+  // ВАЖНО: PRIMARY теперь живёт под тем же доменом что и лендинг —
+  // https://mentori.tech/sb/*. Раньше был api.mentori.tech, но РФ-операторы
+  // блокируют его по SNI (сайт mentori.tech работает, а отдельный поддомен
+  // api — нет). Один SNI решает: если открывается сайт, открывается и API.
+  // FALLBACK остаётся на старый hosted Supabase для случаев когда у нас лежит
+  // вся инфраструктура VPS.
   const PRIMARY = {
-    URL: 'https://api.mentori.tech',
+    URL: 'https://mentori.tech/sb',
     KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzc5MzE4NDc3LCJleHAiOjIwOTQ2Nzg0Nzd9.XuMHwfOo8qcycoooOMGwWd3R9_YA55JQZwaJBh132N8',
     name: 'primary',
   };
@@ -22,8 +27,14 @@
     KEY: 'sb_publishable_QpxNagNre_4iKQrVO5Swzw_XWhmrQo4',
     name: 'fallback',
   };
-  const BACKEND_CACHE_KEY = 'mentori-sb-backend';   // {name, until: epoch_ms}
-  const BACKEND_CACHE_TTL = 5 * 60 * 1000;          // 5 минут
+  // v2 — после переезда primary с api.mentori.tech на mentori.tech/sb.
+  // Меняем имя ключа чтобы у пользователей со старым залипшим выбором
+  // ('fallback' из-за нерабочего api.mentori.tech) запустился свежий probe
+  // и они автоматически подцепили рабочий primary без VPN.
+  const BACKEND_CACHE_KEY = 'mentori-sb-backend-v2'; // {name, until: epoch_ms}
+  const BACKEND_CACHE_TTL = 5 * 60 * 1000;           // 5 минут
+  // одноразовая чистка старого ключа, не критично, но порядок
+  try { localStorage.removeItem('mentori-sb-backend'); } catch (_) {}
 
   function _cachedBackend() {
     try {
