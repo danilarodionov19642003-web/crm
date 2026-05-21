@@ -24,8 +24,12 @@
   const OUTBOX_TABLE    = 'notification_outbox'; // очередь TG-уведомлений (читает бот на VPS)
   const STORAGE_KEY = 'mentori-crm-v2';
   const META_KEY    = 'mentori-crm-meta';   // { lastPushedAt, lastPulledAt }
+  const PENDING_KEY = 'mentori-crm-pending'; // несохранённый push (для recovery после reload)
   const HISTORY_THROTTLE_MS = 5 * 60 * 1000;  // не чаще 1 снимка в 5 минут
   const POLL_INTERVAL_MS    = 60 * 1000;      // фоновый pull раз в минуту
+  // Exponential backoff retry: 5с, 15с, 45с, 2мин, 5мин, потом каждые 5мин.
+  // Лучше много попыток с растущей паузой, чем 1 retry через 30с.
+  const RETRY_DELAYS_MS = [5_000, 15_000, 45_000, 120_000, 300_000];
 
   // Принудительный ресинк через URL ?resync=1 — чистим локалку ДО того,
   // как app.js успеет её прочитать. Параметр после этого убираем из URL.
@@ -168,7 +172,7 @@
           const enc = encodeURIComponent(email);
           await fetch(
             `${_supaUrl()}/rest/v1/${SNAPSHOTS_TABLE}?email=eq.${enc}`,
-            { method: 'DELETE', headers }
+            { method: 'DELETE', headers: _hdr() }
           ).catch(() => {});
         }
       }
@@ -256,6 +260,7 @@
   let pullCompleted = false;         // true после первого успешного fetchRemote
   let remoteSnapshot = null;         // последний известный облачный state — для safety-check
   let serverUpdatedAt = null;        // updated_at последней версии, которую мы видели/писали
+  let retryAttempt = 0;              // счётчик неуспешных push для exponential backoff
   // «Большие» коллекции — те потеря которых однозначно катастрофа.
   // anti-wipe защита: если ВСЕ они пусты, а в облаке хоть какая-то — push
   // блокируется. Список расширен на clients/income/expenses потому что
@@ -277,8 +282,27 @@
     return BIG_COLLECTIONS.some(k => Array.isArray(s[k]) && s[k].length > 0);
   }
 
+  // Сохраняем pendingState в localStorage, чтобы при перезагрузке страницы
+  // (или краше браузера) изменения не пропали. На старте recoverPending()
+  // вытащит и повторит push.
+  function persistPending(state) {
+    try {
+      localStorage.setItem(PENDING_KEY, JSON.stringify({
+        state, queued_at: new Date().toISOString()
+      }));
+    } catch (_) {}
+  }
+  function clearPersistedPending() {
+    try { localStorage.removeItem(PENDING_KEY); } catch (_) {}
+  }
+  function readPersistedPending() {
+    try { return JSON.parse(localStorage.getItem(PENDING_KEY) || 'null'); }
+    catch { return null; }
+  }
+
   function schedulePush(state) {
     pendingState = state;
+    persistPending(state);            // ← на случай reload/closure
     if (!pullCompleted) {
       // не ставим таймер — flush запустится после первого pull
       setStatus('syncing', 'Ожидание облака…');
@@ -330,16 +354,23 @@
     }
     try {
       await pushRemote(state);
+      retryAttempt = 0;                  // успех — сбрасываем счётчик retry
+      clearPersistedPending();           // ушло в облако — больше не нужно держать
       setStatus('synced', 'Сохранено');
       // Зеркалим личные снимки клиентов — best effort, не блокирует основной push
       pushClientSnapshots(state).catch(e => {
         console.warn('[CloudSync] snapshots mirror failed', e);
       });
     } catch (e) {
-      console.warn('[CloudSync] push error', e);
-      setStatus('error', 'Ошибка сохранения');
-      // повторим через минуту
-      setTimeout(() => schedulePush(state), 30_000);
+      console.warn('[CloudSync] push error, will retry', e);
+      // Возвращаем state в pendingState чтобы следующий flush его подобрал.
+      // НЕ чистим persistPending — он останется до успешного push.
+      pendingState = state;
+      const delay = RETRY_DELAYS_MS[Math.min(retryAttempt, RETRY_DELAYS_MS.length - 1)];
+      retryAttempt++;
+      setStatus('error', `Ошибка сохранения, повтор через ${Math.round(delay/1000)}с (попытка ${retryAttempt})`);
+      clearTimeout(pushTimer);
+      pushTimer = setTimeout(flush, delay);
     }
   }
 
@@ -363,7 +394,9 @@
     if (!pendingState || !pullCompleted) return;
     const state = pendingState;
     if (isEffectivelyEmpty(state) && remoteHasData(remoteSnapshot)) return;
-    pendingState = null;
+    // НЕ обнуляем pendingState и НЕ чистим persistPending — keepalive-запрос
+    // может не долететь, тогда при следующей загрузке recoverPending() подберёт.
+    // Очистка произойдёт после успешного pushRemote (он удалит PENDING_KEY).
     const updated_at = new Date().toISOString();
     const body = JSON.stringify({ id: ROW_ID, data: state, updated_at });
     const url = `${_supaUrl()}/rest/v1/${TABLE}?on_conflict=id`;
@@ -489,8 +522,24 @@
     URL: { get: () => _supaUrl(), enumerable: true }
   });
 
+  /* ---- Recovery несохранённых изменений ----
+     При предыдущей сессии push мог упасть (сеть, 5xx, закрытие вкладки).
+     pendingState мы успели сохранить в localStorage — поднимем его и
+     поставим в очередь. Если облако с тех пор обновили — concurrency-check
+     внутри flush() корректно сделает pull вместо push, ничего не затрёт. */
+  function recoverPending() {
+    const saved = readPersistedPending();
+    if (!saved || !saved.state) return;
+    console.warn('[CloudSync] recovering pending push from', saved.queued_at);
+    pendingState = saved.state;
+    setStatus('syncing', 'Восстанавливаем несохранённое…');
+    // не дёргаем flush сразу — он запустится после первого успешного pull
+    // (см. ветку `if (pendingState) ...` внутри pull()).
+  }
+
   /* ---- Авто-pull при загрузке страницы ---- */
   document.addEventListener('DOMContentLoaded', () => {
+    recoverPending();
     if (!navigator.onLine) { setStatus('offline','Оффлайн'); return; }
     // Дать app.js успеть инициализировать Store.load() сначала из localStorage,
     // затем тянем облако и при необходимости ререндерим.
