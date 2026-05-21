@@ -44,12 +44,18 @@
     }
   } catch (e) { console.warn('[CloudSync] resync reset failed', e); }
 
-  // headers — теперь функция, потому что _supaKey() может смениться после
-  // авто-фолбэка primary → fallback.
+  // headers — функция, потому что и _supaKey() меняется после фолбэка,
+  // и access_token обновляется после логина/refresh.
+  //
+  // С 22.05.2026 Bearer = access_token пользователя (не ANON), потому что
+  // RLS теперь требует authenticated с app_metadata.role IN ('owner','team').
+  // Без сессии падаем в ANON — но тогда RLS не пропустит и push вернёт 401,
+  // что корректно: незалогиненный не должен ничего писать.
   function _hdr() {
+    const tok = (window.Supabase && window.Supabase.accessToken && window.Supabase.accessToken()) || _supaKey();
     return {
       'apikey': _supaKey(),
-      'Authorization': `Bearer ${_supaKey()}`,
+      'Authorization': `Bearer ${tok}`,
       'Content-Type': 'application/json',
       'Prefer': 'return=representation',
     };

@@ -95,12 +95,12 @@
   }
 
   function authHeader() {
-    // см. подробный комментарий ниже — логика такая же. Используем CURRENT.KEY
-    // как анон-ключ для админки, а в кабинетах сотрудника/клиента — access_token
-    // юзера из сессии.
-    const path = location.pathname;
-    const isAuthedArea = path.includes('/employee/') || path.includes('/client/');
-    if (!isAuthedArea) return `Bearer ${CURRENT.KEY}`;
+    // С 22.05.2026: ВСЕГДА предпочитаем access_token пользователя из сессии,
+    // независимо от пути. Раньше для админских страниц возвращался ANON,
+    // что давало кому угодно (без логина) делать запросы — RLS-политики
+    // для anon разрешали всё. Теперь RLS требует authenticated с проверкой
+    // app_metadata.role IN ('owner','team'). Если сессии нет — отдаём ANON
+    // (нужно для самого момента логина и публичных endpoint'ов).
     const s = getSession();
     return s && s.access_token ? `Bearer ${s.access_token}` : `Bearer ${CURRENT.KEY}`;
   }

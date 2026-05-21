@@ -15,7 +15,11 @@
     console.error('[client-app] supabase-client.js?v=20260521a должен подключаться раньше');
     return;
   }
-  const { Auth, URL: SUPA_URL, KEY, accessToken } = window.Supabase;
+  const { Auth, accessToken } = window.Supabase;
+  // URL/KEY — геттеры (см. supabase-client.js Object.defineProperties),
+  // меняются после фолбэка. Через _url()/_key() читаем актуальные значения.
+  const _url = () => window.Supabase.URL;
+  const _key = () => window.Supabase.KEY;
 
   const SNAPSHOTS_TABLE = 'client_snapshots';
 
@@ -83,10 +87,10 @@
     if (!email) return null;
     // Ходим под JWT: RLS на client_snapshots отдаст только строку,
     // где email = auth.jwt() ->> 'email'. Указываем фильтр для надёжности.
-    const url = `${SUPA_URL}/rest/v1/${SNAPSHOTS_TABLE}?email=eq.${encodeURIComponent(email)}&select=payload,updated_at`;
+    const url = `${_url()}/rest/v1/${SNAPSHOTS_TABLE}?email=eq.${encodeURIComponent(email)}&select=payload,updated_at`;
     const res = await fetch(url, {
       headers: {
-        'apikey': KEY,
+        'apikey': _key(),
         'Authorization': `Bearer ${token}`,
         'Accept': 'application/json'
       }

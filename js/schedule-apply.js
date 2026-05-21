@@ -20,24 +20,29 @@
   if (!window.App || !window.App.Store || !window.Supabase) return;
 
   const { Store } = window.App;
-  const SUPA_URL  = window.Supabase.URL;
-  const SUPA_KEY  = window.Supabase.KEY;
-  if (!SUPA_URL || !SUPA_KEY) return;
-
-  const HEADERS = {
-    'apikey': SUPA_KEY,
-    'Authorization': `Bearer ${SUPA_KEY}`,
-  };
+  // С 22.05.2026: URL/KEY/Authorization — динамические геттеры.
+  // URL/KEY меняются при фолбэке primary↔fallback (см. supabase-client.js).
+  // Authorization теперь access_token пользователя, чтобы RLS пропустил
+  // (раньше был ANON, но мы закрыли таблицы для anon-роли).
+  function _url() { return window.Supabase.URL; }
+  function _key() { return window.Supabase.KEY; }
+  function _tok() { return (window.Supabase.accessToken && window.Supabase.accessToken()) || _key(); }
+  function HEADERS() {
+    return {
+      'apikey': _key(),
+      'Authorization': `Bearer ${_tok()}`,
+    };
+  }
 
   async function fetchPending() {
-    const url = `${SUPA_URL}/rest/v1/schedule_responses` +
+    const url = `${_url()}/rest/v1/schedule_responses` +
                 `?response=eq.no` +
                 `&chosen_date=not.is.null` +
                 `&applied_at=is.null` +
                 `&select=id,client_code,mentor_id,schedule_date,chosen_date,chosen_time` +
                 `&order=responded_at.desc.nullsfirst`;
     try {
-      const res = await fetch(url, { headers: HEADERS });
+      const res = await fetch(url, { headers: HEADERS() });
       if (!res.ok) {
         console.warn('[schedule-apply] fetch failed', res.status);
         return [];
@@ -52,11 +57,11 @@
   async function markApplied(ids) {
     if (!ids.length) return;
     const idsStr = ids.join(',');
-    const url = `${SUPA_URL}/rest/v1/schedule_responses?id=in.(${idsStr})&applied_at=is.null`;
+    const url = `${_url()}/rest/v1/schedule_responses?id=in.(${idsStr})&applied_at=is.null`;
     try {
       await fetch(url, {
         method: 'PATCH',
-        headers: { ...HEADERS, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        headers: { ...HEADERS(), 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
         body: JSON.stringify({ applied_at: new Date().toISOString() }),
       });
     } catch (e) {
