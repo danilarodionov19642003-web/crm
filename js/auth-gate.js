@@ -8,14 +8,14 @@
    Проставляет document.body.dataset.role и .dataset.userEmail/.userName,
    чтобы header/sidebar/страницы могли подтянуть пункты меню по роли.
 
-   Подключать в <head> ПОСЛЕ supabase-client.js, ДО других скриптов.
+   Подключать в <head> ПОСЛЕ supabase-client.js?v=20260521a, ДО других скриптов.
    На страницах /pages/employee/* НЕ подключать — там своя логика.
    ========================================================================== */
 (function () {
   'use strict';
 
   if (!window.Supabase) {
-    console.error('[auth-gate] supabase-client.js должен подключаться раньше');
+    console.error('[auth-gate] supabase-client.js?v=20260521a должен подключаться раньше');
     return;
   }
   const { Auth } = window.Supabase;

@@ -6,7 +6,7 @@
    'reviews:updated' — страницы employees.html / dashboard.html слушают и
    перерисовывают KPI.
 
-   Подключается ПОСЛЕ supabase-client.js и app.js.
+   Подключается ПОСЛЕ supabase-client.js?v=20260521a и app.js.
    ========================================================================== */
 (function () {
   'use strict';

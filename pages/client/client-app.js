@@ -12,7 +12,7 @@
   'use strict';
 
   if (!window.Supabase) {
-    console.error('[client-app] supabase-client.js должен подключаться раньше');
+    console.error('[client-app] supabase-client.js?v=20260521a должен подключаться раньше');
     return;
   }
   const { Auth, URL: SUPA_URL, KEY, accessToken } = window.Supabase;
