@@ -6,8 +6,12 @@
 (function () {
   'use strict';
 
-  const URL = 'https://ivzouyhyuyfzoodhyrya.supabase.co';
-  const KEY = 'sb_publishable_QpxNagNre_4iKQrVO5Swzw_XWhmrQo4';
+  // Self-hosted Supabase-стек на Yandex VPS, через Cloudflare proxy.
+  // На VPS: postgres-15 + supabase/gotrue + postgrest, nginx на :80.
+  // Old Supabase URL (на случай отката):
+  //   https://ivzouyhyuyfzoodhyrya.supabase.co + sb_publishable_QpxNagNre_4iKQrVO5Swzw_XWhmrQo4
+  const URL = 'https://api.mentori.tech';
+  const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzc5MzE4NDc3LCJleHAiOjIwOTQ2Nzg0Nzd9.XuMHwfOo8qcycoooOMGwWd3R9_YA55JQZwaJBh132N8';
   const SESSION_KEY = 'mentori-supabase-session';
 
   /* ---- сессия (для Auth) ---- */

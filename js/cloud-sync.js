@@ -10,8 +10,11 @@
    ========================================================================== */
 (function () {
   // === КОНФИГ ===========================================================
-  const SUPABASE_URL = 'https://ivzouyhyuyfzoodhyrya.supabase.co';
-  const SUPABASE_KEY = 'sb_publishable_QpxNagNre_4iKQrVO5Swzw_XWhmrQo4';
+  // Self-hosted Supabase-стек на Yandex VPS, через Cloudflare proxy.
+  // Old (rollback):
+  //   https://ivzouyhyuyfzoodhyrya.supabase.co + sb_publishable_QpxNagNre_4iKQrVO5Swzw_XWhmrQo4
+  const SUPABASE_URL = 'https://api.mentori.tech';
+  const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzc5MzE4NDc3LCJleHAiOjIwOTQ2Nzg0Nzd9.XuMHwfOo8qcycoooOMGwWd3R9_YA55JQZwaJBh132N8';
   const TABLE   = 'crm_state';
   const ROW_ID  = 'main';
   const SNAPSHOTS_TABLE = 'client_snapshots';   // зеркало для личных кабинетов клиентов
