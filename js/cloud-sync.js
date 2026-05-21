@@ -10,11 +10,13 @@
    ========================================================================== */
 (function () {
   // === КОНФИГ ===========================================================
-  // Self-hosted Supabase-стек на Yandex VPS, через Cloudflare proxy.
-  // Old (rollback):
-  //   https://ivzouyhyuyfzoodhyrya.supabase.co + sb_publishable_QpxNagNre_4iKQrVO5Swzw_XWhmrQo4
-  const SUPABASE_URL = 'https://api.mentori.tech';
-  const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzc5MzE4NDc3LCJleHAiOjIwOTQ2Nzg0Nzd9.XuMHwfOo8qcycoooOMGwWd3R9_YA55JQZwaJBh132N8';
+  // URL/KEY теперь динамические — берём из supabase-client.js (там есть
+  // авто-фолбэк api.mentori.tech ↔ supabase.co). Используем геттеры,
+  // чтобы при каждом fetch получать текущий рабочий backend.
+  const _SB = () => (window.Supabase || {});
+  function _supaUrl() { return _SB().URL || 'https://api.mentori.tech'; }
+  function _supaKey() { return _SB().KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzc5MzE4NDc3LCJleHAiOjIwOTQ2Nzg0Nzd9.XuMHwfOo8qcycoooOMGwWd3R9_YA55JQZwaJBh132N8'; }
+  Object.defineProperty(window, '_CloudSyncBackend', { get: () => _SB().backend || 'primary' });
   const TABLE   = 'crm_state';
   const ROW_ID  = 'main';
   const SNAPSHOTS_TABLE = 'client_snapshots';   // зеркало для личных кабинетов клиентов
@@ -38,17 +40,21 @@
     }
   } catch (e) { console.warn('[CloudSync] resync reset failed', e); }
 
-  const headers = {
-    'apikey': SUPABASE_KEY,
-    'Authorization': `Bearer ${SUPABASE_KEY}`,
-    'Content-Type': 'application/json',
-    'Prefer': 'return=representation'
-  };
+  // headers — теперь функция, потому что _supaKey() может смениться после
+  // авто-фолбэка primary → fallback.
+  function _hdr() {
+    return {
+      'apikey': _supaKey(),
+      'Authorization': `Bearer ${_supaKey()}`,
+      'Content-Type': 'application/json',
+      'Prefer': 'return=representation',
+    };
+  }
 
   /* ---- Сетевые операции ---- */
   async function fetchRemote() {
-    const url = `${SUPABASE_URL}/rest/v1/${TABLE}?id=eq.${ROW_ID}&select=data,updated_at`;
-    const res = await fetch(url, { headers });
+    const url = `${_supaUrl()}/rest/v1/${TABLE}?id=eq.${ROW_ID}&select=data,updated_at`;
+    const res = await fetch(url, { headers: _hdr() });
     if (!res.ok) throw new Error(`fetch ${res.status}: ${await res.text()}`);
     const rows = await res.json();
     return rows[0] || null;  // { data, updated_at } или null
@@ -58,10 +64,10 @@
     const updated_at = new Date().toISOString();
     const body = JSON.stringify({ id: ROW_ID, data: state, updated_at });
     // upsert через POST с Prefer: resolution=merge-duplicates
-    const url = `${SUPABASE_URL}/rest/v1/${TABLE}?on_conflict=id`;
+    const url = `${_supaUrl()}/rest/v1/${TABLE}?on_conflict=id`;
     const res = await fetch(url, {
       method: 'POST',
-      headers: { ...headers, 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+      headers: { ...(_hdr()), 'Prefer': 'resolution=merge-duplicates,return=minimal' },
       body
     });
     if (!res.ok && res.status !== 201 && res.status !== 204) {
@@ -92,10 +98,10 @@
       pushed_at: new Date().toISOString(),
       client_info: (navigator.userAgent || '').slice(0, 200)
     };
-    const url = `${SUPABASE_URL}/rest/v1/${HISTORY_TABLE}`;
+    const url = `${_supaUrl()}/rest/v1/${HISTORY_TABLE}`;
     const res = await fetch(url, {
       method: 'POST',
-      headers: { ...headers, 'Prefer': 'return=minimal' },
+      headers: { ...(_hdr()), 'Prefer': 'return=minimal' },
       body: JSON.stringify(row)
     });
     if (!res.ok && res.status !== 201 && res.status !== 204) {
@@ -135,10 +141,10 @@
       payload: s.payload,
       updated_at
     }));
-    const url = `${SUPABASE_URL}/rest/v1/${SNAPSHOTS_TABLE}?on_conflict=email`;
+    const url = `${_supaUrl()}/rest/v1/${SNAPSHOTS_TABLE}?on_conflict=email`;
     const res = await fetch(url, {
       method: 'POST',
-      headers: { ...headers, 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+      headers: { ...(_hdr()), 'Prefer': 'resolution=merge-duplicates,return=minimal' },
       body: JSON.stringify(rows)
     });
     if (!res.ok && res.status !== 201 && res.status !== 204) {
@@ -151,8 +157,8 @@
     // последний снимок в своём кабинете).
     try {
       const existingRes = await fetch(
-        `${SUPABASE_URL}/rest/v1/${SNAPSHOTS_TABLE}?select=email`,
-        { headers }
+        `${_supaUrl()}/rest/v1/${SNAPSHOTS_TABLE}?select=email`,
+        { headers: _hdr() }
       );
       if (existingRes.ok) {
         const existing = await existingRes.json();
@@ -161,7 +167,7 @@
         for (const email of stale) {
           const enc = encodeURIComponent(email);
           await fetch(
-            `${SUPABASE_URL}/rest/v1/${SNAPSHOTS_TABLE}?email=eq.${enc}`,
+            `${_supaUrl()}/rest/v1/${SNAPSHOTS_TABLE}?email=eq.${enc}`,
             { method: 'DELETE', headers }
           ).catch(() => {});
         }
@@ -360,11 +366,11 @@
     pendingState = null;
     const updated_at = new Date().toISOString();
     const body = JSON.stringify({ id: ROW_ID, data: state, updated_at });
-    const url = `${SUPABASE_URL}/rest/v1/${TABLE}?on_conflict=id`;
+    const url = `${_supaUrl()}/rest/v1/${TABLE}?on_conflict=id`;
     try {
       fetch(url, {
         method: 'POST',
-        headers: { ...headers, 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+        headers: { ...(_hdr()), 'Prefer': 'resolution=merge-duplicates,return=minimal' },
         body,
         keepalive: true
       });
@@ -376,9 +382,9 @@
         pushed_at: updated_at,
         client_info: 'pagehide:' + (navigator.userAgent || '').slice(0, 180)
       };
-      fetch(`${SUPABASE_URL}/rest/v1/${HISTORY_TABLE}`, {
+      fetch(`${_supaUrl()}/rest/v1/${HISTORY_TABLE}`, {
         method: 'POST',
-        headers: { ...headers, 'Prefer': 'return=minimal' },
+        headers: { ...(_hdr()), 'Prefer': 'return=minimal' },
         body: JSON.stringify(histRow),
         keepalive: true
       });
@@ -410,11 +416,11 @@
      Best effort: ошибки логируем, ничего не блокируем. */
   async function queueTelegramNotification(row) {
     if (!row || !row.message) return false;
-    const url = `${SUPABASE_URL}/rest/v1/${OUTBOX_TABLE}`;
+    const url = `${_supaUrl()}/rest/v1/${OUTBOX_TABLE}`;
     try {
       const res = await fetch(url, {
         method: 'POST',
-        headers: { ...headers, 'Prefer': 'return=minimal' },
+        headers: { ...(_hdr()), 'Prefer': 'return=minimal' },
         body: JSON.stringify(row)
       });
       if (!res.ok && res.status !== 201 && res.status !== 204) {
@@ -469,7 +475,7 @@
   }
 
   /* ---- Публичный API ---- */
-  window.CloudSync = {
+  window.CloudSync = Object.defineProperties({
     pull,
     push: schedulePush,
     flush,
@@ -477,9 +483,11 @@
     pushClientSnapshots,    // ручной триггер: после CRUD над clientPortals
     queueTelegramNotification, // пишем строку в notification_outbox (читает бот)
     downloadBackup,         // ручной бэкап на диск (используется кнопкой в шапке)
-    URL: SUPABASE_URL,
-    isConfigured: () => !!SUPABASE_URL && !!SUPABASE_KEY
-  };
+    isConfigured: () => !!_supaUrl() && !!_supaKey()
+  }, {
+    // URL — геттер: автоматически подхватит фолбэк после _probe()
+    URL: { get: () => _supaUrl(), enumerable: true }
+  });
 
   /* ---- Авто-pull при загрузке страницы ---- */
   document.addEventListener('DOMContentLoaded', () => {
