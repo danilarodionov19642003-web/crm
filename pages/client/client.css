@@ -515,3 +515,61 @@
   font-size: 12px; padding: 18px;
   font-style: italic;
 }
+
+/* ---- Прокси для Telegram ---- */
+.cli-proxy-block {
+  display: flex; flex-direction: column; gap: 12px;
+}
+.cli-proxy-info {
+  background: rgba(255, 193, 7, 0.06);
+  border: 1px solid rgba(255, 193, 7, 0.25);
+  border-radius: 14px;
+  padding: 14px 16px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.cli-proxy-list {
+  display: flex; flex-direction: column; gap: 8px;
+}
+.cli-proxy-item {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  text-decoration: none;
+  color: inherit;
+  transition: transform .12s, border-color .12s;
+}
+.cli-proxy-item:hover {
+  transform: translateY(-1px);
+  border-color: var(--accent, #ffa726);
+}
+.cli-proxy-num {
+  width: 28px; height: 28px;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(255, 167, 38, 0.15);
+  color: var(--accent, #ffa726);
+  font-weight: 700; font-size: 13px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.cli-proxy-body { flex: 1; min-width: 0; }
+.cli-proxy-host {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+  font-size: 13px; font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cli-proxy-meta { font-size: 11px; color: var(--text-mute); margin-top: 2px; }
+.cli-proxy-arrow {
+  font-size: 18px;
+  color: var(--text-mute);
+  flex-shrink: 0;
+}
+.cli-proxy-item:hover .cli-proxy-arrow { color: var(--accent, #ffa726); }
+.cli-proxy-empty {
+  text-align: center; padding: 22px;
+  background: var(--bg);
+  border: 1px dashed var(--border);
+  border-radius: 14px;
+}

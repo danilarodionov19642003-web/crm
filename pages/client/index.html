@@ -9,7 +9,7 @@
   <meta http-equiv="Expires" content="0"/>
   <title>Личный кабинет — Mentori</title>
   <link rel="stylesheet" href="../../css/styles.css"/>
-  <link rel="stylesheet" href="client.css?v=20260518a"/>
+  <link rel="stylesheet" href="client.css?v=20260524a"/>
 </head>
 <body class="cli-body">
   <div data-cli-header></div>
@@ -27,10 +27,18 @@
     <div class="cli-cal" data-cli-calendar></div>
 
     <div data-cli-feed style="margin-top:22px"></div>
+
+    <!-- Бесплатные MTProxy для Telegram. Обновляются раз в 30 мин на сервере,
+         тестируются с РФ-IP — то что работает у нас, скорее всего работает
+         и у клиента. -->
+    <h2 class="cli-section-title">Прокси для Telegram</h2>
+    <div class="cli-proxy-block" data-cli-proxies>
+      <div class="cli-empty">Загрузка прокси…</div>
+    </div>
   </main>
 
   <script src="../../js/supabase-client.js?v=20260522c"></script>
-  <script src="./client-app.js?v=20260522b"></script>
+  <script src="./client-app.js?v=20260524a"></script>
   <script>
   (async () => {
     const ok = await window.ClientApp.requireLogin();
@@ -42,12 +50,14 @@
         '<div class="cli-empty">Данные ещё не загружены. Зайдите чуть позже или свяжитесь с менеджером.</div>';
       document.querySelector('[data-cli-totals]').innerHTML = '';
       document.querySelector('[data-cli-feed]').innerHTML = '';
-      return;
+    } else {
+      window.ClientApp.renderTotals(snap.payload.totals, snap.payload.anketas);
+      window.ClientApp.renderAnketas(snap.payload.anketas);
+      window.ClientApp.renderCalendar(snap.payload);
+      window.ClientApp.renderFeed(snap.payload.feed);
     }
-    window.ClientApp.renderTotals(snap.payload.totals, snap.payload.anketas);
-    window.ClientApp.renderAnketas(snap.payload.anketas);
-    window.ClientApp.renderCalendar(snap.payload);
-    window.ClientApp.renderFeed(snap.payload.feed);
+    // Прокси — независимо от snapshot, доступны всем залогиненным клиентам.
+    window.ClientApp.renderProxies();
   })();
   </script>
 </body>
