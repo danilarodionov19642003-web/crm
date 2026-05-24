@@ -15,6 +15,14 @@
   <div data-cli-header></div>
 
   <main class="cli-main">
+    <!-- Бесплатные MTProxy для Telegram — наверху, чтобы клиент сразу мог
+         включить рабочий прокси если у него Telegram не открывается.
+         Обновляются раз в 30 мин на сервере, тестируются с РФ-IP. -->
+    <h2 class="cli-section-title">Прокси для Telegram</h2>
+    <div class="cli-proxy-block" data-cli-proxies>
+      <div class="cli-empty">Загрузка прокси…</div>
+    </div>
+
     <h2 class="cli-section-title">Сводка</h2>
     <div class="cli-kpis" data-cli-totals></div>
 
@@ -27,18 +35,10 @@
     <div class="cli-cal" data-cli-calendar></div>
 
     <div data-cli-feed style="margin-top:22px"></div>
-
-    <!-- Бесплатные MTProxy для Telegram. Обновляются раз в 30 мин на сервере,
-         тестируются с РФ-IP — то что работает у нас, скорее всего работает
-         и у клиента. -->
-    <h2 class="cli-section-title">Прокси для Telegram</h2>
-    <div class="cli-proxy-block" data-cli-proxies>
-      <div class="cli-empty">Загрузка прокси…</div>
-    </div>
   </main>
 
   <script src="../../js/supabase-client.js?v=20260522c"></script>
-  <script src="./client-app.js?v=20260524a"></script>
+  <script src="./client-app.js?v=20260524b"></script>
   <script>
   (async () => {
     const ok = await window.ClientApp.requireLogin();
