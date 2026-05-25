@@ -154,6 +154,17 @@
       this.state.proxyLinks ??= [];     // ссылки для смены IP (LTE-Center и др.)
       this.state.dailyTasks ??= [];     // ежедневные задачи Насте: с какого аккаунта работать с каким клиентом
       this.state.clientPortals ??= [];  // доступы клиентов (Флагман и т.п.) к личному кабинету: см. addClientPortal
+      // Справочник ниш и пауз «Выбран → Опубликован» в днях.
+      // Используется ботом для напоминаний публиковать отзыв (см. A3).
+      // ⭐ ключ — это код категории, который проставляется у клиента (clients[].niche).
+      this.state.nicheConfig ??= {
+        repetitor: { label: 'Репетитор',  daysToPublish: 2  },
+        design:    { label: 'Дизайн интерьера', daysToPublish: 5  },
+        remont:    { label: 'Ремонт квартир', daysToPublish: 30 },
+        beauty:    { label: 'Косметология', daysToPublish: 3  },
+        legal:     { label: 'Юридические услуги', daysToPublish: 7  },
+        other:     { label: 'Другое',  daysToPublish: 5  },
+      };
       // Сид: первая пара ссылок на смену IP, чтобы Настя могла начать сразу
       // (владелец потом редактирует/добавляет в модалке «Управлять прокси»).
       if (!this.state._proxySeeded) {

@@ -68,10 +68,16 @@
             <h1>Клиентская база</h1>
             <p>«Заказано» — редактируется в строке (клик по ячейке). «Сделано» подтягивается автоматически по статусу «🎯 Готов» на вкладке «Аккаунты».</p>
           </div>
-          <button class="btn btn--primary" id="btnAdd">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            Добавить клиента
-          </button>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn--ghost" id="btnNicheConfig" title="Справочник ниш и пауз «Выбран → Опубликован»">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;vertical-align:middle"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+              Ниши
+            </button>
+            <button class="btn btn--primary" id="btnAdd">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Добавить клиента
+            </button>
+          </div>
         </div>
 
         <section class="cards" id="clKpis"></section>
@@ -102,6 +108,7 @@
                   <th>Клиент</th>
                   <th>Площадка</th>
                   <th>Тариф</th>
+                  <th title="Категория клиента — определяет паузу «Выбран → Опубликован»">Ниша</th>
                   <th class="num" title="Сколько отзывов планируется делать в неделю">Темп / нед</th>
                   <th title="Дата начала работы по клиенту">Старт</th>
                   <th class="num">Заказано</th>
@@ -261,6 +268,30 @@
       <div class="modal__footer">
         <button class="btn btn--ghost" data-close>Закрыть</button>
         <a class="btn btn--primary" href="reviews.html">К модерации</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Справочник ниш: ниша → дни от «Выбран» до «Опубликован». Бот использует
+       это чтобы напоминать вовремя через A3 (фоновая задача в schedule_reminder). -->
+  <div class="modal-backdrop" id="nicheModal">
+    <div class="modal" style="max-width:560px">
+      <div class="modal__header">
+        <h3>Справочник ниш</h3>
+        <button class="btn--icon" data-close>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal__body">
+        <div style="font-size:12px;color:var(--text-mute);margin-bottom:12px">
+          Каждая ниша задаёт <b>паузу в днях</b> между статусом «🏆 Выбран» и публикацией отзыва. Бот напомнит опубликовать через эти N дней.
+        </div>
+        <div id="nicheList" style="display:flex;flex-direction:column;gap:8px"></div>
+        <button class="btn btn--ghost" id="nicheAdd" style="margin-top:12px;width:100%">+ Добавить нишу</button>
+      </div>
+      <div class="modal__footer">
+        <button class="btn btn--ghost" data-close>Отмена</button>
+        <button class="btn btn--primary" id="nicheSave">Сохранить</button>
       </div>
     </div>
   </div>
@@ -446,6 +477,14 @@
           <td>
             <select class="select" style="padding:4px 8px" data-field="tariff">
               ${TARIFF_NAMES.map(t => `<option value="${t}" ${r.tariff===t?'selected':''}>${t}</option>`).join('')}
+            </select>
+          </td>
+          <td>
+            <select class="select" style="padding:4px 8px" data-field="niche" title="Категория клиента: определяет паузу «Выбран → Опубликован»">
+              <option value="">—</option>
+              ${Object.entries(Store.state.nicheConfig || {}).map(([key, cfg]) =>
+                `<option value="${escapeHtml(key)}" ${r.niche===key?'selected':''}>${escapeHtml(cfg.label || key)} (${cfg.daysToPublish||'?'}д)</option>`
+              ).join('')}
             </select>
           </td>
           <td class="num" data-field="weeklyPace" data-type="number" title="Сколько отзывов в неделю планируем делать (нужно для прогноза кассы)">${+r.weeklyPace || 0}</td>
@@ -908,6 +947,64 @@
         // даём Modal.close сработать, потом перерендерим
         setTimeout(render, 50);
       }
+    });
+
+    /* ---- Справочник ниш ---- */
+    function renderNicheList() {
+      const wrap = document.getElementById('nicheList');
+      const cfg = Object.assign({}, Store.state.nicheConfig || {});
+      const entries = Object.entries(cfg);
+      if (!entries.length) {
+        wrap.innerHTML = '<div style="color:var(--text-mute);font-size:13px">Справочник пуст. Нажми «+ Добавить нишу».</div>';
+        return;
+      }
+      wrap.innerHTML = entries.map(([key, val]) => `
+        <div data-niche-row="${escapeHtml(key)}" style="display:grid;grid-template-columns:1fr 2fr 100px auto;gap:8px;align-items:center;background:rgba(255,255,255,0.02);border:1px solid var(--border);border-radius:8px;padding:8px 10px">
+          <input type="text" class="input" data-nf="key" placeholder="код" value="${escapeHtml(key)}" style="padding:6px 8px;font-size:13px"/>
+          <input type="text" class="input" data-nf="label" placeholder="название" value="${escapeHtml(val.label || '')}" style="padding:6px 8px;font-size:13px"/>
+          <input type="number" class="input" data-nf="daysToPublish" placeholder="дней" value="${val.daysToPublish || 0}" min="0" max="365" style="padding:6px 8px;font-size:13px"/>
+          <button class="btn btn--ghost" data-act="del-niche" style="color:var(--red);padding:4px 10px">🗑</button>
+        </div>
+      `).join('');
+      wrap.querySelectorAll('button[data-act="del-niche"]').forEach(btn => {
+        btn.addEventListener('click', e => {
+          e.target.closest('[data-niche-row]').remove();
+        });
+      });
+    }
+
+    document.getElementById('btnNicheConfig').addEventListener('click', () => {
+      renderNicheList();
+      Modal.open('nicheModal');
+    });
+    document.getElementById('nicheAdd').addEventListener('click', () => {
+      const wrap = document.getElementById('nicheList');
+      const newKey = 'niche_' + Math.random().toString(36).slice(2, 7);
+      const div = document.createElement('div');
+      div.dataset.nicheRow = newKey;
+      div.style.cssText = 'display:grid;grid-template-columns:1fr 2fr 100px auto;gap:8px;align-items:center;background:rgba(255,255,255,0.02);border:1px solid var(--border);border-radius:8px;padding:8px 10px';
+      div.innerHTML = `
+        <input type="text" class="input" data-nf="key" placeholder="код" value="${newKey}" style="padding:6px 8px;font-size:13px"/>
+        <input type="text" class="input" data-nf="label" placeholder="название" value="" style="padding:6px 8px;font-size:13px"/>
+        <input type="number" class="input" data-nf="daysToPublish" placeholder="дней" value="5" min="0" max="365" style="padding:6px 8px;font-size:13px"/>
+        <button class="btn btn--ghost" data-act="del-niche" style="color:var(--red);padding:4px 10px">🗑</button>`;
+      div.querySelector('[data-act="del-niche"]').addEventListener('click', () => div.remove());
+      wrap.appendChild(div);
+    });
+    document.getElementById('nicheSave').addEventListener('click', () => {
+      const newCfg = {};
+      document.querySelectorAll('#nicheList [data-niche-row]').forEach(row => {
+        const key = row.querySelector('[data-nf="key"]').value.trim().toLowerCase().replace(/\s+/g, '_');
+        if (!key) return;
+        const label = row.querySelector('[data-nf="label"]').value.trim();
+        const days = Math.max(0, Math.min(365, Number(row.querySelector('[data-nf="daysToPublish"]').value) || 0));
+        newCfg[key] = { label: label || key, daysToPublish: days };
+      });
+      Store.state.nicheConfig = newCfg;
+      Store.save();
+      Modal.close('nicheModal');
+      toast('Сохранено');
+      render();  // обновить селекты в строках клиентов
     });
 
     /* ---- Фильтры ---- */
