@@ -69,7 +69,12 @@
         <div class="field">
           <label for="cpEmail">Email для входа</label>
           <input type="email" id="cpEmail" class="input" placeholder="client@example.com"/>
-          <div style="font-size:11px;color:var(--text-mute);margin-top:4px">Этот же email должен быть заведён в Supabase Auth с user_metadata.role = "client".</div>
+          <div style="font-size:11px;color:var(--text-mute);margin-top:4px">По этому email клиент будет логиниться в свой кабинет.</div>
+        </div>
+        <div class="field" id="cpPasswordField">
+          <label for="cpPassword">Пароль для входа</label>
+          <input type="text" id="cpPassword" class="input" placeholder="Например ClientName2026" autocomplete="off"/>
+          <div style="font-size:11px;color:var(--text-mute);margin-top:4px">При создании нового клиента — здесь задаётся стартовый пароль (от 6 символов). Можешь скопировать его и передать клиенту. При редактировании можно оставить пустым (тогда пароль не изменится) или ввести новый — он перезапишет старый.</div>
         </div>
         <div class="field">
           <label>Анкеты, видимые в кабинете</label>
@@ -225,6 +230,8 @@
       document.getElementById('cpName').value = '';
       document.getElementById('cpEmail').value = '';
       document.getElementById('cpEmail').disabled = false;
+      document.getElementById('cpPassword').value = '';
+      document.getElementById('cpPassword').placeholder = 'Например ClientName2026 (минимум 6 символов)';
       document.getElementById('cpNote').value = '';
       document.getElementById('cpTgUsername').value = '';
       document.getElementById('cpTgChatId').value = '';
@@ -240,6 +247,8 @@
       document.getElementById('cpName').value = p.name || '';
       document.getElementById('cpEmail').value = p.email || '';
       document.getElementById('cpEmail').disabled = true; // email = первичный ключ снимка
+      document.getElementById('cpPassword').value = '';
+      document.getElementById('cpPassword').placeholder = 'Оставь пустым чтобы не менять. Введи новый чтобы сбросить.';
       document.getElementById('cpNote').value = p.note || '';
       document.getElementById('cpTgUsername').value = p.telegramUsername || '';
       document.getElementById('cpTgChatId').value = p.telegramChatId != null ? String(p.telegramChatId) : '';
@@ -249,9 +258,37 @@
 
     document.getElementById('btnAdd').addEventListener('click', openAdd);
 
-    document.getElementById('cpSave').addEventListener('click', () => {
+    /** Вызов RPC create_client_user / reset_client_password на нашем
+     *  self-hosted Supabase. Авторизация: текущий access_token владельца.
+     *  RPC сам внутри проверит что вызывает owner и создаст GoTrue-юзера. */
+    async function callAuthRpc(method, body) {
+      const SB = window.Supabase;
+      if (!SB) throw new Error('Supabase client не загружен');
+      const tok = SB.accessToken && SB.accessToken();
+      if (!tok) throw new Error('Нужно перезайти в CRM (нет access_token)');
+      const res = await fetch(`${SB.URL}/rest/v1/rpc/${method}`, {
+        method: 'POST',
+        headers: {
+          'apikey': SB.KEY,
+          'Authorization': `Bearer ${tok}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body)
+      });
+      const text = await res.text();
+      let data;
+      try { data = JSON.parse(text); } catch (_) { data = { message: text }; }
+      if (!res.ok) {
+        const msg = data.message || data.hint || `HTTP ${res.status}`;
+        throw new Error(msg);
+      }
+      return data;
+    }
+
+    document.getElementById('cpSave').addEventListener('click', async () => {
       const name = document.getElementById('cpName').value.trim();
       const email = document.getElementById('cpEmail').value.trim().toLowerCase();
+      const password = document.getElementById('cpPassword').value;   // НЕ trim() — пароль может содержать пробелы случайно... но обычно нет; оставим строгим
       const note = document.getElementById('cpNote').value.trim();
       const mentorIds = getCheckedMentors();
       // Telegram-поля: username нормализуем (срезаем "@", lower-case),
@@ -271,18 +308,55 @@
       if (!email || !/.+@.+\..+/.test(email)) {
         toast('Введи корректный email', 'error'); return;
       }
-      if (editingId) {
-        Store.updateClientPortal(editingId, { name, note, mentorIds, telegramUsername, telegramChatId });
-      } else {
-        Store.addClientPortal({ name, email, note, mentorIds, telegramUsername, telegramChatId });
+
+      const btn = document.getElementById('cpSave');
+      btn.disabled = true;
+      const labelOrig = btn.textContent;
+
+      try {
+        // ── ШАГ 1: Auth — создание / сброс пароля через RPC ──
+        if (!editingId) {
+          // Новый клиент. Пароль обязателен.
+          if (!password || password.length < 6) {
+            toast('Пароль обязателен (минимум 6 символов)', 'error');
+            return;
+          }
+          btn.textContent = 'Создаю кабинет…';
+          await callAuthRpc('create_client_user', {
+            p_email: email, p_password: password, p_name: name || null
+          });
+        } else if (password) {
+          // Редактирование + пользователь задал новый пароль → сбросим
+          if (password.length < 6) {
+            toast('Пароль слишком короткий (минимум 6)', 'error');
+            return;
+          }
+          btn.textContent = 'Меняю пароль…';
+          await callAuthRpc('reset_client_password', {
+            p_email: email, p_password: password
+          });
+        }
+
+        // ── ШАГ 2: запись в state.clientPortals ──
+        if (editingId) {
+          Store.updateClientPortal(editingId, { name, note, mentorIds, telegramUsername, telegramChatId });
+        } else {
+          Store.addClientPortal({ name, email, note, mentorIds, telegramUsername, telegramChatId });
+        }
+        // Сразу же зальём снимок этого клиента на сервер
+        if (window.CloudSync && window.CloudSync.pushClientSnapshots) {
+          window.CloudSync.pushClientSnapshots(Store.state).catch(() => {});
+        }
+        Modal.close('cpModal');
+        render();
+        toast(editingId ? 'Сохранено' : `Кабинет создан. Логин: ${email}`);
+      } catch (e) {
+        console.error('[client-access] save failed', e);
+        toast('Ошибка: ' + (e.message || e), 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = labelOrig;
       }
-      // Сразу же зальём снимок этого клиента на сервер
-      if (window.CloudSync && window.CloudSync.pushClientSnapshots) {
-        window.CloudSync.pushClientSnapshots(Store.state).catch(() => {});
-      }
-      Modal.close('cpModal');
-      render();
-      toast('Сохранено');
     });
 
     window.addEventListener('cloudstate:updated', () => { Store.load(); render(); });
