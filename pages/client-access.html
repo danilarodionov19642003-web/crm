@@ -392,12 +392,25 @@
       }
 
       // Группа в Telegram (опц., обычно отрицательный -100...)
+      // Авто-нормализация: если ввели без минуса (3977029338 или 1003977029338) —
+      // дописываем -100 префикс автоматически, как делает Bot API.
       const groupRaw = document.getElementById('cpGroupChatId').value.trim();
       let groupChatId = null;
       if (groupRaw) {
-        const n = Number(groupRaw);
+        let n = Number(groupRaw);
         if (!Number.isFinite(n) || !Number.isInteger(n)) {
-          toast('Group chat_id должен быть целым числом (обычно с минусом)', 'error'); return;
+          toast('Group chat_id должен быть целым числом', 'error'); return;
+        }
+        // Если положительное и большое (похоже на supergroup id) — добавляем минус
+        if (n > 0) {
+          const s = String(n);
+          if (s.startsWith('100') && s.length >= 13) {
+            n = -n;          // -1003977029338
+          } else if (s.length >= 10) {
+            n = -Number('100' + s);   // 3977029338 → -1003977029338
+          } else {
+            toast('Не похоже на корректный chat_id группы. Должен быть отрицательный (например -1001234567890).', 'error'); return;
+          }
         }
         groupChatId = n;
       }
