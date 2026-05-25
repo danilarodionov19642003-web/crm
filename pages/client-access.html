@@ -82,14 +82,19 @@
           <div style="font-size:11px;color:var(--text-mute);margin-top:4px">Отметь все анкеты, которые принадлежат этому клиенту. Например, для «Флагман» — a21 и a22.</div>
         </div>
         <div class="field">
-          <label for="cpTgUsername">Telegram @username (необязательно)</label>
+          <label for="cpTgUsername">Telegram @username клиента (необязательно)</label>
           <input type="text" id="cpTgUsername" class="input" placeholder="@flagman или flagman"/>
           <div style="font-size:11px;color:var(--text-mute);margin-top:4px">Для справки/поиска. Сообщения отправляются по chat_id ниже.</div>
         </div>
         <div class="field">
-          <label for="cpTgChatId">Telegram chat_id</label>
+          <label for="cpTgChatId">Telegram chat_id клиента (fallback на все анкеты)</label>
           <input type="number" id="cpTgChatId" class="input" placeholder="например 123456789"/>
-          <div style="font-size:11px;color:var(--text-mute);margin-top:4px">Клиент должен написать боту @MentoriTG_bot команду <code>/start</code> — бот ответит своим chat_id, который сюда и вписать. Без этого уведомления не будут отправляться.</div>
+          <div style="font-size:11px;color:var(--text-mute);margin-top:4px">Личный chat_id самого клиента. Используется если у конкретной анкеты ниже не задан свой контакт менеджера. Клиент должен написать боту <code>/start</code> — бот ответит chat_id.</div>
+        </div>
+        <div class="field">
+          <label for="cpGroupChatId">Группа в Telegram (опц., -100xxxxx)</label>
+          <input type="number" id="cpGroupChatId" class="input" placeholder="например -1001234567890"/>
+          <div style="font-size:11px;color:var(--text-mute);margin-top:4px">Если у вас общий чат с темами по каждой анкете — введи ID группы. Затем у каждой анкеты ниже укажи topic_id темы. Узнать ID: добавь <code>@MentoriTG_bot</code> в группу, напиши <code>/topic</code> в нужной теме — бот ответит ID.</div>
         </div>
         <div class="field">
           <label for="cpNote">Заметка (для админа)</label>
@@ -140,25 +145,101 @@
         .sort((a, b) => String(a.code).localeCompare(String(b.code), 'ru', { numeric: true }));
     }
 
-    function renderMentorsCheckboxes(selectedIds) {
+    /** Per-mentor контакты в формате { [mentorId]: {name, telegramUsername, telegramChatId, threadId} }.
+     *  Используется при открытии модалки чтобы предзаполнить поля. */
+    let _mentorContactsBuf = {};
+
+    function renderMentorsCheckboxes(selectedIds, mentorContacts) {
+      _mentorContactsBuf = Object.assign({}, mentorContacts || {});
       const sel = new Set(selectedIds || []);
       const wrap = document.getElementById('cpMentors');
+      wrap.style.flexDirection = 'column';   // стек, не flex-wrap
+      wrap.style.gap = '6px';
       const list = listAllMentors();
       if (!list.length) {
         wrap.innerHTML = '<div style="color:var(--text-mute);font-size:13px">Нет анкет (mentor’ов). Сначала добавь клиентов на странице «Клиенты».</div>';
         return;
       }
-      wrap.innerHTML = list.map(m => `
-        <label style="display:flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid var(--border);border-radius:999px;cursor:pointer;${sel.has(m.id) ? 'background:#e6f4ff;border-color:#91caff' : ''}">
-          <input type="checkbox" value="${m.id}" ${sel.has(m.id) ? 'checked' : ''} style="margin:0"/>
-          <span><strong>${escapeHtml(m.code)}</strong>${m.name ? ' · ' + escapeHtml(m.name) : ''}</span>
-        </label>
-      `).join('');
+      wrap.innerHTML = list.map(m => {
+        const checked = sel.has(m.id);
+        const c = _mentorContactsBuf[m.id] || {};
+        return `
+        <div data-mentor-block="${m.id}" style="border:1px solid var(--border);border-radius:8px;padding:8px 10px;${checked ? 'background:#fafcff' : 'opacity:0.7'}">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+            <input type="checkbox" data-mentor-check value="${m.id}" ${checked ? 'checked' : ''} style="margin:0"/>
+            <span><strong>${escapeHtml(m.code)}</strong>${m.name ? ' · ' + escapeHtml(m.name) : ''}</span>
+          </label>
+          <div data-mentor-fields style="display:${checked ? 'grid' : 'none'};grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;margin-top:8px;font-size:12px">
+            <div>
+              <div style="color:var(--text-mute);margin-bottom:2px">Имя менеджера</div>
+              <input data-mfield="name" type="text" class="input" placeholder="Анна" value="${escapeHtml(c.name || '')}" style="font-size:12px;padding:6px 8px"/>
+            </div>
+            <div>
+              <div style="color:var(--text-mute);margin-bottom:2px">@username</div>
+              <input data-mfield="telegramUsername" type="text" class="input" placeholder="anna_xxx" value="${escapeHtml(c.telegramUsername || '')}" style="font-size:12px;padding:6px 8px"/>
+            </div>
+            <div>
+              <div style="color:var(--text-mute);margin-bottom:2px">Личный chat_id</div>
+              <input data-mfield="telegramChatId" type="number" class="input" placeholder="555111" value="${c.telegramChatId != null ? c.telegramChatId : ''}" style="font-size:12px;padding:6px 8px"/>
+            </div>
+            <div>
+              <div style="color:var(--text-mute);margin-bottom:2px">Тема в группе (topic id)</div>
+              <input data-mfield="threadId" type="number" class="input" placeholder="12" value="${c.threadId != null ? c.threadId : ''}" style="font-size:12px;padding:6px 8px"/>
+            </div>
+          </div>
+        </div>`;
+      }).join('');
+      // Подвязываем тогглер для каждой галки: при включении показываем поля
+      wrap.querySelectorAll('input[data-mentor-check]').forEach(cb => {
+        cb.addEventListener('change', () => {
+          const block = cb.closest('[data-mentor-block]');
+          const fields = block.querySelector('[data-mentor-fields]');
+          if (cb.checked) {
+            block.style.background = '#fafcff';
+            block.style.opacity = '1';
+            fields.style.display = 'grid';
+          } else {
+            block.style.background = '';
+            block.style.opacity = '0.7';
+            fields.style.display = 'none';
+          }
+        });
+      });
     }
 
     function getCheckedMentors() {
-      return Array.from(document.querySelectorAll('#cpMentors input[type=checkbox]:checked'))
+      return Array.from(document.querySelectorAll('#cpMentors input[data-mentor-check]:checked'))
         .map(i => i.value);
+    }
+
+    /** Собирает mentorContacts = { mid: {name, telegramUsername, telegramChatId, threadId} }
+     *  Только для выбранных анкет, и только если хоть одно поле заполнено. */
+    function collectMentorContacts() {
+      const out = {};
+      document.querySelectorAll('#cpMentors [data-mentor-block]').forEach(block => {
+        const cb = block.querySelector('input[data-mentor-check]');
+        if (!cb || !cb.checked) return;
+        const mid = cb.value;
+        const fields = block.querySelector('[data-mentor-fields]');
+        if (!fields) return;
+        const obj = {};
+        fields.querySelectorAll('input[data-mfield]').forEach(inp => {
+          const key = inp.dataset.mfield;
+          let val = inp.value.trim();
+          if (!val) return;
+          if (key === 'telegramChatId' || key === 'threadId') {
+            const n = Number(val);
+            if (!Number.isFinite(n) || !Number.isInteger(n)) return;
+            obj[key] = n;
+          } else if (key === 'telegramUsername') {
+            obj[key] = val.replace(/^@/, '').toLowerCase();
+          } else {
+            obj[key] = val;
+          }
+        });
+        if (Object.keys(obj).length > 0) out[mid] = obj;
+      });
+      return out;
     }
 
     function render() {
@@ -235,7 +316,8 @@
       document.getElementById('cpNote').value = '';
       document.getElementById('cpTgUsername').value = '';
       document.getElementById('cpTgChatId').value = '';
-      renderMentorsCheckboxes([]);
+      document.getElementById('cpGroupChatId').value = '';
+      renderMentorsCheckboxes([], {});
       Modal.open('cpModal');
     }
 
@@ -252,7 +334,8 @@
       document.getElementById('cpNote').value = p.note || '';
       document.getElementById('cpTgUsername').value = p.telegramUsername || '';
       document.getElementById('cpTgChatId').value = p.telegramChatId != null ? String(p.telegramChatId) : '';
-      renderMentorsCheckboxes(p.mentorIds || []);
+      document.getElementById('cpGroupChatId').value = p.groupChatId != null ? String(p.groupChatId) : '';
+      renderMentorsCheckboxes(p.mentorIds || [], p.mentorContacts || {});
       Modal.open('cpModal');
     }
 
@@ -288,14 +371,16 @@
     document.getElementById('cpSave').addEventListener('click', async () => {
       const name = document.getElementById('cpName').value.trim();
       const email = document.getElementById('cpEmail').value.trim().toLowerCase();
-      const password = document.getElementById('cpPassword').value;   // НЕ trim() — пароль может содержать пробелы случайно... но обычно нет; оставим строгим
+      const password = document.getElementById('cpPassword').value;
       const note = document.getElementById('cpNote').value.trim();
       const mentorIds = getCheckedMentors();
-      // Telegram-поля: username нормализуем (срезаем "@", lower-case),
-      // chat_id парсим в число (или null если пусто).
+      const mentorContacts = collectMentorContacts();
+
+      // Telegram-поля клиента (fallback на все анкеты)
       let tgUsernameRaw = document.getElementById('cpTgUsername').value.trim();
       if (tgUsernameRaw.startsWith('@')) tgUsernameRaw = tgUsernameRaw.slice(1);
       const telegramUsername = tgUsernameRaw ? tgUsernameRaw.toLowerCase() : '';
+
       const tgChatRaw = document.getElementById('cpTgChatId').value.trim();
       let telegramChatId = null;
       if (tgChatRaw) {
@@ -305,6 +390,18 @@
         }
         telegramChatId = n;
       }
+
+      // Группа в Telegram (опц., обычно отрицательный -100...)
+      const groupRaw = document.getElementById('cpGroupChatId').value.trim();
+      let groupChatId = null;
+      if (groupRaw) {
+        const n = Number(groupRaw);
+        if (!Number.isFinite(n) || !Number.isInteger(n)) {
+          toast('Group chat_id должен быть целым числом (обычно с минусом)', 'error'); return;
+        }
+        groupChatId = n;
+      }
+
       if (!email || !/.+@.+\..+/.test(email)) {
         toast('Введи корректный email', 'error'); return;
       }
@@ -338,10 +435,15 @@
         }
 
         // ── ШАГ 2: запись в state.clientPortals ──
+        const payload = {
+          name, note, mentorIds, telegramUsername, telegramChatId,
+          groupChatId,        // null если не задан
+          mentorContacts      // объект с per-mentor TG-данными
+        };
         if (editingId) {
-          Store.updateClientPortal(editingId, { name, note, mentorIds, telegramUsername, telegramChatId });
+          Store.updateClientPortal(editingId, payload);
         } else {
-          Store.addClientPortal({ name, email, note, mentorIds, telegramUsername, telegramChatId });
+          Store.addClientPortal({ email, ...payload });
         }
         // Сразу же зальём снимок этого клиента на сервер
         if (window.CloudSync && window.CloudSync.pushClientSnapshots) {
