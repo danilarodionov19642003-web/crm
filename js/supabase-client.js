@@ -219,16 +219,21 @@
     rate()  { const u = this.user(); return u && u.user_metadata ? Number(u.user_metadata.rate) || 0 : 0; },
     name()  { const u = this.user(); return u && u.user_metadata && u.user_metadata.name || (u ? u.email : ''); },
     /**
-     * Роль определяется по email-маппингу в state.crmRoles либо по
-     * user_metadata.role. По умолчанию — 'team' (без полных прав).
-     * Чтобы быть owner-ом, email должен быть либо в OWNER_EMAILS,
-     * либо в user_metadata.role === 'owner'.
+     * Роль определяется в порядке:
+     *   1. user_metadata.role  (предпочтительно, ставится при создании)
+     *   2. app_metadata.role   (зеркало в JWT — иногда заполняется без user_metadata)
+     *   3. email в OWNER_EMAILS → 'owner'
+     *   4. fallback 'team'
+     * Раньше (до 25.05.2026) смотрели только user_metadata.role и при
+     * его отсутствии валились в 'team' — клиенты видели admin-интерфейс.
      */
     role() {
       const u = this.user();
       if (!u) return null;
-      const meta = u.user_metadata || {};
-      if (meta.role === 'owner' || meta.role === 'team' || meta.role === 'client') return meta.role;
+      const userMeta = u.user_metadata || {};
+      const appMeta  = u.app_metadata  || {};
+      const role = userMeta.role || appMeta.role;
+      if (role === 'owner' || role === 'team' || role === 'client') return role;
       const email = (u.email || '').toLowerCase();
       const OWNER_EMAILS = ['danila.rodionov19642003@gmail.com'];
       return OWNER_EMAILS.includes(email) ? 'owner' : 'team';
