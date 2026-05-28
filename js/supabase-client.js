@@ -203,7 +203,10 @@
       const s = getSession();
       setSession(null);
       if (s) {
-        fetch(`${CURRENT.URL}/auth/v1/logout`, {
+        // scope=global отзывает ВСЕ refresh-токены пользователя на сервере.
+        // Без этого refresh_token, который мог быть украден через XSS до signOut,
+        // остаётся валидным до своего естественного истечения (~24ч).
+        fetch(`${CURRENT.URL}/auth/v1/logout?scope=global`, {
           method: 'POST',
           headers: { 'apikey': CURRENT.KEY, 'Authorization': `Bearer ${s.access_token}` }
         }).catch(() => {});

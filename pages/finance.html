@@ -159,6 +159,15 @@
           <label for="eComment">Комментарий</label>
           <input type="text" id="eComment" class="input" placeholder="Необязательно"/>
         </div>
+        <div class="field" style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;background:rgba(255,193,7,0.04)">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin:0">
+            <input type="checkbox" id="ePersonal" style="margin:0;width:18px;height:18px"/>
+            <span><strong>💼 Личный расход</strong></span>
+          </label>
+          <div style="font-size:11px;color:var(--text-mute);margin-top:4px;line-height:1.4">
+            Не учитывается в прибыли бизнеса (Доходы/Расходы), но <b>уменьшает</b> баланс кэша в Пульсе. Используй для трат на себя (кофе, личные покупки и т.п.).
+          </div>
+        </div>
       </div>
       <div class="modal__footer">
         <button class="btn btn--ghost" data-close>Отмена</button>
@@ -169,7 +178,7 @@
 
   <script src="../data/seed.js"></script>
   <script src="../js/app.js"></script>
-  <script src="../js/supabase-client.js?v=20260525a"></script>
+  <script src="../js/supabase-client.js?v=20260528a"></script>
   <script src="../js/auth-gate.js"></script>
   <script src="../js/cloud-sync.js?v=20260522c"></script>
   <script src="../js/accounts-sync.js"></script>
@@ -568,6 +577,7 @@
         document.getElementById('eCategory').value = EXPENSE_CATEGORIES[0];
         document.getElementById('eAmount').value = '0';
         document.getElementById('eComment').value = '';
+        document.getElementById('ePersonal').checked = false;
         Modal.open('expenseModal');
         setTimeout(() => document.getElementById('eAmount').focus(), 60);
       }
@@ -680,16 +690,18 @@
     });
 
     document.getElementById('eSave').addEventListener('click', () => {
+      const isPersonal = !!document.getElementById('ePersonal').checked;
       const rec = {
         date: document.getElementById('eDate').value || todayISO(),
         category: document.getElementById('eCategory').value,
         amount: Number(document.getElementById('eAmount').value) || 0,
-        comment: document.getElementById('eComment').value.trim()
+        comment: document.getElementById('eComment').value.trim(),
+        personal: isPersonal,
       };
       if (rec.amount <= 0) { toast('Укажите сумму', 'error'); return; }
       Store.addExpense(rec);
       Modal.close('expenseModal');
-      toast('Расход добавлен');
+      toast(isPersonal ? '💼 Личный расход добавлен' : 'Расход добавлен');
       renderAll();
     });
 
