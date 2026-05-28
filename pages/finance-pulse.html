@@ -349,7 +349,7 @@
   <script src="../js/app.js"></script>
   <script src="../js/supabase-client.js?v=20260528a"></script>
   <script src="../js/auth-gate.js"></script>
-  <script src="../js/cloud-sync.js?v=20260522c"></script>
+  <script src="../js/cloud-sync.js?v=20260528b"></script>
   <script src="../js/accounts-sync.js"></script>
   <script src="../js/reviews-sync.js"></script>
   <script src="../components/sidebar.js"></script>
@@ -414,6 +414,27 @@
       return (Number(f.proxyCount) || 0) * (Number(f.proxyEach) || 0) + (Number(f.antidetectMonthly) || 0);
     }
 
+    /** Автосинхрон Пульса с Доходами/Расходами.
+     *  f.balance — это «подтверждённый» баланс на момент f.balanceUpdatedAt
+     *  (когда пользователь руками сверил с реальностью). Текущий баланс
+     *  пересчитывается = подтверждённый + Σ(income после) − Σ(expenses ВКЛ. личные после).
+     *  Личные траты тоже уменьшают кэш — они же реально уходят со счёта. */
+    function computeCurrentBalance(f) {
+      const baseTs = (f.balanceUpdatedAt || '').slice(0, 10);  // YYYY-MM-DD
+      const incomeAfter = (Store.state.income || [])
+        .filter(r => (r.date || '') > baseTs)
+        .reduce((s, r) => s + (Number(r.amount) || 0), 0);
+      const expenseAfter = (Store.state.expenses || [])
+        .filter(r => (r.date || '') > baseTs)
+        .reduce((s, r) => s + (Number(r.amount) || 0), 0);
+      return {
+        confirmedBalance: Number(f.balance) || 0,
+        current: (Number(f.balance) || 0) + incomeAfter - expenseAfter,
+        incomeAfter, expenseAfter,
+        baseTs: baseTs || null,
+      };
+    }
+
     // ── Активные клиенты — заказано > сделано ────────────────────
     // ВАЖНО: алгоритм identical with /pages/clients.html — там «Сделано»
     // показывает фактическое число одобренных отзывов с правильным статусом.
@@ -476,14 +497,25 @@
       }, 0);
       const futureRemain = clients.reduce((sum, c) => sum + (+c.remain || 0), 0);
       const fix = fixedMonthly(f);
-      const free = (Number(f.balance) || 0) - obligations - fix;
-      const afterClose = (Number(f.balance) || 0) + futureRemain - obligations;
+      // Автосинхрон: используем computeCurrentBalance вместо «голого» f.balance.
+      // Подтверждённый баланс + транзакции после balanceUpdatedAt.
+      const cb = computeCurrentBalance(f);
+      const liveBalance = cb.current;
+      const free = liveBalance - obligations - fix;
+      const afterClose = liveBalance + futureRemain - obligations;
 
-      // Balance card
-      document.getElementById('balanceValue').textContent = fmtMoney(f.balance);
-      document.getElementById('balanceMeta').textContent = f.balanceUpdatedAt
-        ? 'обновлено: ' + new Date(f.balanceUpdatedAt).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
-        : 'не вводился';
+      // Balance card — показываем «текущий» с подсказкой как вычислен
+      document.getElementById('balanceValue').textContent = fmtMoney(liveBalance);
+      let metaText;
+      if (!f.balanceUpdatedAt) {
+        metaText = 'не вводился';
+      } else {
+        const baseDate = new Date(f.balanceUpdatedAt).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
+        const delta = cb.incomeAfter - cb.expenseAfter;
+        const deltaSign = delta >= 0 ? '+' : '−';
+        metaText = `от ${baseDate}: ${fmtMoney(cb.confirmedBalance)} ${deltaSign} ${fmtMoney(Math.abs(delta))} (опер.)`;
+      }
+      document.getElementById('balanceMeta').textContent = metaText;
 
       // Obligations
       const obligationsEl = document.getElementById('card-obligations');

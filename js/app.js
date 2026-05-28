@@ -1621,10 +1621,17 @@
         .map(r => r.profileId);
     },
 
-    /* ---------- Сводки ---------- */
+    /* ---------- Сводки ----------
+       expense / profit считаются БЕЗ личных трат (бизнес-показатели).
+       expensePersonal — отдельно, для «Пульса кэша» (там личные тоже
+       уменьшают баланс, но не считаются убытком бизнеса). */
     totals() {
       const income = this.state.income.reduce((s, r) => s + (Number(r.amount) || 0), 0);
-      const expense = this.state.expenses.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+      const expenseAll = this.state.expenses.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+      const expensePersonal = this.state.expenses
+        .filter(r => r.personal)
+        .reduce((s, r) => s + (Number(r.amount) || 0), 0);
+      const expense = expenseAll - expensePersonal;
       const employeesActive = this.state.employees.filter(e => e.status === 'active').length;
       const clients = this.state.clients.length;
       const clientsActive = this.state.clients.filter(c => (c.ordered || 0) > (c.done || 0)).length;
@@ -1632,7 +1639,10 @@
       const subsCount = this.state.subscriptions.length;
       const subsMonthly = this.state.subscriptions.reduce((s, r) => s + (Number(r.amount) || 0), 0);
       return {
-        income, expense,
+        income,
+        expense,            // только бизнес-расходы (для P&L)
+        expensePersonal,    // личные траты отдельно
+        expenseAll,         // всё вместе (для Пульса кэша)
         profit: income - expense,
         employees: employeesActive,
         clients, clientsActive, clientsOverdue,

@@ -180,7 +180,7 @@
   <script src="../js/app.js"></script>
   <script src="../js/supabase-client.js?v=20260528a"></script>
   <script src="../js/auth-gate.js"></script>
-  <script src="../js/cloud-sync.js?v=20260522c"></script>
+  <script src="../js/cloud-sync.js?v=20260528b"></script>
   <script src="../js/accounts-sync.js"></script>
   <script src="../js/reviews-sync.js"></script>
   <script src="../components/sidebar.js"></script>
@@ -215,14 +215,19 @@
       document.getElementById('clientList').innerHTML = names.map(n => `<option value="${escapeAttr(n)}"></option>`).join('');
     }
 
-    /* ---- KPI ---- */
+    /* ---- KPI ----
+       Бизнес-расход = expenses БЕЗ помеченных «личное».
+       Личные — отдельной карточкой (предупреждаем, если кэш утекает на себя).
+       Прибыль = доход − бизнес-расход (личное в P&L не входит). */
     function renderKpis() {
       const t = Store.totals();
+      const personalCount = Store.state.expenses.filter(r => r.personal).length;
+      const personalShare = t.income > 0 ? Math.round(t.expensePersonal / t.income * 100) : 0;
       document.getElementById('finKpis').innerHTML = `
         <div class="card"><div class="card__label">Доход</div><div class="card__value pos">${fmtMoney(t.income)}</div></div>
-        <div class="card"><div class="card__label">Расход</div><div class="card__value neg">${fmtMoney(t.expense)}</div></div>
+        <div class="card"><div class="card__label">Расход бизнеса</div><div class="card__value neg">${fmtMoney(t.expense)}</div><div class="card__trend">без личного</div></div>
         <div class="card"><div class="card__label">Прибыль</div><div class="card__value">${fmtMoney(t.profit)}</div><div class="card__trend ${t.profit>=0?'up':'down'}">${t.income ? Math.round(t.profit/t.income*100) : 0}% маржа</div></div>
-        <div class="card"><div class="card__label">Записей</div><div class="card__value">${Store.state.income.length + Store.state.expenses.length}</div><div class="card__trend">доходов ${Store.state.income.length} · расходов ${Store.state.expenses.length}</div></div>
+        <div class="card" style="${t.expensePersonal > 0 ? 'background:rgba(255,193,7,0.06);border-color:rgba(255,193,7,0.3)' : ''}"><div class="card__label">💼 Личные траты</div><div class="card__value" style="${t.expensePersonal > 0 ? 'color:#b8860b' : ''}">${fmtMoney(t.expensePersonal)}</div><div class="card__trend">${personalCount} операций · ${personalShare}% от дохода</div></div>
       `;
       document.getElementById('cntIncome').textContent = Store.state.income.length;
       document.getElementById('cntExpense').textContent = Store.state.expenses.length;
@@ -449,17 +454,25 @@
     }
 
     function expenseRowHtml(r) {
+      const personalBadge = r.personal
+        ? '<span class="badge" style="background:rgba(255,193,7,0.15);color:#b8860b;border:1px solid rgba(255,193,7,0.5);padding:2px 6px;border-radius:6px;font-size:10px;font-weight:600;margin-left:6px" title="Личный расход — не в P&L">💼 Личное</span>'
+        : '';
       return `
-        <tr data-id="${r.id}">
+        <tr data-id="${r.id}" style="${r.personal ? 'background:rgba(255,193,7,0.04)' : ''}">
           <td><input type="date" class="input" style="padding:4px 6px;background:transparent;border:1px solid transparent" data-field="date" value="${r.date||''}"/></td>
           <td>
             <select class="select" style="padding:4px 8px" data-field="category">
               ${EXPENSE_CATEGORIES.map(s => `<option value="${s}" ${r.category===s?'selected':''}>${s}</option>`).join('')}
             </select>
+            ${personalBadge}
           </td>
           <td class="num neg" data-field="amount" data-type="number">${r.amount||0}</td>
           <td data-field="comment">${escapeHtml(r.comment||'')}</td>
           <td class="actions">
+            <label style="display:inline-flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;margin-right:6px" title="Переключить «Личное»">
+              <input type="checkbox" data-toggle-personal ${r.personal ? 'checked' : ''} style="margin:0;width:14px;height:14px"/>
+              💼
+            </label>
             <button class="btn--icon" data-act="del" title="Удалить">${trashIco()}</button>
           </td>
         </tr>`;
@@ -531,14 +544,29 @@
             renderAll();
           }
         });
+        // Тоггл «личное» прямо в строке
+        const tgl = tr.querySelector('[data-toggle-personal]');
+        if (tgl) {
+          tgl.addEventListener('change', e => {
+            Store.updateExpense(id, { personal: !!e.target.checked });
+            toast(e.target.checked ? '💼 Помечен личным' : 'Расход переведён в бизнес');
+            renderAll();
+          });
+        }
       });
     }
+
+    // Подписки на внешние обновления (другие вкладки, cloud-sync)
+    window.addEventListener('cloudstate:updated', () => { try { renderAll(); } catch(_){} });
+    window.addEventListener('finance:updated', () => { try { renderAll(); } catch(_){} });
 
     function renderAll() {
       refreshGroupFilter();
       renderKpis();
       renderIncome();
       renderExpense();
+      // Сигнал «Пульсу кэша» (если открыт во второй вкладке) — пересчитать баланс.
+      try { window.dispatchEvent(new CustomEvent('finance:updated')); } catch(_){}
     }
 
     /* ---- Tabs ---- */
