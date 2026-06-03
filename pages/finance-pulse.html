@@ -383,7 +383,7 @@
   </div>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260601a"></script>
+  <script src="../js/app.js?v=20260604a"></script>
   <script src="../js/supabase-client.js?v=20260528a"></script>
   <script src="../js/auth-gate.js"></script>
   <script src="../js/cloud-sync.js?v=20260528b"></script>
@@ -457,18 +457,29 @@
      *  пересчитывается = подтверждённый + Σ(income после) − Σ(expenses ВКЛ. личные после).
      *  Личные траты тоже уменьшают кэш — они же реально уходят со счёта. */
     function computeCurrentBalance(f) {
-      const baseTs = (f.balanceUpdatedAt || '').slice(0, 10);  // YYYY-MM-DD
+      const baseIso  = f.balanceUpdatedAt || '';          // полный момент сверки (ISO)
+      const baseDate = baseIso.slice(0, 10);              // YYYY-MM-DD (для старых записей)
+      // Операция влияет на кэш, если ВВЕДЕНА после сверки баланса:
+      //   • новые записи — точное сравнение createdAt > момент сверки
+      //     (расход сделанный сразу после сверки сегодня — сразу минусует);
+      //   • старые записи без createdAt — по дате (date > день сверки),
+      //     как было раньше — чтобы ничего не сломалось на истории.
+      const countsAfter = (r) => {
+        if (!baseIso) return false;                       // баланс ещё не вводился
+        if (r.createdAt) return r.createdAt > baseIso;
+        return (r.date || '') > baseDate;
+      };
       const incomeAfter = (Store.state.income || [])
-        .filter(r => (r.date || '') > baseTs)
+        .filter(countsAfter)
         .reduce((s, r) => s + (Number(r.amount) || 0), 0);
       const expenseAfter = (Store.state.expenses || [])
-        .filter(r => (r.date || '') > baseTs)
+        .filter(countsAfter)
         .reduce((s, r) => s + (Number(r.amount) || 0), 0);
       return {
         confirmedBalance: Number(f.balance) || 0,
         current: (Number(f.balance) || 0) + incomeAfter - expenseAfter,
         incomeAfter, expenseAfter,
-        baseTs: baseTs || null,
+        baseTs: baseDate || null,
       };
     }
 

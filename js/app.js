@@ -380,8 +380,10 @@
         id: uid(), date: todayISO(),
         client: '', service: SERVICES[0],
         amount: 0, comment: '',
+        createdAt: new Date().toISOString(),  // точное время добавления — для «Пульса кэша»
         items: null   // null = старый формат (по тексту); [] = распределённый
       }, rec);
+      if (!item.createdAt) item.createdAt = new Date().toISOString();
 
       // Если есть items — пересчитать сумму и автоподписать клиента
       if (Array.isArray(item.items) && item.items.length > 0) {
@@ -476,8 +478,10 @@
       const item = Object.assign({
         id: uid(), date: todayISO(),
         category: EXPENSE_CATEGORIES[0],
-        amount: 0, comment: ''
+        amount: 0, comment: '',
+        createdAt: new Date().toISOString()  // точное время добавления — для «Пульса кэша»
       }, rec);
+      if (!item.createdAt) item.createdAt = new Date().toISOString();
       this.state.expenses.push(item);
       this.save();
       return item;
