@@ -34,6 +34,22 @@
     'Прочее'
   ];
 
+  // Категории ЛИЧНЫХ трат (expense.personal === true). Бот/ассистент
+  // использует этот же список чтобы классифицировать траты владельца.
+  const PERSONAL_CATEGORIES = [
+    'Еда / продукты',
+    'Кафе / рестораны',
+    'Такси / транспорт',
+    'Одежда',
+    'Развлечения',
+    'Девушка / подарки',
+    'Родители / семья',
+    'Подписки / связь',
+    'Здоровье',
+    'Дом / быт',
+    'Прочее личное'
+  ];
+
   const TARIFFS = [
     { id: 'basic',    name: 'Базовый',  price: 800,   desc: 'Любое кол-во отзывов · 800 ₽/шт' },
     { id: 'standard', name: 'Стандарт', price: 1000,  desc: 'Любое кол-во отзывов · 1000 ₽/шт' },
@@ -1787,7 +1803,7 @@
     Store, Modal, Counter, toast,
     fmtMoney, fmtDate, monthKey, monthLabel,
     uid, todayISO, tomorrowISO,
-    SERVICES, EXPENSE_CATEGORIES, TARIFFS, TARIFF_NAMES,
+    SERVICES, EXPENSE_CATEGORIES, PERSONAL_CATEGORIES, TARIFFS, TARIFF_NAMES,
     PROFILE_STATUSES, CITIES, cityFromCode
   };
 

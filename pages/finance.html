@@ -32,7 +32,8 @@
         <!-- Tabs -->
         <div class="tabs" id="tabs">
           <button class="tab active" data-tab="income">📥 Доходы <span class="tab__count" id="cntIncome">0</span></button>
-          <button class="tab" data-tab="expense">📤 Расходы <span class="tab__count" id="cntExpense">0</span></button>
+          <button class="tab" data-tab="expense">📤 Расходы бизнеса <span class="tab__count" id="cntExpense">0</span></button>
+          <button class="tab" data-tab="personal">💼 Личное <span class="tab__count" id="cntPersonal">0</span></button>
         </div>
 
         <!-- Фильтры (общие) -->
@@ -51,9 +52,14 @@
           <div id="incomeBlocks" class="month-blocks"></div>
         </div>
 
-        <!-- Расходы (по месяцам + категориям, аккордеон) -->
+        <!-- Расходы бизнеса (по месяцам + категориям, аккордеон) -->
         <div class="tab-panel" data-panel="expense">
           <div id="expenseBlocks" class="month-blocks"></div>
+        </div>
+
+        <!-- 💼 Личные траты (по месяцам + категориям) -->
+        <div class="tab-panel" data-panel="personal">
+          <div id="personalBlocks" class="month-blocks"></div>
         </div>
       </main>
     </div>
@@ -177,7 +183,7 @@
   </div>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js"></script>
+  <script src="../js/app.js?v=20260601a"></script>
   <script src="../js/supabase-client.js?v=20260528a"></script>
   <script src="../js/auth-gate.js"></script>
   <script src="../js/cloud-sync.js?v=20260528b"></script>
@@ -194,7 +200,7 @@
      ======================================================================== */
   document.addEventListener('DOMContentLoaded', () => {
     const { Store, Modal, toast, fmtMoney, fmtDate, todayISO,
-            SERVICES, EXPENSE_CATEGORIES } = window.App;
+            SERVICES, EXPENSE_CATEGORIES, PERSONAL_CATEGORIES } = window.App;
     const { makeEditable, confirmDelete } = window.TableUtils;
 
     Store.load();
@@ -230,13 +236,19 @@
         <div class="card" style="${t.expensePersonal > 0 ? 'background:rgba(255,193,7,0.06);border-color:rgba(255,193,7,0.3)' : ''}"><div class="card__label">💼 Личные траты</div><div class="card__value" style="${t.expensePersonal > 0 ? 'color:#b8860b' : ''}">${fmtMoney(t.expensePersonal)}</div><div class="card__trend">${personalCount} операций · ${personalShare}% от дохода</div></div>
       `;
       document.getElementById('cntIncome').textContent = Store.state.income.length;
-      document.getElementById('cntExpense').textContent = Store.state.expenses.length;
+      const bizCnt = Store.state.expenses.filter(r => !r.personal).length;
+      const persCnt = Store.state.expenses.filter(r => r.personal).length;
+      document.getElementById('cntExpense').textContent = bizCnt;
+      const pc = document.getElementById('cntPersonal');
+      if (pc) pc.textContent = persCnt;
     }
 
     /* ---- Селект группы (зависит от вкладки) ---- */
     function refreshGroupFilter() {
       const sel = document.getElementById('fGroup');
-      const opts = activeTab === 'income' ? SERVICES : EXPENSE_CATEGORIES;
+      const opts = activeTab === 'income' ? SERVICES
+                 : activeTab === 'personal' ? PERSONAL_CATEGORIES
+                 : EXPENSE_CATEGORIES;
       const label = activeTab === 'income' ? 'услуги' : 'категории';
       const keep = sel.value;
       sel.innerHTML = `<option value="">Все ${label}</option>` + opts.map(o => `<option value="${o}">${o}</option>`).join('');
@@ -256,8 +268,24 @@
         return true;
       }).sort((a,b) => (b.date||'').localeCompare(a.date||''));
     }
+    // Бизнес-расходы (без личных). Вкладка «Расходы бизнеса».
     function getFilteredExpense() {
       return Store.state.expenses.filter(r => {
+        if (r.personal) return false;   // личные — в отдельной вкладке
+        if (filters.from && r.date < filters.from) return false;
+        if (filters.to && r.date > filters.to) return false;
+        if (filters.group && r.category !== filters.group) return false;
+        if (filters.q) {
+          const s = (r.category + ' ' + (r.comment||'')).toLowerCase();
+          if (!s.includes(filters.q)) return false;
+        }
+        return true;
+      }).sort((a,b) => (b.date||'').localeCompare(a.date||''));
+    }
+    // Личные траты. Вкладка «💼 Личное».
+    function getFilteredPersonal() {
+      return Store.state.expenses.filter(r => {
+        if (!r.personal) return false;
         if (filters.from && r.date < filters.from) return false;
         if (filters.to && r.date > filters.to) return false;
         if (filters.group && r.category !== filters.group) return false;
@@ -453,16 +481,86 @@
       bindExpenseEditors();
     }
 
+    /* ---- Рендер: ЛИЧНЫЕ траты (по месяцам + категориям) ----
+       Использует ту же разметку что и бизнес-расходы (expenseRowHtml сам
+       подставит личные категории по флагу r.personal). */
+    function renderPersonal() {
+      const rows = getFilteredPersonal();
+      const container = document.getElementById('personalBlocks');
+      if (!container) return;
+      const wasOpen = captureOpenState('personalBlocks');
+
+      if (rows.length === 0) {
+        container.innerHTML = `<div class="panel"><div class="empty" style="padding:32px;text-align:center;color:var(--text-mute)">Личных трат пока нет. Нажми «Добавить» и поставь галочку 💼.</div></div>`;
+        return;
+      }
+
+      const groups = groupByMonth(rows);
+      const currMonth = todayISO().slice(0, 7);
+      container.innerHTML = groups.map(([key, items]) => {
+        const sum = items.reduce((s,r) => s + (+r.amount || 0), 0);
+        const isOpen = wasOpen.has(key) || (wasOpen.size === 0 && key === currMonth);
+        const cats = groupByCategory(items);
+        return `
+          <details class="month-block" data-key="${key}" ${isOpen?'open':''}>
+            <summary class="month-summary">
+              <span class="month-summary__chev">▸</span>
+              <span class="month-summary__title">${monthLabel(key)}</span>
+              <span class="month-summary__count">${items.length} ${pluralRu(items.length,'запись','записи','записей')}</span>
+              <span class="month-summary__sum neg">${fmtMoney(sum)}</span>
+            </summary>
+            <div class="cat-blocks">
+              ${cats.map(([cat, catItems]) => {
+                const catSum = catItems.reduce((s,r) => s + (+r.amount || 0), 0);
+                const catKey = `${key}::${cat}`;
+                const catOpen = wasOpen.has(catKey);
+                return `
+                  <details class="cat-block" data-key="${catKey}" ${catOpen?'open':''}>
+                    <summary class="cat-summary">
+                      <span class="month-summary__chev">▸</span>
+                      <span class="cat-summary__title">${escapeHtml(cat)}</span>
+                      <span class="month-summary__count">${catItems.length}</span>
+                      <span class="month-summary__sum neg">${fmtMoney(catSum)}</span>
+                    </summary>
+                    <div class="table-wrap">
+                      <table class="table">
+                        <thead>
+                          <tr>
+                            <th>Дата</th>
+                            <th>Категория</th>
+                            <th class="num">Сумма</th>
+                            <th>Комментарий</th>
+                            <th class="actions"></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          ${catItems.map(r => expenseRowHtml(r)).join('')}
+                        </tbody>
+                      </table>
+                    </div>
+                  </details>`;
+              }).join('')}
+            </div>
+          </details>`;
+      }).join('');
+      bindExpenseEditors();
+    }
+
     function expenseRowHtml(r) {
       const personalBadge = r.personal
         ? '<span class="badge" style="background:rgba(255,193,7,0.15);color:#b8860b;border:1px solid rgba(255,193,7,0.5);padding:2px 6px;border-radius:6px;font-size:10px;font-weight:600;margin-left:6px" title="Личный расход — не в P&L">💼 Личное</span>'
         : '';
+      // Для личных трат — список личных категорий; для бизнеса — бизнес.
+      // Если текущая категория не в списке (старые данные) — добавим её,
+      // чтобы select не потерял значение.
+      const catList = r.personal ? PERSONAL_CATEGORIES.slice() : EXPENSE_CATEGORIES.slice();
+      if (r.category && !catList.includes(r.category)) catList.push(r.category);
       return `
         <tr data-id="${r.id}" style="${r.personal ? 'background:rgba(255,193,7,0.04)' : ''}">
           <td><input type="date" class="input" style="padding:4px 6px;background:transparent;border:1px solid transparent" data-field="date" value="${r.date||''}"/></td>
           <td>
             <select class="select" style="padding:4px 8px" data-field="category">
-              ${EXPENSE_CATEGORIES.map(s => `<option value="${s}" ${r.category===s?'selected':''}>${s}</option>`).join('')}
+              ${catList.map(s => `<option value="${s}" ${r.category===s?'selected':''}>${s}</option>`).join('')}
             </select>
             ${personalBadge}
           </td>
@@ -519,7 +617,8 @@
     }
 
     function bindExpenseEditors() {
-      document.querySelectorAll('#expenseBlocks tr[data-id]').forEach(tr => {
+      // И бизнес-расходы (#expenseBlocks), и личные (#personalBlocks)
+      document.querySelectorAll('#expenseBlocks tr[data-id], #personalBlocks tr[data-id]').forEach(tr => {
         const id = tr.dataset.id;
         tr.querySelectorAll('td[data-field]').forEach(cell => {
           if (cell.querySelector('input,select')) return;
@@ -565,6 +664,7 @@
       renderKpis();
       renderIncome();
       renderExpense();
+      renderPersonal();
       // Сигнал «Пульсу кэша» (если открыт во второй вкладке) — пересчитать баланс.
       try { window.dispatchEvent(new CustomEvent('finance:updated')); } catch(_){}
     }
@@ -577,7 +677,10 @@
         activeTab = t.dataset.tab;
         document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
         document.querySelector(`.tab-panel[data-panel="${activeTab}"]`).classList.add('active');
-        document.getElementById('btnAddLabel').textContent = activeTab === 'income' ? 'Добавить доход' : 'Добавить расход';
+        document.getElementById('btnAddLabel').textContent =
+          activeTab === 'income' ? 'Добавить доход'
+          : activeTab === 'personal' ? 'Добавить личное'
+          : 'Добавить расход';
         renderAll();
       });
     });
@@ -601,14 +704,28 @@
         // Не фокусируем ничего — на телефоне это поднимает клавиатуру и
         // съедает половину экрана, заставляя скролить.
       } else {
+        const isPersonal = (activeTab === 'personal');
         document.getElementById('eDate').value = todayISO();
-        document.getElementById('eCategory').value = EXPENSE_CATEGORIES[0];
         document.getElementById('eAmount').value = '0';
         document.getElementById('eComment').value = '';
-        document.getElementById('ePersonal').checked = false;
+        document.getElementById('ePersonal').checked = isPersonal;
+        fillCategorySelect(isPersonal);
         Modal.open('expenseModal');
         setTimeout(() => document.getElementById('eAmount').focus(), 60);
       }
+    });
+
+    /* Категории в модалке расхода: бизнес или личные (зависит от 💼). */
+    function fillCategorySelect(isPersonal) {
+      const list = isPersonal ? PERSONAL_CATEGORIES : EXPENSE_CATEGORIES;
+      const sel = document.getElementById('eCategory');
+      const keep = sel.value;
+      sel.innerHTML = list.map(s => `<option value="${s}">${s}</option>`).join('');
+      sel.value = list.includes(keep) ? keep : list[0];
+    }
+    // При переключении галочки 💼 в модалке — меняем список категорий.
+    document.getElementById('ePersonal').addEventListener('change', e => {
+      fillCategorySelect(!!e.target.checked);
     });
 
     /* ---- Payment items: динамические строки «анкета + сумма» ---- */

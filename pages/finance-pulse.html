@@ -115,6 +115,11 @@
     .pill.green { background: rgba(34,197,94,0.12); color: #22c55e; }
     .pill.red   { background: rgba(239,68,68,0.12); color: #ef4444; }
     .pill.gray  { background: rgba(160,160,160,0.12); color: #a0a0a0; }
+
+    /* Блок «Детали» — прячем дефолтный треугольник (рисуем свой ▾) */
+    .pulse-details > summary { list-style: none; color: var(--text-2, #a0a0a0); border: 1px dashed var(--border); border-radius: 12px; }
+    .pulse-details > summary::-webkit-details-marker { display: none; }
+    .pulse-details[open] > summary { margin-bottom: 12px; }
   </style>
 </head>
 <body>
@@ -125,8 +130,57 @@
       <div data-component="header" data-title="Пульс кэша"></div>
 
       <main class="content">
+        <!-- ═══════ ГЛАВНОЕ — 4 цифры на каждый день ═══════ -->
+        <div class="pulse-grid pulse-grid--4" style="margin-bottom:14px">
+          <div class="pulse-card" id="m-cash">
+            <div class="pulse-card__label">💳 Кэш сейчас</div>
+            <div class="pulse-card__value num-mono" id="mCashValue">— ₽</div>
+            <div class="pulse-card__sub" id="mCashSub">на счету + наличка</div>
+          </div>
+          <div class="pulse-card" id="m-profit">
+            <div class="pulse-card__label">💰 Прибыль за месяц</div>
+            <div class="pulse-card__value num-mono" id="mProfitValue">— ₽</div>
+            <div class="pulse-card__sub" id="mProfitSub">доход − расходы бизнеса</div>
+          </div>
+          <div class="pulse-card" id="m-personal">
+            <div class="pulse-card__label">💼 Личное за месяц</div>
+            <div class="pulse-card__value num-mono" id="mPersonalValue">— ₽</div>
+            <div class="pulse-card__sub" id="mPersonalSub">потрачено на себя</div>
+          </div>
+          <div class="pulse-card" id="m-free">
+            <div class="pulse-card__label">🟢 Свободно</div>
+            <div class="pulse-card__value num-mono" id="mFreeValue">— ₽</div>
+            <div class="pulse-card__sub">кэш − обязательства по клиентам</div>
+          </div>
+        </div>
+
+        <!-- Сверить баланс — нужен регулярно, держим на виду -->
+        <div class="pulse-panel" style="margin-bottom:14px">
+          <div class="pulse-panel__head">
+            <h3>💵 Сверить баланс</h3>
+            <div class="spacer"></div>
+            <span class="muted" id="balanceMetaTop" style="font-size:11px"></span>
+          </div>
+          <div class="pulse-panel__body">
+            <div class="balance-edit">
+              <input type="number" id="balanceInput" placeholder="0"/>
+              <span class="muted">₽</span>
+              <button id="balanceSave">Сохранить</button>
+            </div>
+            <p class="muted" style="margin-top:8px;font-size:11px">
+              Введи реальный остаток (карта + наличка). Дальше кэш считается сам по доходам/расходам.
+            </p>
+          </div>
+        </div>
+
+        <!-- ═══════ ДЕТАЛИ — полная аналитика, по клику ═══════ -->
+        <details class="pulse-details">
+          <summary style="cursor:pointer;font-size:13px;font-weight:600;padding:12px 4px;user-select:none">
+            ▾ Детали — клиенты, маржа, себестоимость, календарь
+          </summary>
+
         <!-- ─────────── Верхний ряд: 4 ключевые цифры ─────────── -->
-        <div class="pulse-grid pulse-grid--4" style="margin-bottom:12px">
+        <div class="pulse-grid pulse-grid--4" style="margin-bottom:12px;margin-top:8px">
           <div class="pulse-card" id="card-balance">
             <div class="pulse-card__label">💳 Баланс счёта</div>
             <div class="pulse-card__value num-mono" id="balanceValue">— ₽</div>
@@ -149,38 +203,20 @@
           </div>
         </div>
 
-        <!-- ─────────── Управление: баланс / сценарий ─────────── -->
-        <div class="pulse-grid pulse-grid--2" style="margin-bottom:12px">
-          <div class="pulse-panel">
-            <div class="pulse-panel__head">
-              <h3>💵 Обновить баланс</h3>
-            </div>
-            <div class="pulse-panel__body">
-              <div class="balance-edit">
-                <input type="number" id="balanceInput" placeholder="0"/>
-                <span class="muted">₽</span>
-                <button id="balanceSave">Сохранить</button>
-              </div>
-              <p class="muted" style="margin-top:8px;font-size:11px">
-                Вводи остаток на карте + наличку. Хранится локально + в Supabase.
-              </p>
+        <!-- ─────────── Сценарий исполнителя ─────────── -->
+        <div class="pulse-panel" style="margin-bottom:12px">
+          <div class="pulse-panel__head">
+            <h3>👤 Кто будет доделывать отзывы?</h3>
+            <div class="spacer"></div>
+            <div class="toggle-row" id="scenarioToggle">
+              <button data-scenario="self" class="is-on">Сам (100 ₽/отз)</button>
+              <button data-scenario="nastya">Настя (400 ₽/отз)</button>
             </div>
           </div>
-
-          <div class="pulse-panel">
-            <div class="pulse-panel__head">
-              <h3>👤 Кто будет доделывать отзывы?</h3>
-              <div class="spacer"></div>
-              <div class="toggle-row" id="scenarioToggle">
-                <button data-scenario="self" class="is-on">Сам (100 ₽/отз)</button>
-                <button data-scenario="nastya">Настя (400 ₽/отз)</button>
-              </div>
-            </div>
-            <div class="pulse-panel__body">
-              <p class="muted" style="margin:0;font-size:11px">
-                Выбор влияет на «Себестоимость остатка», «Свободный кэш» и календарь нагрузки.
-              </p>
-            </div>
+          <div class="pulse-panel__body">
+            <p class="muted" style="margin:0;font-size:11px">
+              Выбор влияет на «Себестоимость остатка», «Свободный кэш» и календарь нагрузки.
+            </p>
           </div>
         </div>
 
@@ -341,12 +377,13 @@
             <!-- инпуты подставит JS -->
           </div>
         </details>
+        </details><!-- /pulse-details -->
       </main>
     </div>
   </div>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js"></script>
+  <script src="../js/app.js?v=20260601a"></script>
   <script src="../js/supabase-client.js?v=20260528a"></script>
   <script src="../js/auth-gate.js"></script>
   <script src="../js/cloud-sync.js?v=20260528b"></script>
@@ -487,6 +524,60 @@
     }
 
     // ── Render: верхние карточки ──────────────────────────────────
+    // ── Render: ГЛАВНЫЕ 4 цифры (видно всегда) ───────────────────
+    function renderMainCards() {
+      const f = fin();
+      const cb = computeCurrentBalance(f);
+      const liveBalance = cb.current;
+
+      // Прибыль и личное — за ТЕКУЩИЙ календарный месяц
+      const ym = new Date().toISOString().slice(0, 7);   // YYYY-MM
+      const inMonth = (r) => (r.date || '').slice(0, 7) === ym;
+      const incomeMonth = (Store.state.income || []).filter(inMonth)
+        .reduce((s, r) => s + (+r.amount || 0), 0);
+      const expBizMonth = (Store.state.expenses || []).filter(r => inMonth(r) && !r.personal)
+        .reduce((s, r) => s + (+r.amount || 0), 0);
+      const expPersMonth = (Store.state.expenses || []).filter(r => inMonth(r) && r.personal)
+        .reduce((s, r) => s + (+r.amount || 0), 0);
+      const profitMonth = incomeMonth - expBizMonth;
+
+      // Свободно = кэш − обязательства по активным клиентам
+      const clients = activeClients();
+      const ratePerLeft = rateForScenario(f);
+      const obligations = clients.reduce((sum, c) =>
+        sum + Math.max(0, (+c.ordered || 0) - deriveDone(c)) * ratePerLeft, 0);
+      const free = liveBalance - obligations;
+
+      // Кэш
+      document.getElementById('mCashValue').textContent = fmtMoney(liveBalance);
+      // Прибыль
+      document.getElementById('mProfitValue').textContent = fmtMoney(profitMonth);
+      document.getElementById('m-profit').classList.toggle('up', profitMonth >= 0);
+      document.getElementById('m-profit').classList.toggle('down', profitMonth < 0);
+      document.getElementById('mProfitSub').textContent =
+        `доход ${fmtMoney(incomeMonth)} − расход ${fmtMoney(expBizMonth)}`;
+      // Личное
+      document.getElementById('mPersonalValue').textContent = fmtMoney(expPersMonth);
+      document.getElementById('m-personal').classList.toggle('warn', expPersMonth > 0);
+      // Свободно
+      document.getElementById('mFreeValue').textContent = fmtMoney(free);
+      document.getElementById('m-free').classList.toggle('up', free >= 0);
+      document.getElementById('m-free').classList.toggle('down', free < 0);
+
+      // Подпись у блока «Сверить баланс»
+      const bmt = document.getElementById('balanceMetaTop');
+      if (bmt) {
+        if (!f.balanceUpdatedAt) {
+          bmt.textContent = 'баланс ещё не вводился';
+        } else {
+          const baseDate = new Date(f.balanceUpdatedAt)
+            .toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
+          const delta = cb.incomeAfter - cb.expenseAfter;
+          bmt.textContent = `сверено ${baseDate}: ${fmtMoney(cb.confirmedBalance)} ${delta >= 0 ? '+' : '−'} ${fmtMoney(Math.abs(delta))}`;
+        }
+      }
+    }
+
     function renderTopCards() {
       const f = fin();
       const clients = activeClients();
@@ -1137,6 +1228,7 @@
 
     // ── Render всё ────────────────────────────────────────────────
     function renderAll() {
+      try { renderMainCards(); }     catch (e) { console.warn('mainCards:', e); }
       try { renderTopCards(); }      catch (e) { console.warn('topCards:', e); }
       try { renderCloseTable(); }    catch (e) { console.warn('closeTable:', e); }
       try { renderLifecycleTable();} catch (e) { console.warn('lifecycle:', e); }
