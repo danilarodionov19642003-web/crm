@@ -288,6 +288,37 @@
     return BIG_COLLECTIONS.some(k => Array.isArray(s[k]) && s[k].length > 0);
   }
 
+  /* ---- Anti-race с ботом AKIRA ----
+     Бот (AKIRA) дописывает в облако расходы/доходы через свой бэкенд
+     (source='bot', id='m...'). Наш фронт пушит ВЕСЬ state одним блобом и
+     может затереть свежие записи бота, если в нашей локальной копии их ещё
+     нет. Поэтому ПЕРЕД каждым push подмешиваем из свежего облака записи бота
+     (по этим ключам), которых у нас локально нет — union по id.
+     Это сохраняет добавления бота, не воскрешая удалённые юзером записи
+     (берём ТОЛЬКО source='bot' и ТОЛЬКО отсутствующие локально id). */
+  const BOT_MERGE_KEYS = ['expenses', 'income'];
+  function mergeBotAdditions(localState, remoteData) {
+    if (!localState || !remoteData || typeof remoteData !== 'object') return localState;
+    let injected = 0;
+    const out = localState;
+    for (const k of BOT_MERGE_KEYS) {
+      const rem = Array.isArray(remoteData[k]) ? remoteData[k] : [];
+      if (!rem.length) continue;
+      const loc = Array.isArray(out[k]) ? out[k] : [];
+      const localIds = new Set(loc.map(x => x && x.id).filter(Boolean));
+      const missing = rem.filter(r => r && r.source === 'bot' && r.id && !localIds.has(r.id));
+      if (missing.length) {
+        out[k] = loc.concat(missing);
+        injected += missing.length;
+      }
+    }
+    if (injected) {
+      console.warn(`[CloudSync] anti-race: подмешано ${injected} запис(ей) бота перед push`);
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(out)); } catch (_) {}
+    }
+    return out;
+  }
+
   // Сохраняем pendingState в localStorage, чтобы при перезагрузке страницы
   // (или краше браузера) изменения не пропали. На старте recoverPending()
   // вытащит и повторит push.
@@ -340,23 +371,31 @@
     // а делаем pull и просим страницы перерисоваться. Локальный мелкий клик,
     // который привёл к этому push, придётся повторить — но это лучше, чем
     // молча грохнуть ночные изменения с другого устройства.
+    let _remote = null;
     try {
-      const remote = await fetchRemote();
-      if (remote && remote.updated_at && serverUpdatedAt && remote.updated_at > serverUpdatedAt) {
-        console.warn('[CloudSync] CONFLICT: server newer than seen, pulling instead of pushing.', {
-          seen: serverUpdatedAt, server: remote.updated_at
-        });
-        remoteSnapshot  = remote.data;
-        serverUpdatedAt = remote.updated_at;
-        setMeta({ lastPulledAt: remote.updated_at });
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(remote.data));
-        window.dispatchEvent(new CustomEvent('cloudstate:updated', { detail: remote.data }));
-        setStatus('synced', 'Обновлено из облака');
-        return;
-      }
+      _remote = await fetchRemote();
     } catch (e) {
       // Если сеть упала — лучше попробовать push, чем потерять данные.
       console.warn('[CloudSync] concurrency check failed, proceeding with push', e);
+    }
+    if (_remote && _remote.data) {
+      // ANTI-RACE с ботом: ВСЕГДА подмешиваем свежие записи бота (expenses/income,
+      // source=bot), которых нет в нашей копии — иначе полный push их затрёт.
+      mergeBotAdditions(state, _remote.data);
+      // Если сервер новее по ДРУГИМ данным (другая вкладка/устройство) — не затираем
+      // чужое: делаем pull. Записи бота уже либо в state (смёржили), либо в remote.
+      if (_remote.updated_at && serverUpdatedAt && _remote.updated_at > serverUpdatedAt) {
+        console.warn('[CloudSync] CONFLICT: server newer than seen, pulling instead of pushing.', {
+          seen: serverUpdatedAt, server: _remote.updated_at
+        });
+        remoteSnapshot  = _remote.data;
+        serverUpdatedAt = _remote.updated_at;
+        setMeta({ lastPulledAt: _remote.updated_at });
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(_remote.data));
+        window.dispatchEvent(new CustomEvent('cloudstate:updated', { detail: _remote.data }));
+        setStatus('synced', 'Обновлено из облака');
+        return;
+      }
     }
     try {
       await pushRemote(state);
@@ -400,6 +439,9 @@
     if (!pendingState || !pullCompleted) return;
     const state = pendingState;
     if (isEffectivelyEmpty(state) && remoteHasData(remoteSnapshot)) return;
+    // ANTI-RACE с ботом: при закрытии вкладки нет времени на fetch, поэтому
+    // подмешиваем записи бота из последнего известного снимка облака (remoteSnapshot).
+    mergeBotAdditions(state, remoteSnapshot);
     // НЕ обнуляем pendingState и НЕ чистим persistPending — keepalive-запрос
     // может не долететь, тогда при следующей загрузке recoverPending() подберёт.
     // Очистка произойдёт после успешного pushRemote (он удалит PENDING_KEY).
