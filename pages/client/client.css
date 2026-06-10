@@ -536,12 +536,14 @@
 .cli-proxy-summary::-webkit-details-marker { display: none; }
 .cli-proxy-summary:hover { border-color: var(--accent, #ffa726); }
 .cli-proxy-summary__icon { flex-shrink: 0; }
-.cli-proxy-summary__label { font-size: 13px; font-weight: 600; }
+.cli-proxy-summary__label { font-size: 13px; font-weight: 600; white-space: nowrap; }
 .cli-proxy-summary__label b { color: var(--accent, #ffa726); }
 .cli-proxy-summary__meta {
   margin-left: auto;
   font-size: 11px; color: var(--text-mute);
   white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+  min-width: 0;                 /* на узких экранах ужимается, а не ломает строку */
 }
 .cli-proxy-summary__chev {
   flex-shrink: 0;
