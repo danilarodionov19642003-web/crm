@@ -31,6 +31,7 @@
   --sidebar-w: 240px;
   --header-h: 64px;
   --shadow: 0 4px 24px rgba(0, 0, 0, 0.35);
+  --header-bg: rgba(15, 15, 15, .92);   /* фон fixed-шапки (полупрозрачный --bg) */
   --font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", "Segoe UI", Roboto, sans-serif;
   /* алиасы под совместимость со старым именованием в client.css */
   --bg-2: var(--bg-elev);
@@ -55,6 +56,7 @@
     --red: #dc2626;
     --blue: #2563eb;
     --shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+    --header-bg: rgba(247, 247, 248, .92);   /* светлый фон fixed-шапки (= --bg) */
     --bg-2: var(--bg-elev);
   }
   /* Скроллбар на белом фоне виден лучше с серым ползунком */
@@ -152,6 +154,7 @@ input, select, textarea { font-family: inherit; font-size: inherit; }
   flex: 1;
   margin-left: var(--sidebar-w);
   min-width: 0;
+  padding-top: var(--header-h);   /* контент не уходит под fixed-шапку */
 }
 
 /* --- Header --- */
@@ -160,10 +163,12 @@ input, select, textarea { font-family: inherit; font-size: inherit; }
   border-bottom: 1px solid var(--border);
   padding: 0 32px;
   display: flex; align-items: center; gap: 20px;
-  background: rgba(15, 15, 15, .85);
+  background: var(--header-bg);   /* следует за темой (тёмная/светлая) */
   backdrop-filter: blur(10px);
-  position: sticky; top: 0;
-  z-index: 40;
+  /* fixed (не sticky): sticky ломается из-за overflow-x:hidden на body +
+     backdrop-filter в Safari/iOS — шапка «уезжала». fixed держит её всегда. */
+  position: fixed; top: 0; left: var(--sidebar-w); right: 0;
+  z-index: 45;
 }
 .header__title {
   font-size: 18px;
@@ -731,19 +736,22 @@ input, select, textarea { font-family: inherit; font-size: inherit; }
   /* Сайдбар: выезжает по тогглу */
   .sidebar { transform: translateX(-100%); box-shadow: var(--shadow); }
   .sidebar.open { transform: translateX(0); }
-  .main { margin-left: 0; }
+  .main { margin-left: 0; padding-top: 52px; }   /* мобильная высота шапки */
   .menu-toggle { display: inline-flex; }
 
-  /* Header: компактнее, поиск убираем (есть на самих страницах) */
-  .header { padding: 0 12px; height: 52px; gap: 8px; }
-  .header__title { font-size: 14px; font-weight: 600; }
+  /* Header: компактнее, на всю ширину (сайдбар уезжает off-canvas) */
+  .header { padding: 0 12px; height: 52px; gap: 8px; left: 0; }
+  .header__title { font-size: 14px; font-weight: 600; min-width: 0; overflow: hidden;
+                   text-overflow: ellipsis; white-space: nowrap; }
   .header__search { display: none; }
   .header__actions { gap: 6px; }
-  .avatar { width: 30px; height: 30px; font-size: 12px; }
+  /* Аватар прячем — освобождаем место под индикатор связи */
+  .avatar { display: none; }
 
-  /* Cloud-status: только цветная точка, без текста */
-  .cloud-status { padding: 4px 6px; }
-  .cloud-status__text { display: none; }
+  /* Cloud-status: показываем И точку, И текст (чтобы видеть статус не листая) */
+  .cloud-status { padding: 4px 8px; font-size: 11px; }
+  .cloud-status__text { display: inline; max-width: 130px; overflow: hidden;
+                        text-overflow: ellipsis; }
 
   /* Контент: меньше отступы */
   .content { padding: 14px 12px 80px; }
