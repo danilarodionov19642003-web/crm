@@ -520,6 +520,37 @@
 .cli-proxy-block {
   display: flex; flex-direction: column; gap: 12px;
 }
+/* Дропдаун: список свёрнут, закрытым видна одна строка-кнопка со счётчиком */
+.cli-proxy-dd { width: 100%; }
+.cli-proxy-summary {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 13px 14px;
+  cursor: pointer;
+  user-select: none;
+  list-style: none;             /* убираем дефолтный треугольник */
+  transition: border-color .12s;
+}
+.cli-proxy-summary::-webkit-details-marker { display: none; }
+.cli-proxy-summary:hover { border-color: var(--accent, #ffa726); }
+.cli-proxy-summary__icon { flex-shrink: 0; }
+.cli-proxy-summary__label { font-size: 13px; font-weight: 600; }
+.cli-proxy-summary__label b { color: var(--accent, #ffa726); }
+.cli-proxy-summary__meta {
+  margin-left: auto;
+  font-size: 11px; color: var(--text-mute);
+  white-space: nowrap;
+}
+.cli-proxy-summary__chev {
+  flex-shrink: 0;
+  color: var(--text-mute);
+  transition: transform .15s;
+}
+.cli-proxy-dd[open] .cli-proxy-summary { border-color: var(--accent, #ffa726); margin-bottom: 10px; }
+.cli-proxy-dd[open] .cli-proxy-summary__chev { transform: rotate(180deg); }
+.cli-proxy-dd .cli-proxy-info { margin-bottom: 10px; }
 .cli-proxy-info {
   background: rgba(255, 193, 7, 0.06);
   border: 1px solid rgba(255, 193, 7, 0.25);

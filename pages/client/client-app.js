@@ -635,29 +635,36 @@
       return;
     }
     const updated = meta && meta.updated_at ? _fmtAgo(meta.updated_at) : '—';
+    // Список свёрнут в <details>-дропдаун: закрытым — одна строка со счётчиком,
+    // по тапу раскрывается весь список (иначе 10 прокси съедали пол-экрана).
     el.innerHTML = `
-      <div class="cli-proxy-info">
-        🛰️ Если Telegram не открывается — нажми на любой прокси ниже. Telegram сам подставит настройки.
-        Если не получилось через один — попробуй другой (некоторые могут не работать на твоём операторе).
-        <div style="font-size:11px;color:var(--text-mute);margin-top:6px">
-          Обновлено: ${escapeHtml(updated)} · доступно: ${proxies.length}
+      <details class="cli-proxy-dd">
+        <summary class="cli-proxy-summary">
+          <span class="cli-proxy-summary__icon">🛰️</span>
+          <span class="cli-proxy-summary__label">Показать прокси <b>(${proxies.length})</b></span>
+          <span class="cli-proxy-summary__meta">обновлено ${escapeHtml(updated)}</span>
+          <span class="cli-proxy-summary__chev">▾</span>
+        </summary>
+        <div class="cli-proxy-info">
+          Если Telegram не открывается — нажми на любой прокси ниже. Telegram сам подставит настройки.
+          Если не получилось через один — попробуй другой (некоторые могут не работать на твоём операторе).
         </div>
-      </div>
-      <div class="cli-proxy-list">
-        ${proxies.map((p, i) => `
-          <a class="cli-proxy-item" href="${escapeAttr(p.tg_link)}">
-            <div class="cli-proxy-num">${i + 1}</div>
-            <div class="cli-proxy-body">
-              <div class="cli-proxy-host">${escapeHtml(p.host)}:${escapeHtml(p.port)}</div>
-              <div class="cli-proxy-meta">⚡ ${escapeHtml(p.latency_ms || '?')} ms · открыть в Telegram</div>
-            </div>
-            <div class="cli-proxy-arrow">→</div>
-          </a>
-        `).join('')}
-      </div>
-      <div style="font-size:11px;color:var(--text-mute);margin-top:10px;text-align:center">
-        Если ни один не работает — напиши менеджеру.
-      </div>
+        <div class="cli-proxy-list">
+          ${proxies.map((p, i) => `
+            <a class="cli-proxy-item" href="${escapeAttr(p.tg_link)}">
+              <div class="cli-proxy-num">${i + 1}</div>
+              <div class="cli-proxy-body">
+                <div class="cli-proxy-host">${escapeHtml(p.host)}:${escapeHtml(p.port)}</div>
+                <div class="cli-proxy-meta">⚡ ${escapeHtml(p.latency_ms || '?')} ms · открыть в Telegram</div>
+              </div>
+              <div class="cli-proxy-arrow">→</div>
+            </a>
+          `).join('')}
+        </div>
+        <div style="font-size:11px;color:var(--text-mute);margin-top:10px;text-align:center">
+          Если ни один не работает — напиши менеджеру.
+        </div>
+      </details>
     `;
   }
   function escapeAttr(s) {
