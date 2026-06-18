@@ -458,7 +458,7 @@
       const total = (Store.state.clients || []).length;
       el.innerHTML = [
         `<span class="cl-chip ${filters.customer ? '' : 'is-active'}" data-cust="">Все<span class="cl-chip__count">${total}</span></span>`,
-        ...names.map(n => `<span class="cl-chip ${filters.customer === n ? 'is-active' : ''}" data-cust="${escapeAttr(n)}">${escapeHtml(n)}<span class="cl-chip__count">${counts[n]}</span></span>`)
+        ...names.map(n => `<span class="cl-chip ${filters.customer === n ? 'is-active' : ''}" data-cust="${escapeHtml(n)}">${escapeHtml(n)}<span class="cl-chip__count">${counts[n]}</span></span>`)
       ].join('');
       el.querySelectorAll('.cl-chip').forEach(chip => {
         chip.addEventListener('click', () => { filters.customer = chip.dataset.cust || ''; render(); });
