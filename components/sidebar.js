@@ -17,7 +17,6 @@
     { id: 'subscriptions', label: 'Подписки',   href: 'subscriptions.html', icon: icoSub(),      ownerOnly: true },
     { id: 'employees',     label: 'Сотрудники', href: 'employees.html',     icon: icoUsers(),    ownerOnly: true },
     { id: 'tasks',         label: 'Задачи',     href: 'tasks.html',         icon: icoTasks() },
-    { id: 'plan',          label: 'План',       href: 'plan.html',          icon: icoTasks(),   ownerOnly: true },
     { id: 'reviews',       label: 'Отзывы',     href: 'reviews.html',       icon: icoReviews() },
     { id: 'statuses',      label: 'Аккаунты',   href: 'statuses.html',      icon: icoProfiles() },
     { id: 'links',         label: 'Связи',      href: 'links.html',         icon: icoLinks(),    ownerOnly: true },

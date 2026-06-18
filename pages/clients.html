@@ -239,10 +239,12 @@
 
         <div id="schCalendar"></div>
 
+        <!-- Аккаунты по анкете этого клиента (читается из «Аккаунтов» автоматически) -->
+        <div id="schAccounts" style="margin-top:14px"></div>
+
         <div class="muted" style="font-size:11px;margin-top:10px">
-          <strong>Подсказка:</strong> тык по дню = +1 запланированный отзыв.
-          Shift+тык или правый клик = −1.
-          ✓ автоматически появляется когда отзыв одобрен и попадает на эту дату.
+          <strong>Подсказка:</strong> тык по дню = +1 запланированный отзыв (ручной план). Shift+тык / правый клик = −1.
+          В календаре эмодзи-метки = аккаунты из «Аккаунтов» по их статус-датам. «Осталось разместить» = заказано − готово − в работе.
         </div>
       </div>
       <div class="modal__footer">
@@ -595,6 +597,37 @@
       return getSchedule(c).reduce((s, x) => s + (+x.count || 0), 0);
     }
 
+    /* Порядок статусов аккаунтов (для сводки/списка). Последний — «готово». */
+    const ACC_STATUS_ORDER = ['🎯 Готов','🏆 Выбран','⭐ Выбрать','✅ Диалог Закончен','💬 Диалог Начат','📋 Запланировано'];
+    const ACC_DONE_STATUS = '🎯 Готов';
+
+    /** Реальная картина по анкете(ам) клиента из раздела «Аккаунты» (profileStatuses).
+     *  Возвращает: items [{code,status,date,mentorId,profileId}], byStatus {статус:N},
+     *  done (статус Готов), inWork (промежуточные), total. Связь — по client.code → mentors. */
+    function accountsForClient(c) {
+      const out = { items: [], byStatus: {}, done: 0, inWork: 0, total: 0 };
+      const code = String(c.code || '').toLowerCase().trim();
+      if (!code) return out;
+      const mentorIds = new Set((Store.state.mentors || [])
+        .filter(m => String(m.code || '').toLowerCase().trim() === code)
+        .map(m => m.id));
+      if (!mentorIds.size) return out;
+      (Store.state.profileStatuses || []).forEach(s => {
+        if (!mentorIds.has(s.mentorId)) return;
+        const prof = (Store.state.profiles || []).find(p => p.id === s.profileId);
+        out.items.push({
+          code: prof ? (prof.code || '?') : '?',
+          status: s.status || '?',
+          date: (s.date || '').slice(0, 10),
+          mentorId: s.mentorId, profileId: s.profileId,
+        });
+        out.byStatus[s.status] = (out.byStatus[s.status] || 0) + 1;
+        out.total++;
+        if (s.status === ACC_DONE_STATUS) out.done++; else out.inWork++;
+      });
+      return out;
+    }
+
     function updateSchedule(clientId, newSchedule) {
       // нормализуем: убираем нули, сортируем по дате
       const clean = (newSchedule || [])
@@ -826,26 +859,26 @@
       document.getElementById('schTitle').textContent =
         `График · ${c.code ? c.code + ' · ' : ''}${c.name || 'Клиент'} · ${c.tariff || ''}`;
 
-      // Стата вверху
+      // Стата вверху — по реальным аккаунтам из раздела «Аккаунты»
       const ordered = +c.ordered || 0;
-      const doneActual = deriveDone(c);  // approved + статус Готов
-      const planned = totalPlanned(c);
+      const acc = accountsForClient(c);
+      const done = acc.done;          // статус 🎯 Готов
+      const inWork = acc.inWork;      // промежуточные статусы (диалог/выбрать/выбран...)
+      const plannedManual = totalPlanned(c);
       const today = todayISO();
-      const plannedFuture = getSchedule(c).reduce((s, x) => s + (x.date >= today ? (+x.count || 0) : 0), 0);
-      const leftToPlace = Math.max(0, ordered - doneActual - plannedFuture);
-      const overplaced = ordered - doneActual - plannedFuture;  // < 0 если перепланировал
-      const summaryCls = leftToPlace > 0 ? 'warn' : (overplaced < 0 ? 'bad' : 'ok');
-      const summaryText = leftToPlace > 0
+      const leftToPlace = Math.max(0, ordered - done - inWork);  // заказано − готово − в работе
+      const over = ordered - done - inWork;  // < 0 = аккаунтов назначено больше, чем заказано
+      const placeCls = leftToPlace > 0 ? 'warn' : (over < 0 ? 'bad' : 'ok');
+      const placeText = leftToPlace > 0
         ? `📦 Осталось разместить: ${leftToPlace}`
-        : (overplaced < 0
-            ? `⚠ Перепланировал на ${-overplaced}`
-            : `✓ Всё запланировано`);
+        : (over < 0 ? `⚠ Назначено больше на ${-over}` : `✓ Всё размещено`);
 
       document.getElementById('schSummary').innerHTML = `
         <span class="sch-stat"><strong>Заказано:</strong> ${ordered}</span>
-        <span class="sch-stat ok"><strong>Сделано:</strong> ${doneActual}</span>
-        <span class="sch-stat warn"><strong>Запланировано:</strong> ${planned}</span>
-        <span class="sch-stat ${summaryCls}">${summaryText}</span>
+        <span class="sch-stat ok"><strong>🎯 Готово:</strong> ${done}</span>
+        <span class="sch-stat warn"><strong>🛠 В работе:</strong> ${inWork}</span>
+        <span class="sch-stat ${placeCls}">${placeText}</span>
+        <span class="sch-stat"><strong>🗓 План вручную:</strong> ${plannedManual}</span>
       `;
 
       // Заголовок месяца
@@ -863,6 +896,12 @@
       const doneMap = getDoneByDateMap(c);
       const planMap = {};
       getSchedule(c).forEach(x => { planMap[x.date] = (+x.count || 0); });
+      // Аккаунты из «Аккаунтов» по их статус-датам → метки в календаре
+      const accMap = {};
+      acc.items.forEach(it => {
+        if (!it.date) return;
+        (accMap[it.date] = accMap[it.date] || []).push({ code: it.code, emoji: (it.status.split(' ')[0] || '•') });
+      });
 
       const cells = [];
       // Заголовки дней недели
@@ -886,11 +925,13 @@
         else if (done > 0)                cls += ' has-done';
         else if (planned > 0 && !isPast)  cls += ' has-planned';
         else if (planned > 0 && isPast)   cls += ' is-overdue';  // план был — не сделали
+        const accHere = accMap[iso] || [];
         cells.push(`
           <div class="${cls}" data-date="${iso}">
             <div class="sch-day__num">${d}</div>
             ${planned > 0 ? `<div class="sch-day__planned">●${planned}</div>` : ''}
             ${done > 0    ? `<div class="sch-day__done">✓${done}</div>`    : ''}
+            ${accHere.length ? `<div class="sch-day__acc" title="${accHere.map(a => a.emoji + a.code).join('  ')}" style="font-size:9px;line-height:1.1;margin-top:1px;letter-spacing:-1px">${accHere.map(a => a.emoji).join('')}</div>` : ''}
           </div>
         `);
       }
@@ -900,6 +941,27 @@
       for (let i = 0; i < pad; i++) cells.push(`<div class="sch-day is-other"></div>`);
 
       cal.innerHTML = `<div class="sch-grid">${cells.join('')}</div>`;
+
+      // Блок «Аккаунты по анкете» — реальная картина из «Аккаунтов»
+      const accEl = document.getElementById('schAccounts');
+      if (acc.total === 0) {
+        accEl.innerHTML = `<div class="muted" style="font-size:12px;padding:10px;border:1px dashed var(--border);border-radius:10px">По этой анкете пока нет аккаунтов в разделе «Аккаунты».</div>`;
+      } else {
+        const chips = ACC_STATUS_ORDER.filter(st => acc.byStatus[st]).map(st =>
+          `<span style="font-size:12px;padding:3px 8px;border:1px solid var(--border);border-radius:999px;background:var(--bg-elev-2)">${st}: <b>${acc.byStatus[st]}</b></span>`
+        ).join('');
+        const list = ACC_STATUS_ORDER.filter(st => acc.byStatus[st]).map(st => {
+          const codes = acc.items.filter(i => i.status === st)
+            .sort((a, b) => (a.date || '').localeCompare(b.date || ''))
+            .map(i => `${escapeHtml(i.code)}${i.date ? ` <span style="color:var(--text-mute)">${i.date}</span>` : ''}`)
+            .join(', ');
+          return `<div style="font-size:12px;margin-top:4px"><b>${st}</b> — ${codes}</div>`;
+        }).join('');
+        accEl.innerHTML = `
+          <div style="font-weight:600;font-size:13px;margin-bottom:8px">Аккаунты по анкете <span style="color:var(--text-mute)">(${acc.total} назначено)</span></div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${chips}</div>
+          <div>${list}</div>`;
+      }
 
       // Биндим клики
       cal.querySelectorAll('.sch-day[data-date]').forEach(el => {
