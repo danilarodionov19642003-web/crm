@@ -926,9 +926,15 @@
         else if (planned > 0 && !isPast)  cls += ' has-planned';
         else if (planned > 0 && isPast)   cls += ' is-overdue';  // план был — не сделали
         const accHere = accMap[iso] || [];
+        // Загрузка дня: сколько РАЗНЫХ клиентов на этот день (по всем клиентам)
+        const dayClients = otherClientsOnDate(iso, c.id) + (planned > 0 ? 1 : 0);
+        const dayFull = dayClients >= MAX_CLIENTS_PER_DAY;
+        const loadBadge = dayClients > 0
+          ? ` <span style="font-size:9px;font-weight:700;color:${dayFull ? '#ef4444' : 'var(--text-mute)'}" title="Клиентов в этот день: ${dayClients} из ${MAX_CLIENTS_PER_DAY}">👥${dayClients}</span>`
+          : '';
         cells.push(`
           <div class="${cls}" data-date="${iso}">
-            <div class="sch-day__num">${d}</div>
+            <div class="sch-day__num">${d}${loadBadge}</div>
             ${planned > 0 ? `<div class="sch-day__planned">●${planned}</div>` : ''}
             ${done > 0    ? `<div class="sch-day__done">✓${done}</div>`    : ''}
             ${accHere.length ? `<div class="sch-day__acc" title="${accHere.map(a => a.emoji + a.code).join('  ')}" style="font-size:9px;line-height:1.1;margin-top:1px;letter-spacing:-1px">${accHere.map(a => a.emoji).join('')}</div>` : ''}
@@ -970,11 +976,36 @@
       });
     }
 
+    /* Лимит загрузки дня: не больше N РАЗНЫХ клиентов на одну дату (по всем клиентам). */
+    const MAX_CLIENTS_PER_DAY = 5;
+
+    /** Сколько ДРУГИХ клиентов (кроме exceptId) уже запланировано на эту дату. */
+    function otherClientsOnDate(isoDate, exceptId) {
+      return (Store.state.clients || []).filter(cl =>
+        cl.id !== exceptId &&
+        Array.isArray(cl.schedule) &&
+        cl.schedule.some(s => s.date === isoDate && (+s.count || 0) > 0)
+      ).length;
+    }
+
     function onDayClick(isoDate, delta) {
       const c = Store.state.clients.find(x => x.id === curSchClientId);
       if (!c) return;
       const schedule = getSchedule(c).map(x => ({ ...x }));
       const idx = schedule.findIndex(x => x.date === isoDate);
+      const alreadyOnDay = idx >= 0 && (+schedule[idx].count || 0) > 0;
+
+      // Лимит: если ДОБАВЛЯЕМ нового клиента на день, где уже MAX клиентов — блок.
+      // (Увеличение count тому, кто уже на этот день, не считается новым человеком.)
+      if (delta > 0 && !alreadyOnDay) {
+        const others = otherClientsOnDate(isoDate, c.id);
+        if (others >= MAX_CLIENTS_PER_DAY) {
+          const dmy = isoDate.split('-').reverse().join('.');
+          toast(`На ${dmy} уже ${others} клиентов (максимум ${MAX_CLIENTS_PER_DAY}). Выбери другой день.`, 'error');
+          return;
+        }
+      }
+
       if (idx >= 0) {
         schedule[idx].count = Math.max(0, (+schedule[idx].count || 0) + delta);
         if (schedule[idx].count === 0) schedule.splice(idx, 1);
