@@ -29,6 +29,15 @@
     .cl-editable.editable:focus { outline: 1px solid var(--accent); border-radius: 3px; }
     .cl-date { padding: 2px 4px; font-size: 12px; background: transparent; border: 1px solid transparent; border-radius: 6px; color: inherit; }
     .cl-date:hover { border-color: var(--border); }
+    .cl-card__customer { font-size: 12px; color: var(--text-dim); display: flex; align-items: center; gap: 4px; }
+    .cl-cust-edit { min-width: 56px; display: inline-block; }
+    .cl-cust-edit:empty::before { content: 'указать'; color: var(--text-mute); font-style: italic; }
+    /* Чипы-заказчики */
+    .cl-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+    .cl-chip { font-size: 12px; padding: 4px 11px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg-elev); cursor: pointer; white-space: nowrap; transition: border-color .12s, background .12s; }
+    .cl-chip:hover { border-color: var(--border-strong); }
+    .cl-chip.is-active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-hover); font-weight: 600; }
+    .cl-chip__count { opacity: .6; margin-left: 3px; }
 
     /* Календарь графика отзывов в модалке */
     .sch-grid {
@@ -118,9 +127,12 @@
             <option value="closed">Только закрытые</option>
             <option value="all-incl-closed">Все, включая закрытых</option>
           </select>
-          <input type="text" id="fSearch" class="input" placeholder="Поиск по имени, коду..." style="flex:1;min-width:200px"/>
+          <input type="text" id="fSearch" class="input" placeholder="Поиск по имени, коду, заказчику..." style="flex:1;min-width:200px"/>
           <button class="btn btn--ghost" id="btnReset">Сбросить</button>
         </div>
+
+        <!-- Чипы-заказчики: клик показывает только анкеты этого заказчика -->
+        <div id="clCustomers" class="cl-chips"></div>
 
         <div id="clCards" class="cl-cards"></div>
         <div id="clFoot" class="muted" style="margin-top:14px;font-size:13px;text-align:right"></div>
@@ -319,7 +331,7 @@
     const { makeEditable, confirmDelete } = window.TableUtils;
 
     Store.load();
-    const filters = { tariff: '', state: '', q: '' };
+    const filters = { tariff: '', state: '', q: '', customer: '' };
 
     /* ---- Авто-подсчёт «Сделано» из ОДОБРЕННЫХ отзывов + действующего статуса «Готов» ----
        Правило: отзыв считается, если а) владелец одобрил его на модерации и
@@ -376,12 +388,25 @@
       tf.value = TARIFF_NAMES.includes(keep) ? keep : '';
     }
 
+    /** Просрочка В ДНЯХ — считается ВЖИВУЮ от deadline до сегодня (не из stale-поля).
+     *  0, если дедлайна нет, он в будущем, или работа уже выполнена (done ≥ ordered). */
+    function clientOverdue(c) {
+      if (!c || !c.deadline) return 0;
+      const ordered = +c.ordered || 0;
+      if (ordered > 0 && deriveDone(c) >= ordered) return 0;  // выполнено — не просрочка
+      const dl = new Date(c.deadline + 'T00:00:00');
+      const today = new Date(todayISO() + 'T00:00:00');
+      if (isNaN(dl)) return 0;
+      const diff = Math.floor((today - dl) / 86400000);
+      return diff > 0 ? diff : 0;
+    }
+
     /* ---- KPI ---- */
     function renderKpis(rows) {
       const total = rows.reduce((s, r) => s + (+r.total || 0), 0);
       const paid = rows.reduce((s, r) => s + (+r.paid || 0), 0);
       const remain = rows.reduce((s, r) => s + (+r.remain || 0), 0);
-      const overdue = rows.filter(r => (+r.overdueDays || 0) > 0).length;
+      const overdue = rows.filter(r => (clientOverdue(r)) > 0).length;
       const inProgress = rows.filter(r => (+r.ordered||0) > deriveDone(r)).length;
       document.getElementById('clKpis').innerHTML = `
         <div class="card"><div class="card__label">Клиентов</div><div class="card__value">${rows.length}</div></div>
@@ -396,8 +421,9 @@
     function getFiltered() {
       return Store.state.clients.filter(r => {
         if (filters.tariff && r.tariff !== filters.tariff) return false;
+        if (filters.customer && (r.customer || '').trim() !== filters.customer) return false;
         if (filters.q) {
-          const s = (r.name + ' ' + r.code + ' ' + r.platform + ' ' + r.tariff).toLowerCase();
+          const s = (r.name + ' ' + r.code + ' ' + r.platform + ' ' + r.tariff + ' ' + (r.customer || '')).toLowerCase();
           if (!s.includes(filters.q)) return false;
         }
         // По умолчанию (фильтр пустой) — прячем закрытых, не засоряем список
@@ -408,7 +434,7 @@
         if (filters.state) {
           // Для всех остальных фильтров закрытых тоже скрываем
           if (r.closed === true) return false;
-          const ordered = +r.ordered||0, done = deriveDone(r), remain = +r.remain||0, overdue = +r.overdueDays||0;
+          const ordered = +r.ordered||0, done = deriveDone(r), remain = +r.remain||0, overdue = clientOverdue(r);
           if (filters.state === 'overdue' && overdue <= 0) return false;
           if (filters.state === 'done' && !(ordered > 0 && done >= ordered)) return false;
           if (filters.state === 'active' && !(ordered > 0 && done < ordered)) return false;
@@ -418,8 +444,30 @@
       });
     }
 
+    /* ---- Чипы-заказчики: группировка анкет по заказчику (client.customer) ---- */
+    function renderCustomerChips() {
+      const el = document.getElementById('clCustomers');
+      if (!el) return;
+      const counts = {};
+      (Store.state.clients || []).forEach(c => {
+        const cust = (c.customer || '').trim();
+        if (cust) counts[cust] = (counts[cust] || 0) + 1;
+      });
+      const names = Object.keys(counts).sort((a, b) => a.localeCompare(b, 'ru'));
+      if (names.length === 0) { el.innerHTML = ''; return; }
+      const total = (Store.state.clients || []).length;
+      el.innerHTML = [
+        `<span class="cl-chip ${filters.customer ? '' : 'is-active'}" data-cust="">Все<span class="cl-chip__count">${total}</span></span>`,
+        ...names.map(n => `<span class="cl-chip ${filters.customer === n ? 'is-active' : ''}" data-cust="${escapeAttr(n)}">${escapeHtml(n)}<span class="cl-chip__count">${counts[n]}</span></span>`)
+      ].join('');
+      el.querySelectorAll('.cl-chip').forEach(chip => {
+        chip.addEventListener('click', () => { filters.customer = chip.dataset.cust || ''; render(); });
+      });
+    }
+
     function render() {
       refreshFilterOptions();
+      renderCustomerChips();
       const rows = getFiltered();
       const cards = document.getElementById('clCards');
       const foot = document.getElementById('clFoot');
@@ -446,7 +494,7 @@
       const ordered = +r.ordered || 0;
       const done = deriveDone(r);
       const pct = ordered > 0 ? Math.min(100, Math.round(done / ordered * 100)) : 0;
-      const overdue = +r.overdueDays || 0;
+      const overdue = clientOverdue(r);
       const remain = +r.remain || 0;
       const ico = (path, w = 14) => `<svg width="${w}" height="${w}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px">${path}</svg>`;
       return `
@@ -455,6 +503,11 @@
             <span class="cl-card__code" data-act="reviews" title="Код · опубликованные отзывы">${escapeHtml(r.code || '—')}</span>
             <span class="cl-card__name cl-editable" data-field="name" title="Имя (клик — изменить)">${escapeHtml(r.name || '—')}</span>
             ${statusBadge(r)}
+          </div>
+
+          <div class="cl-card__customer" title="Заказчик — кому принадлежит анкета. Впиши одно имя для всех анкет одного человека (напр. «Кирилл»), потом фильтруй чипом сверху.">
+            <span style="color:var(--text-mute)">Заказчик:</span>
+            <span class="cl-editable cl-cust-edit" data-field="customer">${escapeHtml(r.customer || '')}</span>
           </div>
 
           <div class="cl-card__meta">
@@ -617,7 +670,7 @@
     }
 
     function statusBadge(r) {
-      const ordered = +r.ordered||0, done = deriveDone(r), remain = +r.remain||0, overdue = +r.overdueDays||0;
+      const ordered = +r.ordered||0, done = deriveDone(r), remain = +r.remain||0, overdue = clientOverdue(r);
       if (r.closed === true) return '<span class="badge badge--green"><span class="dot"></span>✓ Закрыт</span>';
       if (overdue > 0) return '<span class="badge badge--red"><span class="dot"></span>Просрочка</span>';
       if (ordered > 0 && done >= ordered && remain <= 0) return '<span class="badge badge--green"><span class="dot"></span>Завершён</span>';
@@ -1083,7 +1136,7 @@
     document.getElementById('fState').addEventListener('change',  e => { filters.state = e.target.value; render(); });
     document.getElementById('fSearch').addEventListener('input',  e => { filters.q = e.target.value.trim().toLowerCase(); render(); });
     document.getElementById('btnReset').addEventListener('click', () => {
-      filters.tariff = filters.state = filters.q = '';
+      filters.tariff = filters.state = filters.q = filters.customer = '';
       ['fTariff','fState','fSearch'].forEach(id => document.getElementById(id).value = '');
       render();
     });

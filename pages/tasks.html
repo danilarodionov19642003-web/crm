@@ -201,6 +201,8 @@
     .sched-row__resp[data-tone="pos"]  { background: rgba(34,197,94,0.12);  color: #22c55e; }
     .sched-row__resp[data-tone="neg"]  { background: rgba(239,68,68,0.12);  color: #ef4444; }
     .sched-row__resp[data-tone="mute"] { background: rgba(160,160,160,0.12); color: var(--text-mute); }
+    .sched-row.is-done { background: rgba(34,197,94,0.07); }
+    .sched-row.is-done .sched-row__name strong { color: #22c55e; }
     .sched-empty-day {
       padding: 18px; text-align: center; color: var(--text-mute);
       font-size: 12px; font-style: italic;
@@ -669,6 +671,24 @@
       )).length;
     }
 
+    /** Связь с «Аккаунтами»: работа по анкете в конкретный день.
+     *  Возвращает аккаунты (profileStatuses) этого клиента со статусом КРОМЕ
+     *  «📋 Запланировано», у которых дата = iso. Наличие = задача за день сделана. */
+    function accountWorkOnDate(code, iso) {
+      const c = String(code || '').toLowerCase().trim();
+      if (!c || !iso) return [];
+      const mentorIds = new Set((Store.state.mentors || [])
+        .filter(m => String(m.code || '').toLowerCase().trim() === c).map(m => m.id));
+      if (!mentorIds.size) return [];
+      return (Store.state.profileStatuses || [])
+        .filter(s => mentorIds.has(s.mentorId) && (s.date || '').slice(0, 10) === iso
+                     && s.status && s.status !== '📋 Запланировано')
+        .map(s => {
+          const prof = (Store.state.profiles || []).find(p => p.id === s.profileId);
+          return { acc: prof ? (prof.code || '?') : '?', status: s.status };
+        });
+    }
+
     function fmtDateRu(iso) {
       if (!iso) return '';
       const d = new Date(iso);
@@ -767,14 +787,21 @@
     }
 
     function renderSchedDayDetail(byDate) {
-      const rows = byDate.get(schedState.selected) || [];
+      const rawRows = byDate.get(schedState.selected) || [];
+      // Обогащаем каждую строку работой из «Аккаунтов» за этот день
+      const rows = rawRows.map(r => ({ ...r, work: accountWorkOnDate(r.code, schedState.selected) }));
       const totalCount = rows.reduce((s, r) => s + r.count, 0);
+      const doneN = rows.filter(r => r.work.length).length;
       const meta = rows.length
-        ? `${rows.length} клиент${rows.length === 1 ? '' : (rows.length < 5 ? 'а' : 'ов')} · ${totalCount} отзыв${totalCount === 1 ? '' : (totalCount < 5 ? 'а' : 'ов')}`
+        ? `${rows.length} клиент${rows.length === 1 ? '' : (rows.length < 5 ? 'а' : 'ов')} · ${totalCount} отзыв${totalCount === 1 ? '' : (totalCount < 5 ? 'а' : 'ов')} · <span style="color:#22c55e">✓ сделано ${doneN}/${rows.length}</span>`
         : 'нет планов';
       const body = rows.length
         ? rows.map(r => {
             const left = Math.max(0, r.ordered - r.done);
+            const isDone = r.work.length > 0;
+            const workBadge = isDone
+              ? `<span class="sched-row__resp" data-tone="pos" title="Из «Аккаунтов» за ${schedState.selected}: ${escapeHtml(r.work.map(w => w.status + ' ' + w.acc).join(', '))}">✓ сделано</span>`
+              : '';
             // Найдём ответ клиента по этой паре (mentor_id, date)
             const respKey = (r.mentorId || r.code || '') + '|' + schedState.selected;
             const resp = schedState.responses.get(respKey);
@@ -796,13 +823,14 @@
               }
             }
             return `
-              <div class="sched-row">
+              <div class="sched-row${isDone ? ' is-done' : ''}">
                 <span class="sched-row__dot" style="background:${r.color}"></span>
                 <div class="sched-row__name">
                   <strong>${escapeHtml(r.code || '')}</strong>
                   ${r.name ? ` · ${escapeHtml(r.name)}` : ''}
                   <span class="sched-row__progress">${r.tariff ? r.tariff + ' · ' : ''}${r.done}/${r.ordered} (${left} осталось)</span>
                 </div>
+                ${workBadge}
                 ${respBadge}
                 <span class="sched-row__count">${r.count}</span>
                 <a class="sched-row__link" href="clients.html?focus=${encodeURIComponent(r.clientId)}">График →</a>
