@@ -205,6 +205,12 @@
     el.querySelector('.cloud-status__text').textContent = text || '';
   }
 
+  /* Сравнение меток времени ПО EPOCH, не строкой. Форматы updated_at могут
+     отличаться: наш push пишет `...Z` (Date.toISOString), а PostgREST отдаёт
+     `...+00:00`. Строковое сравнение таких меток врёт → конфликт не ловился →
+     устаревшая вкладка затирала свежие данные (инцидент 2026-06-24). */
+  function tsMs(x) { const t = x ? Date.parse(x) : NaN; return isNaN(t) ? 0 : t; }
+
   /* ---- Pull: вытянуть удалённый state и заместить локальный ---- */
   async function pull({ silent = false } = {}) {
     if (!silent) setStatus('syncing', 'Загрузка…');
@@ -239,7 +245,7 @@
       // Решение конфликта: если локальный был запушен позже remote.updated_at —
       // оставляем локальный (он ещё в очереди на отправку). Иначе берём облако.
       const lastPushedAt = meta.lastPushedAt;
-      if (lastPushedAt && lastPushedAt > remote.updated_at) {
+      if (lastPushedAt && tsMs(lastPushedAt) > tsMs(remote.updated_at)) {
         setStatus('synced', 'Синхронизировано');
         return { changed: false };
       }
@@ -384,9 +390,14 @@
       mergeBotAdditions(state, _remote.data);
       // Если сервер новее по ДРУГИМ данным (другая вкладка/устройство) — не затираем
       // чужое: делаем pull. Записи бота уже либо в state (смёржили), либо в remote.
-      if (_remote.updated_at && serverUpdatedAt && _remote.updated_at > serverUpdatedAt) {
-        console.warn('[CloudSync] CONFLICT: server newer than seen, pulling instead of pushing.', {
-          seen: serverUpdatedAt, server: _remote.updated_at
+      // Сравниваем ПО EPOCH (tsMs), не строкой. Конфликт = сервер новее нашей
+      // базовой версии, ИЛИ мы вообще не знаем свою версию (serverUpdatedAt пуст),
+      // а на сервере есть данные. В обоих случаях НЕ затираем — подтягиваем серверное.
+      const _remoteMs = tsMs(_remote.updated_at);
+      const _seenMs   = tsMs(serverUpdatedAt);
+      if (remoteHasData(_remote.data) && (_remoteMs > _seenMs || !_seenMs)) {
+        console.warn('[CloudSync] CONFLICT: server newer/unknown base, pulling instead of pushing.', {
+          seen: serverUpdatedAt, server: _remote.updated_at, seenMs: _seenMs, remoteMs: _remoteMs
         });
         remoteSnapshot  = _remote.data;
         serverUpdatedAt = _remote.updated_at;
