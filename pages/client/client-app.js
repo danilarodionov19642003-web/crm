@@ -325,7 +325,7 @@
           date: String(p.date).slice(0, 10),
           color, anketa: a.name || a.code,
           kind: 'planned', icon: '📅',
-          title: `Запланировано отзыв${p.count > 1 ? 'ов' : ''} · ${p.count}`,
+          title: `Запланировано отклик${p.count > 1 ? 'ов' : ''} · ${p.count}`,
           sub: '', comment: '',
           plannedCount: p.count
         });
@@ -399,7 +399,7 @@
       ].filter(Boolean).join(' ');
       cells.push(`
         <button class="${cls}" data-date="${dateStr}">
-          ${plannedCount > 0 ? `<span class="cli-cal__planned-badge" title="Запланировано отзывов">${plannedCount}</span>` : ''}
+          ${plannedCount > 0 ? `<span class="cli-cal__planned-badge" title="Запланировано откликов">${plannedCount}</span>` : ''}
           <span class="cli-cal__day">${d}</span>
           ${dotsHtml ? `<span class="cli-cal__dots">${dotsHtml}</span>` : ''}
         </button>

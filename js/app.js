@@ -62,7 +62,7 @@
   /* ------------------------------------------------------------------ */
   const PROFILE_STATUSES = [
     '📋 Запланировано',
-    '💬 Диалог Начат',
+    '💬 Диалог Начать',
     '✅ Диалог Закончен',
     '⭐ Выбрать',
     '🏆 Выбран',
@@ -196,6 +196,7 @@
         this.state._proxySeeded = true;
       }
       this._migrateNormalizePhones();
+      this._migrateRenameDialogStatus();
       // Бэкфилл менторов из клиентов: если клиент был создан на странице
       // «Клиенты» и не имеет пары в state.mentors — создаём её здесь, чтобы
       // клиент был доступен в модалке «Добавить в аккаунт» без перезагрузки.
@@ -269,6 +270,24 @@
         });
         // ⚠️ только локально — push отложим до первого действия пользователя,
         // чтобы не гоняться с pull в cloud-sync.
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state)); } catch (_) {}
+      }
+    },
+
+    /** Одноразовое переименование статуса «💬 Диалог Начат» → «💬 Диалог Начать»
+     *  (владелец исправил формулировку). Правим и текущий статус, и историю.
+     *  Идемпотентно: если старой формы нет — ничего не пишет. Пишем локально
+     *  (push отложен до первого действия — как в _migrateNormalizePhones). */
+    _migrateRenameDialogStatus() {
+      const OLD = '💬 Диалог Начат', NEW = '💬 Диалог Начать';
+      let changed = false;
+      (this.state.profileStatuses || []).forEach(s => {
+        if (s.status === OLD) { s.status = NEW; changed = true; }
+        (s.history || []).forEach(h => {
+          if (h.status === OLD) { h.status = NEW; changed = true; }
+        });
+      });
+      if (changed) {
         try { localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state)); } catch (_) {}
       }
     },

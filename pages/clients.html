@@ -85,6 +85,27 @@
     .sch-stat.warn { border-color: rgba(255,122,0,0.4); color: #ff9a3c; }
     .sch-stat.bad  { border-color: rgba(239,68,68,0.4); color: #ef4444; }
     .sch-stat.ok   { border-color: rgba(34,197,94,0.4); color: #22c55e; }
+    /* Список аккаунтов по анкете (под календарём): аккаунт · статус · дата */
+    .sch-acc-list { display: flex; flex-direction: column; gap: 6px; }
+    .sch-acc-row {
+      display: grid; grid-template-columns: 70px 1fr 150px; gap: 8px; align-items: center;
+      padding: 6px 8px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg);
+    }
+    .sch-acc-row.is-done { background: linear-gradient(180deg, rgba(34,197,94,0.08), transparent), var(--bg); border-color: rgba(34,197,94,0.35); }
+    .sch-acc-row__code {
+      font-weight: 700; font-size: 12px; font-variant-numeric: tabular-nums;
+      padding: 3px 6px; border-radius: 6px; background: var(--bg-elev-2); text-align: center;
+    }
+    .sch-acc-row__status, .sch-acc-row__date {
+      width: 100%; padding: 5px 8px; font-size: 12px; border-radius: 8px;
+      border: 1px solid var(--border); background: var(--bg-elev-2); color: var(--text);
+    }
+    .sch-acc-row__status { cursor: pointer; }
+    .sch-acc-row__date { font-variant-numeric: tabular-nums; }
+    @media (max-width: 560px) {
+      .sch-acc-row { grid-template-columns: 56px 1fr; }
+      .sch-acc-row__date { grid-column: 2; }
+    }
   </style>
 </head>
 <body>
@@ -230,11 +251,11 @@
     </div>
   </div>
 
-  <!-- Модалка графика отзывов клиента -->
+  <!-- Модалка графика откликов клиента -->
   <div class="modal-backdrop" id="scheduleModal">
     <div class="modal" style="max-width:760px">
       <div class="modal__header">
-        <h3 id="schTitle">График отзывов</h3>
+        <h3 id="schTitle">График откликов</h3>
         <button class="btn--icon" data-close>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
@@ -254,7 +275,7 @@
         <div id="schAccounts" style="margin-top:14px"></div>
 
         <div class="muted" style="font-size:11px;margin-top:10px">
-          <strong>Подсказка:</strong> тык по дню = +1 запланированный отзыв (ручной план). Shift+тык / правый клик = −1.
+          <strong>Подсказка:</strong> тык по дню = +1 запланированный отклик (ручной план). Shift+тык / правый клик = −1.
           В календаре эмодзи-метки = аккаунты из «Аккаунтов» по их статус-датам. «Осталось разместить» = заказано − готово − в работе.
         </div>
       </div>
@@ -310,7 +331,7 @@
   </div>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260604a"></script>
+  <script src="../js/app.js?v=20260625a"></script>
   <script src="../js/supabase-client.js?v=20260528a"></script>
   <script src="../js/auth-gate.js"></script>
   <script src="../js/cloud-sync.js?v=20260624a"></script>
@@ -327,7 +348,7 @@
      ======================================================================== */
   document.addEventListener('DOMContentLoaded', () => {
     const { Store, Modal, Counter, toast, fmtMoney, fmtDate, todayISO,
-            SERVICES, TARIFFS, TARIFF_NAMES } = window.App;
+            SERVICES, TARIFFS, TARIFF_NAMES, PROFILE_STATUSES } = window.App;
     const { makeEditable, confirmDelete } = window.TableUtils;
 
     Store.load();
@@ -548,7 +569,7 @@
             <button class="btn btn--ghost btn--sm" data-act="payments" title="История платежей">
               ${ico('<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>')} ${Store.getPaymentsForClient(r.id).length}
             </button>
-            <button class="btn btn--ghost btn--sm" data-act="schedule" title="График отзывов по дням">
+            <button class="btn btn--ghost btn--sm" data-act="schedule" title="График откликов по дням">
               ${ico('<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>')} ${countScheduledForClient(r)}
             </button>
             <button class="btn btn--ghost btn--sm" data-act="toggle-closed"
@@ -630,7 +651,7 @@
     }
 
     /* Порядок статусов аккаунтов (для сводки/списка). Последний — «готово». */
-    const ACC_STATUS_ORDER = ['🎯 Готов','🏆 Выбран','⭐ Выбрать','✅ Диалог Закончен','💬 Диалог Начат','📋 Запланировано'];
+    const ACC_STATUS_ORDER = ['🎯 Готов','🏆 Выбран','⭐ Выбрать','✅ Диалог Закончен','💬 Диалог Начать','📋 Запланировано'];
     const ACC_DONE_STATUS = '🎯 Готов';
 
     /** Реальная картина по анкете(ам) клиента из раздела «Аккаунты» (profileStatuses).
@@ -979,7 +1000,9 @@
 
       cal.innerHTML = `<div class="sch-grid">${cells.join('')}</div>`;
 
-      // Блок «Аккаунты по анкете» — реальная картина из «Аккаунтов»
+      // Блок «Аккаунты по анкете» — реальная картина из «Аккаунтов», построчно
+      // и редактируемо: можно прямо тут сменить статус и поставить дату.
+      // Пишем в те же profileStatuses, что и раздел «Аккаунты» — всё синхронно.
       const accEl = document.getElementById('schAccounts');
       if (acc.total === 0) {
         accEl.innerHTML = `<div class="muted" style="font-size:12px;padding:10px;border:1px dashed var(--border);border-radius:10px">По этой анкете пока нет аккаунтов в разделе «Аккаунты».</div>`;
@@ -987,17 +1010,44 @@
         const chips = ACC_STATUS_ORDER.filter(st => acc.byStatus[st]).map(st =>
           `<span style="font-size:12px;padding:3px 8px;border:1px solid var(--border);border-radius:999px;background:var(--bg-elev-2)">${st}: <b>${acc.byStatus[st]}</b></span>`
         ).join('');
-        const list = ACC_STATUS_ORDER.filter(st => acc.byStatus[st]).map(st => {
-          const codes = acc.items.filter(i => i.status === st)
-            .sort((a, b) => (a.date || '').localeCompare(b.date || ''))
-            .map(i => `${escapeHtml(i.code)}${i.date ? ` <span style="color:var(--text-mute)">${i.date}</span>` : ''}`)
-            .join(', ');
-          return `<div style="font-size:12px;margin-top:4px"><b>${st}</b> — ${codes}</div>`;
-        }).join('');
+        // Порядок воронки: Запланировано → Диалог Начать → … → Готов (сделанные внизу)
+        const pipeIdx = st => { const i = PROFILE_STATUSES.indexOf(st); return i < 0 ? 99 : i; };
+        const rows = acc.items.slice()
+          .sort((a, b) => (pipeIdx(a.status) - pipeIdx(b.status))
+            || (a.date || '').localeCompare(b.date || '')
+            || String(a.code).localeCompare(String(b.code)))
+          .map(it => {
+            const isDone = it.status === ACC_DONE_STATUS;
+            // неизвестный (legacy) статус добавляем в список, чтобы не потерять его
+            const opts = (PROFILE_STATUSES.includes(it.status) ? PROFILE_STATUSES : [it.status, ...PROFILE_STATUSES])
+              .map(s => `<option value="${escapeHtml(s)}"${s === it.status ? ' selected' : ''}>${escapeHtml(s)}</option>`).join('');
+            return `
+              <div class="sch-acc-row${isDone ? ' is-done' : ''}" data-mid="${escapeHtml(it.mentorId)}" data-pid="${escapeHtml(it.profileId)}">
+                <span class="sch-acc-row__code" title="Аккаунт">${escapeHtml(it.code)}</span>
+                <select class="sch-acc-row__status" title="Статус — выбери, чтобы перевести">${opts}</select>
+                <input type="date" class="sch-acc-row__date" title="Дата этого статуса" value="${escapeHtml(it.date || '')}"/>
+              </div>`;
+          }).join('');
         accEl.innerHTML = `
-          <div style="font-weight:600;font-size:13px;margin-bottom:8px">Аккаунты по анкете <span style="color:var(--text-mute)">(${acc.total} назначено)</span></div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${chips}</div>
-          <div>${list}</div>`;
+          <div style="font-weight:600;font-size:13px;margin-bottom:8px">Аккаунты по анкете <span style="color:var(--text-mute)">(${acc.total} назначено · меняй статус и дату прямо тут)</span></div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">${chips}</div>
+          <div class="sch-acc-list">${rows}</div>`;
+        // Редактирование статуса/даты → пишем в profileStatuses (как раздел «Аккаунты»).
+        accEl.querySelectorAll('.sch-acc-row').forEach(row => {
+          const mid = row.dataset.mid, pid = row.dataset.pid;
+          const sel = row.querySelector('.sch-acc-row__status');
+          const dateInp = row.querySelector('.sch-acc-row__date');
+          sel.addEventListener('change', () => {
+            const date = dateInp.value || todayISO();
+            Store.setProfileStatus(mid, pid, sel.value, '', date);
+            renderScheduleModal();
+            render();   // обновить карточку клиента (счётчики «готово/в работе»)
+          });
+          dateInp.addEventListener('change', () => {
+            Store.setProfileStatusDate(mid, pid, dateInp.value || todayISO());
+            renderScheduleModal();
+          });
+        });
       }
 
       // Биндим клики
