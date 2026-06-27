@@ -1377,11 +1377,11 @@
           o.profile_url ? `<a href="${escapeHtml(o.profile_url)}" target="_blank" rel="noopener">🔗 профиль</a>` : '',
           o.receipt_url ? `<a href="${escapeHtml(o.receipt_url)}" target="_blank" rel="noopener">🧾 чек</a>` : ''
         ].filter(Boolean).join(' · ');
-        const actions = o.status === 'new'
-          ? `<div style="display:flex;gap:8px;margin-top:10px">
-               <button class="btn btn--primary btn--sm" data-confirm="${o.id}">✓ Подтвердить</button>
-               <button class="btn btn--ghost btn--sm" data-reject="${o.id}" style="color:var(--red)">Отклонить</button>
-             </div>` : '';
+        const actions = `<div style="display:flex;gap:8px;margin-top:10px">
+            ${o.status === 'new' ? `<button class="btn btn--primary btn--sm" data-confirm="${o.id}">✓ Подтвердить</button>
+            <button class="btn btn--ghost btn--sm" data-reject="${o.id}" style="color:var(--red)">Отклонить</button>` : ''}
+            <button class="btn btn--ghost btn--sm" data-del="${o.id}" style="color:var(--text-mute);margin-left:auto" title="Удалить заявку (исчезнет и у клиента)">🗑</button>
+          </div>`;
         return `
           <div style="border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:10px;background:var(--bg-elev-2)">
             <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap">
@@ -1395,6 +1395,22 @@
       }).join('');
       wrap.querySelectorAll('[data-confirm]').forEach(b => b.addEventListener('click', () => confirmOrder(Number(b.dataset.confirm))));
       wrap.querySelectorAll('[data-reject]').forEach(b => b.addEventListener('click', () => rejectOrder(Number(b.dataset.reject))));
+      wrap.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => deleteOrder(Number(b.dataset.del))));
+    }
+    async function deleteOrder(id) {
+      if (!confirm('Удалить заявку безвозвратно? Исчезнет и у клиента в кабинете.')) return;
+      const S = _sb();
+      try {
+        const res = await fetch(`${S.URL}/rest/v1/client_orders?id=eq.${id}`, {
+          method: 'DELETE',
+          headers: { 'apikey': S.KEY, 'Authorization': `Bearer ${_sbToken()}`, 'Prefer': 'return=minimal' }
+        });
+        if (!(res.ok || res.status === 204)) { toast('Не удалось удалить', 'error'); return; }
+      } catch (e) { toast('Не удалось удалить', 'error'); return; }
+      _ordersCache = _ordersCache.filter(x => x.id !== id);
+      updateOrdersBadge();
+      renderOrdersList();
+      toast('Заявка удалена');
     }
     async function confirmOrder(id) {
       const o = _ordersCache.find(x => x.id === id);

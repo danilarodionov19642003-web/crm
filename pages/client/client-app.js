@@ -682,6 +682,12 @@
      ==================================================================== */
   let _orderPayload = null;   // последний snap.payload (anketas + payment)
 
+  // Текст оферты по умолчанию (если владелец не задал свой в CRM → «Реквизиты»).
+  // Галочка согласия показывается всегда — так клиент не закажет без согласия.
+  const OFFER_DEFAULT = '1. Оплата за размещение отзывов возврату не подлежит.\n'
+    + '2. Если анкета (аккаунт) будет заблокирована площадкой, оставшиеся отзывы '
+    + 'переносятся на другую анкету или другой период — без возврата средств.';
+
   /** Реквизиты → массив строк {label, value, copy, note} для рендера с кнопками
    *  «Копировать». Понимает и новый объект, и legacy-строку. Пустые поля скрыты. */
   function _reqRows(req) {
@@ -784,14 +790,13 @@
         <div class="cli-ord-label">Комментарий (необязательно)</div>
         <textarea class="cli-ord-input" id="ordComment" rows="2" placeholder="например: оплатил по СБП в 14:30"></textarea>
       </div>
-      ${(pay.offerText && pay.offerText.trim()) ? `
       <div class="cli-ord-offer">
-        <div class="cli-ord-offer__text">${escapeHtml(pay.offerText).replace(/\n/g, '<br>')}</div>
+        <div class="cli-ord-offer__text">${escapeHtml((pay.offerText && pay.offerText.trim()) ? pay.offerText : OFFER_DEFAULT).replace(/\n/g, '<br>')}</div>
         <label class="cli-ord-offer__check">
           <input type="checkbox" id="ordOffer"/>
           <span>Я ознакомился и согласен с условиями заказа</span>
         </label>
-      </div>` : ''}
+      </div>
       <div class="cli-ord-result" id="ordResult"></div>
       <button type="button" class="cli-ord-submit" id="ordSubmit">Я оплатил</button>
     `;
@@ -876,15 +881,14 @@
       if (!anketa_name) { result.className = 'cli-ord-result is-err'; result.textContent = 'Впиши имя новой анкеты.'; return; }
     }
 
-    // согласие с офертой обязательно, если владелец задал её текст
-    const offerText = (pay.offerText || '').trim();
+    // согласие с офертой обязательно (галочка показывается всегда)
     const offerChk = document.getElementById('ordOffer');
-    if (offerText && (!offerChk || !offerChk.checked)) {
+    if (!offerChk || !offerChk.checked) {
       result.className = 'cli-ord-result is-err';
       result.textContent = 'Отметь согласие с условиями заказа.';
       return;
     }
-    const offer_agreed = !!(offerChk && offerChk.checked);
+    const offer_agreed = true;
 
     btn.disabled = true;
     // чек (если приложен) — грузим в Storage ДО создания заявки

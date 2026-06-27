@@ -86,7 +86,7 @@ create policy client_orders_owner_all on public.client_orders
 drop policy if exists client_orders_anon_select on public.client_orders;
 drop policy if exists client_orders_anon_update on public.client_orders;
 
-grant select, insert, update on public.client_orders to authenticated;
+grant select, insert, update, delete on public.client_orders to authenticated;
 grant usage, select on sequence public.client_orders_id_seq to authenticated;
 -- service_role (notifier / будущий админ-бэкенд) уже имеет всё; на всякий случай:
 grant all on public.client_orders to service_role;
