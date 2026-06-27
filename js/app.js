@@ -177,7 +177,10 @@
       // (price=итог, qty=число отзывов); unit='per' — за штуку (price=цена/шт,
       // qty=минимум, клиент сам выбирает количество, сумма=price×qty).
       this.state.paymentSettings ??= {
-        requisites: '',
+        // requisites — структурированный объект: каждое поле клиент копирует
+        // отдельной кнопкой в кабинете. (legacy: мог быть строкой — мигрируем
+        // в модалке «Реквизиты» в поле note.)
+        requisites: { sbpPhone: '', bank: '', card: '', recipient: '', note: '' },
         tariffs: [
           { id: 'support',   name: 'Поддержка профиля', price: 8290,  qty: 6,  unit: 'package' },
           { id: 'develop',   name: 'Развитие профиля',  price: 15490, qty: 12, unit: 'package' },

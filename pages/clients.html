@@ -346,10 +346,16 @@
       </div>
       <div class="modal__body">
         <div style="font-size:12px;color:var(--text-mute);margin-bottom:8px">
-          Это видят <b>клиенты в личном кабинете</b> при заказе отзывов. Реквизиты — свободный текст (карта / СБП / получатель). Обновятся у клиентов после ближайшего сохранения.
+          Это видят <b>клиенты в личном кабинете</b> при заказе отзывов — каждое поле клиент копирует отдельной кнопкой. Пустые поля не показываются. Обновятся у клиентов после ближайшего сохранения.
         </div>
         <label style="font-weight:600;font-size:13px;display:block;margin:6px 0 4px">Реквизиты для оплаты</label>
-        <textarea id="reqText" class="input" rows="4" placeholder="Например:&#10;СБП по номеру +7 900 000-00-00 (Тинькофф)&#10;Получатель: Данила Р.&#10;Или карта 2200 0000 0000 0000" style="width:100%;font-size:13px;line-height:1.5;resize:vertical"></textarea>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <input id="reqSbp" type="text" class="input" placeholder="Номер для СБП (например +7 900 000-00-00)" style="font-size:13px"/>
+          <input id="reqBank" type="text" class="input" placeholder="Банк (например: Т-Банк / Сбер)" style="font-size:13px"/>
+          <input id="reqCard" type="text" class="input" placeholder="Номер карты (например 2200 0000 0000 0000)" style="font-size:13px"/>
+          <input id="reqRecipient" type="text" class="input" placeholder="Получатель (Имя Фамилия)" style="font-size:13px"/>
+          <textarea id="reqNote" class="input" rows="2" placeholder="Примечание (необязательно) — любой доп. текст" style="font-size:13px;line-height:1.5;resize:vertical"></textarea>
+        </div>
 
         <label style="font-weight:600;font-size:13px;display:block;margin:16px 0 4px">Тарифы</label>
         <div style="font-size:11px;color:var(--text-mute);margin-bottom:8px">Имя · цена · кол-во · тип. <b>Пакет</b> — фикс. цена за N отзывов. <b>За шт</b> — цена за штуку, клиент сам выбирает количество (поле «шт» = минимум).</div>
@@ -1239,7 +1245,14 @@
     }
     document.getElementById('btnPayConfig').addEventListener('click', () => {
       const ps = Store.state.paymentSettings || {};
-      document.getElementById('reqText').value = ps.requisites || '';
+      // requisites теперь объект; legacy-строку кладём в «примечание»
+      const r = ps.requisites;
+      const req = (r && typeof r === 'object') ? r : { sbpPhone: '', bank: '', card: '', recipient: '', note: (typeof r === 'string' ? r : '') };
+      document.getElementById('reqSbp').value       = req.sbpPhone  || '';
+      document.getElementById('reqBank').value      = req.bank      || '';
+      document.getElementById('reqCard').value      = req.card      || '';
+      document.getElementById('reqRecipient').value = req.recipient || '';
+      document.getElementById('reqNote').value      = req.note      || '';
       renderTariffList();
       Modal.open('requisitesModal');
     });
@@ -1262,7 +1275,13 @@
         tariffs.push({ id: 't_' + Math.random().toString(36).slice(2, 7), name, price, qty, unit });
       });
       Store.state.paymentSettings = {
-        requisites: document.getElementById('reqText').value.trim(),
+        requisites: {
+          sbpPhone:  document.getElementById('reqSbp').value.trim(),
+          bank:      document.getElementById('reqBank').value.trim(),
+          card:      document.getElementById('reqCard').value.trim(),
+          recipient: document.getElementById('reqRecipient').value.trim(),
+          note:      document.getElementById('reqNote').value.trim()
+        },
         tariffs,
         updatedAt: new Date().toISOString()
       };

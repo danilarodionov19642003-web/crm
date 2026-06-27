@@ -682,6 +682,20 @@
      ==================================================================== */
   let _orderPayload = null;   // последний snap.payload (anketas + payment)
 
+  /** Реквизиты → массив строк {label, value, copy, note} для рендера с кнопками
+   *  «Копировать». Понимает и новый объект, и legacy-строку. Пустые поля скрыты. */
+  function _reqRows(req) {
+    if (!req) return [];
+    if (typeof req === 'string') return req.trim() ? [{ label: '', value: req.trim(), note: true }] : [];
+    const rows = [];
+    if ((req.sbpPhone  || '').trim()) rows.push({ label: 'СБП (телефон)', value: req.sbpPhone.trim(),  copy: true });
+    if ((req.bank      || '').trim()) rows.push({ label: 'Банк',          value: req.bank.trim(),      copy: true });
+    if ((req.card      || '').trim()) rows.push({ label: 'Карта',         value: req.card.trim(),      copy: true });
+    if ((req.recipient || '').trim()) rows.push({ label: 'Получатель',    value: req.recipient.trim(), copy: true });
+    if ((req.note      || '').trim()) rows.push({ label: '',              value: req.note.trim(),      note: true });
+    return rows;
+  }
+
   function renderOrder(payload) {
     _orderPayload = payload || null;
     const cta = document.querySelector('[data-cli-order-cta]');
@@ -690,7 +704,7 @@
     const tariffs = pay.tariffs || [];
     // Кнопку показываем только когда владелец задал И реквизиты, И тарифы —
     // иначе клиенту нечем платить (форма заказа была бы бесполезной).
-    if (!tariffs.length || !(pay.requisites && pay.requisites.trim())) { cta.hidden = true; return; }
+    if (!tariffs.length || !_reqRows(pay.requisites).length) { cta.hidden = true; return; }
     cta.hidden = false;
     const btn = document.getElementById('cliOrderBtn');
     if (btn && !btn._bound) { btn._bound = true; btn.addEventListener('click', openOrderModal); }
@@ -742,12 +756,25 @@
         <div class="cli-ord-label">Ссылка на профиль (если есть)</div>
         <input type="url" class="cli-ord-input" id="ordProfileUrl" placeholder="ссылка на твою анкету/профиль"/>
       </div>
-      ${pay.requisites ? `
+      ${(() => {
+        const rows = _reqRows(pay.requisites);
+        if (!rows.length) return '';
+        return `
       <div class="cli-ord-field">
         <div class="cli-ord-label">Реквизиты для оплаты</div>
-        <div class="cli-ord-req">${escapeHtml(pay.requisites)}</div>
-        <button type="button" class="cli-ord-copy" id="ordCopy">📋 Скопировать реквизиты</button>
-      </div>` : ''}
+        <div class="cli-req-list">
+          ${rows.map(r => r.note
+            ? `<div class="cli-req-note">${escapeHtml(r.value)}</div>`
+            : `<div class="cli-req-row">
+                 <div class="cli-req-row__main">
+                   <div class="cli-req-row__label">${escapeHtml(r.label)}</div>
+                   <div class="cli-req-row__val">${escapeHtml(r.value)}</div>
+                 </div>
+                 <button type="button" class="cli-req-row__copy" data-copy="${escapeAttr(r.value)}">Копировать</button>
+               </div>`).join('')}
+        </div>
+      </div>`;
+      })()}
       <div class="cli-ord-field">
         <div class="cli-ord-label">Комментарий (необязательно)</div>
         <textarea class="cli-ord-input" id="ordComment" rows="2" placeholder="например: оплатил по СБП в 14:30"></textarea>
@@ -790,13 +817,13 @@
     });
     qtyInp.addEventListener('input', recalcAmount);
     recalcAmount();
-    const copyBtn = document.getElementById('ordCopy');
-    if (copyBtn) copyBtn.addEventListener('click', () => {
-      const txt = pay.requisites || '';
-      const done = () => { copyBtn.textContent = '✓ Скопировано'; setTimeout(() => copyBtn.textContent = '📋 Скопировать реквизиты', 1500); };
-      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(done, () => copyBtn.textContent = 'Выдели и скопируй вручную');
-      else copyBtn.textContent = 'Выдели и скопируй вручную';
-    });
+    // копирование каждого реквизита своей кнопкой
+    body.querySelectorAll('.cli-req-row__copy').forEach(b => b.addEventListener('click', () => {
+      const txt = b.getAttribute('data-copy') || '';
+      const done = () => { const o = b.textContent; b.textContent = '✓ Скопировано'; setTimeout(() => b.textContent = o, 1300); };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(done, () => { b.textContent = 'Выдели вручную'; });
+      else b.textContent = 'Выдели вручную';
+    }));
     document.getElementById('ordSubmit').addEventListener('click', onOrderSubmit);
     m.hidden = false;
   }
