@@ -735,3 +735,11 @@ body.cli-modal-open { overflow: hidden; }
 .cli-order__status--wait { background: rgba(255,122,0,0.12); color: var(--cli-accent); }
 .cli-order__status--ok   { background: rgba(34,197,94,0.14); color: var(--cli-green); }
 .cli-order__status--err  { background: rgba(239,68,68,0.12); color: var(--cli-red); }
+
+/* Скролл фона заблокирован, пока открыто любое окно кабинета (заказ/условия) */
+body:has(.cli-modal:not([hidden])) { overflow: hidden; }
+/* Ссылка «условия заказа» (в галочке и в футере) */
+.cli-ord-offer__check a, .cli-foot__link { color: var(--cli-accent); text-decoration: underline; cursor: pointer; }
+.cli-foot { margin: 28px 0 16px; text-align: center; }
+.cli-foot__link { background: none; border: none; font: inherit; font-size: 13px; padding: 4px; }
+.cli-terms { font-size: 13.5px; line-height: 1.6; }

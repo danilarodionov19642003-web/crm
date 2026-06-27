@@ -460,6 +460,8 @@ input, select, textarea { font-family: inherit; font-size: inherit; }
   padding: 20px;
 }
 .modal-backdrop.open { display: flex; animation: fadeIn .15s ease; }
+/* Пока открыто любое окно — фоновая страница не скроллится */
+body:has(.modal-backdrop.open) { overflow: hidden; }
 .modal {
   background: var(--bg-elev);
   border: 1px solid var(--border);

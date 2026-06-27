@@ -791,10 +791,9 @@
         <textarea class="cli-ord-input" id="ordComment" rows="2" placeholder="например: оплатил по СБП в 14:30"></textarea>
       </div>
       <div class="cli-ord-offer">
-        <div class="cli-ord-offer__text">${escapeHtml((pay.offerText && pay.offerText.trim()) ? pay.offerText : OFFER_DEFAULT).replace(/\n/g, '<br>')}</div>
         <label class="cli-ord-offer__check">
           <input type="checkbox" id="ordOffer"/>
-          <span>Я ознакомился и согласен с условиями заказа</span>
+          <span>Я ознакомился и согласен с <a href="#" id="ordOfferLink">условиями заказа</a></span>
         </label>
       </div>
       <div class="cli-ord-result" id="ordResult"></div>
@@ -842,10 +841,24 @@
       if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(done, () => { b.textContent = 'Выдели вручную'; });
       else b.textContent = 'Выдели вручную';
     }));
+    const offerLink = document.getElementById('ordOfferLink');
+    if (offerLink) offerLink.addEventListener('click', e => { e.preventDefault(); openTerms(); });
     document.getElementById('ordSubmit').addEventListener('click', onOrderSubmit);
     m.hidden = false;
     document.body.classList.add('cli-modal-open');  // блок скролла фона
   }
+
+  /** Окно с полным текстом условий заказа (открывается из галочки и из футера). */
+  function openTerms() {
+    const m = document.getElementById('cliTermsModal');
+    const body = document.querySelector('[data-cli-terms-body]');
+    if (!m || !body) return;
+    const pay = (_orderPayload && _orderPayload.payment) || {};
+    const text = (pay.offerText && pay.offerText.trim()) ? pay.offerText : OFFER_DEFAULT;
+    body.innerHTML = escapeHtml(text).replace(/\n/g, '<br>');
+    m.hidden = false;
+  }
+  function closeTerms() { const m = document.getElementById('cliTermsModal'); if (m) m.hidden = true; }
 
   async function onOrderSubmit() {
     const btn = document.getElementById('ordSubmit');
@@ -1051,6 +1064,8 @@
     renderOrder,
     loadMyOrders,
     renderMyOrders,
+    openTerms,
+    closeTerms,
     fmtDate, fmtMoney, escapeHtml
   };
 })();

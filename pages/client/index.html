@@ -8,8 +8,8 @@
   <meta http-equiv="Pragma" content="no-cache"/>
   <meta http-equiv="Expires" content="0"/>
   <title>Личный кабинет — Mentori</title>
-  <link rel="stylesheet" href="../../css/styles.css?v=20260609a"/>
-  <link rel="stylesheet" href="client.css?v=20260628b"/>
+  <link rel="stylesheet" href="../../css/styles.css?v=20260628a"/>
+  <link rel="stylesheet" href="client.css?v=20260628d"/>
 </head>
 <body class="cli-body">
   <div data-cli-header></div>
@@ -48,7 +48,23 @@
     <div class="cli-cal" data-cli-calendar></div>
 
     <div data-cli-feed style="margin-top:22px"></div>
+
+    <footer class="cli-foot">
+      <button type="button" class="cli-foot__link" data-cli-terms>Условия заказа</button>
+    </footer>
   </main>
+
+  <!-- Условия заказа (оферта): открывается по ссылке из галочки и из футера. -->
+  <div class="cli-modal" id="cliTermsModal" hidden style="z-index:120">
+    <div class="cli-modal__backdrop" data-cli-terms-close></div>
+    <div class="cli-modal__box">
+      <div class="cli-modal__head">
+        <h3>Условия заказа</h3>
+        <button class="cli-modal__x" type="button" data-cli-terms-close>✕</button>
+      </div>
+      <div class="cli-modal__body cli-terms" data-cli-terms-body></div>
+    </div>
+  </div>
 
   <!-- Модалка заказа отзывов. Тело рендерит client-app.openOrderModal. -->
   <div class="cli-modal" id="cliOrderModal" hidden>
@@ -63,7 +79,7 @@
   </div>
 
   <script src="../../js/supabase-client.js?v=20260528a"></script>
-  <script src="./client-app.js?v=20260628c"></script>
+  <script src="./client-app.js?v=20260628d"></script>
   <script>
   (async () => {
     const ok = await window.ClientApp.requireLogin();
@@ -87,6 +103,9 @@
     window.ClientApp.renderMyOrders(await window.ClientApp.loadMyOrders());
     // Прокси — независимо от snapshot, доступны всем залогиненным клиентам.
     window.ClientApp.renderProxies();
+    // Условия заказа — открытие модалки по ссылке (футер + ссылка в галочке) и закрытие
+    document.querySelectorAll('[data-cli-terms]').forEach(el => el.addEventListener('click', e => { e.preventDefault(); window.ClientApp.openTerms(); }));
+    document.querySelectorAll('[data-cli-terms-close]').forEach(el => el.addEventListener('click', () => window.ClientApp.closeTerms()));
   })();
   </script>
 </body>
