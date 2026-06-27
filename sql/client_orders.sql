@@ -32,6 +32,7 @@ create table if not exists public.client_orders (
   amount        numeric,                      -- заявленная сумма к оплате (итог)
   comment       text,
   profile_url   text,                         -- ссылка на профиль клиента (упрощает работу владельцу)
+  receipt_url   text,                         -- публичная ссылка на чек (Supabase Storage, bucket receipts)
 
   -- обработка владельцем
   status        text not null default 'new', -- new | confirmed | rejected
@@ -42,6 +43,7 @@ create table if not exists public.client_orders (
 
 -- Идемпотентно для уже созданной таблицы (на Beget создана без profile_url):
 alter table public.client_orders add column if not exists profile_url text;
+alter table public.client_orders add column if not exists receipt_url text;
 
 create index if not exists client_orders_status_idx
   on public.client_orders (status, created_at);
@@ -121,6 +123,7 @@ begin
     'Анкета: ' || anketa_lbl || E'\n' ||
     'Тариф: ' || tariff_lbl ||
     case when coalesce(NEW.profile_url, '') <> '' then E'\n🔗 ' || NEW.profile_url else '' end ||
+    case when coalesce(NEW.receipt_url, '') <> '' then E'\n🧾 чек: ' || NEW.receipt_url else '' end ||
     case when coalesce(NEW.comment, '') <> '' then E'\n💬 ' || NEW.comment else '' end,
     'pending'
   );
@@ -152,6 +155,11 @@ drop trigger if exists trim_client_orders_trg on public.client_orders;
 create trigger trim_client_orders_trg
   after insert on public.client_orders
   for each statement execute function public.trim_client_orders();
+
+-- ⚠️ ОБЯЗАТЕЛЬНО после создания таблицы: PostgREST держит схему в кэше и НЕ
+-- увидит новую таблицу на запись (POST → 404), пока кэш не перезагрузить.
+-- На этой инсталляции нет DDL-триггера авто-reload, поэтому делаем вручную:
+NOTIFY pgrst, 'reload schema';
 
 -- Проверка:
 --   \d public.client_orders

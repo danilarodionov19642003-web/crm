@@ -693,3 +693,18 @@ textarea.cli-ord-input { resize: vertical; }
   font-size: 13px; line-height: 1.5; white-space: pre-wrap; word-break: break-word;
   padding: 10px 12px; border-radius: 10px; border: 1px dashed var(--border); color: var(--text);
 }
+
+/* Блокировка скролла фоновой страницы, пока открыта модалка заказа */
+body.cli-modal-open { overflow: hidden; }
+
+/* Поле выбора файла чека */
+.cli-ord-file {
+  width: 100%; box-sizing: border-box; font-size: 13px;
+  padding: 9px 10px; border-radius: 10px;
+  border: 1px dashed var(--border); background: var(--bg); color: var(--text);
+}
+.cli-ord-file::file-selector-button {
+  margin-right: 10px; cursor: pointer; font-size: 12px; font-weight: 600;
+  padding: 6px 12px; border-radius: 8px; border: 1px solid var(--cli-accent);
+  background: transparent; color: var(--cli-accent);
+}

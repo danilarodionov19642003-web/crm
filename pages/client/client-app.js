@@ -716,6 +716,7 @@
   function closeOrderModal() {
     const m = document.getElementById('cliOrderModal');
     if (m) m.hidden = true;
+    document.body.classList.remove('cli-modal-open');  // вернуть скролл фона
   }
 
   function openOrderModal() {
@@ -776,6 +777,10 @@
       </div>`;
       })()}
       <div class="cli-ord-field">
+        <div class="cli-ord-label">Чек об оплате (PDF или фото, необязательно)</div>
+        <input type="file" class="cli-ord-file" id="ordReceipt" accept=".pdf,image/*"/>
+      </div>
+      <div class="cli-ord-field">
         <div class="cli-ord-label">Комментарий (необязательно)</div>
         <textarea class="cli-ord-input" id="ordComment" rows="2" placeholder="например: оплатил по СБП в 14:30"></textarea>
       </div>
@@ -826,6 +831,7 @@
     }));
     document.getElementById('ordSubmit').addEventListener('click', onOrderSubmit);
     m.hidden = false;
+    document.body.classList.add('cli-modal-open');  // блок скролла фона
   }
 
   async function onOrderSubmit() {
@@ -862,7 +868,26 @@
       if (!anketa_name) { result.className = 'cli-ord-result is-err'; result.textContent = 'Впиши имя новой анкеты.'; return; }
     }
 
-    btn.disabled = true; btn.textContent = 'Отправляю…';
+    btn.disabled = true;
+    // чек (если приложен) — грузим в Storage ДО создания заявки
+    const fileInp = document.getElementById('ordReceipt');
+    const file = fileInp && fileInp.files && fileInp.files[0];
+    let receipt_url = null;
+    if (file) {
+      if (file.size > 50 * 1024 * 1024) {
+        btn.disabled = false; result.className = 'cli-ord-result is-err';
+        result.textContent = 'Файл больше 50 МБ — выбери поменьше.'; return;
+      }
+      btn.textContent = 'Загружаю чек…';
+      receipt_url = await uploadReceipt(file);
+      if (!receipt_url) {
+        btn.disabled = false; result.className = 'cli-ord-result is-err';
+        result.textContent = 'Не получилось загрузить чек. Попробуй ещё раз или убери файл и отправь без него.';
+        return;
+      }
+    }
+
+    btn.textContent = 'Отправляю…';
     const email = (Auth.email() || '').toLowerCase();
     const ok = await submitOrder({
       client_email: email,
@@ -873,6 +898,7 @@
       qty: qty != null ? qty : null,
       amount: amount != null ? amount : null,
       profile_url: profileUrl || null,
+      receipt_url: receipt_url || null,
       comment: comment || null
     });
 
@@ -911,6 +937,33 @@
       }
       return true;
     } catch (e) { console.warn('[client-app] submitOrder failed', e); return false; }
+  }
+
+  /** Загружает чек в Storage (bucket receipts, публичный). Возвращает публичную
+   *  ссылку или null. Имя — UUID, чтобы ссылку нельзя было угадать. */
+  async function uploadReceipt(file) {
+    try {
+      const rawExt = (file.name.split('.').pop() || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 8);
+      const ext = rawExt || (file.type === 'application/pdf' ? 'pdf' : 'bin');
+      const id = (window.crypto && crypto.randomUUID) ? crypto.randomUUID()
+               : (Date.now() + '-' + Math.random().toString(36).slice(2, 10));
+      const path = `receipts/${id}.${ext}`;
+      const res = await fetch(`${_url()}/storage/v1/object/${path}`, {
+        method: 'POST',
+        headers: {
+          'apikey': _key(),
+          'Authorization': `Bearer ${accessToken()}`,
+          'Content-Type': file.type || 'application/octet-stream',
+          'x-upsert': 'false'
+        },
+        body: file
+      });
+      if (!res.ok) {
+        console.warn('[client-app] receipt upload failed', res.status, await res.text().catch(() => ''));
+        return null;
+      }
+      return `${_url()}/storage/v1/object/public/${path}`;
+    } catch (e) { console.warn('[client-app] uploadReceipt error', e); return null; }
   }
 
   window.ClientApp = {
