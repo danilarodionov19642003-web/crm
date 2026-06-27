@@ -689,9 +689,9 @@
     if (typeof req === 'string') return req.trim() ? [{ label: '', value: req.trim(), note: true }] : [];
     const rows = [];
     if ((req.sbpPhone  || '').trim()) rows.push({ label: 'СБП (телефон)', value: req.sbpPhone.trim(),  copy: true });
-    if ((req.bank      || '').trim()) rows.push({ label: 'Банк',          value: req.bank.trim(),      copy: true });
+    if ((req.bank      || '').trim()) rows.push({ label: 'Банк',          value: req.bank.trim(),      copy: false });
     if ((req.card      || '').trim()) rows.push({ label: 'Карта',         value: req.card.trim(),      copy: true });
-    if ((req.recipient || '').trim()) rows.push({ label: 'Получатель',    value: req.recipient.trim(), copy: true });
+    if ((req.recipient || '').trim()) rows.push({ label: 'Получатель',    value: req.recipient.trim(), copy: false });
     if ((req.note      || '').trim()) rows.push({ label: '',              value: req.note.trim(),      note: true });
     return rows;
   }
@@ -771,7 +771,7 @@
                    <div class="cli-req-row__label">${escapeHtml(r.label)}</div>
                    <div class="cli-req-row__val">${escapeHtml(r.value)}</div>
                  </div>
-                 <button type="button" class="cli-req-row__copy" data-copy="${escapeAttr(r.value)}">Копировать</button>
+                 ${r.copy ? `<button type="button" class="cli-req-row__copy" data-copy="${escapeAttr(r.value)}">Копировать</button>` : ''}
                </div>`).join('')}
         </div>
       </div>`;
@@ -793,7 +793,7 @@
         </label>
       </div>` : ''}
       <div class="cli-ord-result" id="ordResult"></div>
-      <button type="button" class="cli-ord-submit" id="ordSubmit">✅ Я оплатил</button>
+      <button type="button" class="cli-ord-submit" id="ordSubmit">Я оплатил</button>
     `;
     // переключение существующая/новая → активируем нужное поле
     body.querySelectorAll('input[name="ordTarget"]').forEach(r => r.addEventListener('change', () => {
@@ -931,8 +931,10 @@
           <button type="button" class="cli-ord-submit" id="ordDone" style="margin-top:18px">Закрыть</button>
         </div>`;
       document.getElementById('ordDone').addEventListener('click', closeOrderModal);
+      // обновим список «Мои заказы» под модалкой — новый заказ сразу виден
+      loadMyOrders().then(renderMyOrders);
     } else {
-      btn.disabled = false; btn.textContent = '✅ Я оплатил';
+      btn.disabled = false; btn.textContent = 'Я оплатил';
       result.className = 'cli-ord-result is-err';
       result.textContent = 'Не получилось отправить. Попробуй ещё раз или напиши менеджеру.';
     }
@@ -985,6 +987,53 @@
     } catch (e) { console.warn('[client-app] uploadReceipt error', e); return null; }
   }
 
+  /* ---- Мои заказы (история заявок клиента со статусом) ---- */
+  async function loadMyOrders() {
+    const token = accessToken();
+    const email = (Auth.email() || '').toLowerCase();
+    if (!token || !email) return [];
+    try {
+      const url = `${_url()}/rest/v1/client_orders`
+        + `?client_email=eq.${encodeURIComponent(email)}`
+        + `&select=id,anketa_code,anketa_name,is_new_anketa,tariff_name,qty,amount,status,created_at`
+        + `&order=created_at.desc&limit=40`;
+      const res = await fetch(url, { headers: { 'apikey': _key(), 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' } });
+      if (!res.ok) { console.warn('[client-app] loadMyOrders failed', res.status); return []; }
+      return await res.json();
+    } catch (e) { console.warn('[client-app] loadMyOrders error', e); return []; }
+  }
+
+  const ORDER_STATUS = {
+    new:       { label: 'На проверке',       cls: 'wait' },
+    confirmed: { label: 'Платёж подтверждён', cls: 'ok' },
+    rejected:  { label: 'Отклонён',           cls: 'err' }
+  };
+  function renderMyOrders(orders) {
+    const el = document.querySelector('[data-cli-orders]');
+    if (!el) return;
+    if (!orders || !orders.length) { el.hidden = true; el.innerHTML = ''; return; }
+    el.hidden = false;
+    el.innerHTML = `
+      <h2 class="cli-section-title">Мои заказы</h2>
+      <div class="cli-orders__list">
+        ${orders.map(o => {
+          const st = ORDER_STATUS[o.status] || { label: o.status || '—', cls: '' };
+          const anketa = o.is_new_anketa
+            ? `новая «${escapeHtml(o.anketa_name || '—')}»`
+            : escapeHtml(o.anketa_code || o.anketa_name || '—');
+          const sum = o.amount ? ' · ' + Number(o.amount).toLocaleString('ru-RU') + ' ₽' : '';
+          return `
+            <div class="cli-order">
+              <div class="cli-order__main">
+                <div class="cli-order__title">${escapeHtml(o.tariff_name || 'Заказ')}${o.qty ? ' · ' + o.qty + ' отз.' : ''}</div>
+                <div class="cli-order__sub">${anketa} · ${fmtDate(o.created_at)}${sum}</div>
+              </div>
+              <span class="cli-order__status cli-order__status--${st.cls}">${st.label}</span>
+            </div>`;
+        }).join('')}
+      </div>`;
+  }
+
   window.ClientApp = {
     requireLogin,
     loadSnapshot,
@@ -996,6 +1045,8 @@
     renderProfileDetail,
     renderProxies,
     renderOrder,
+    loadMyOrders,
+    renderMyOrders,
     fmtDate, fmtMoney, escapeHtml
   };
 })();

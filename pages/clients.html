@@ -122,6 +122,11 @@
             <p>«Заказано» — редактируется в строке (клик по ячейке). «Сделано» подтягивается автоматически по статусу «🎯 Готов» на вкладке «Аккаунты».</p>
           </div>
           <div style="display:flex;gap:8px">
+            <button class="btn btn--ghost" id="btnOrders" title="Заявки клиентов на оплату" style="position:relative">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;vertical-align:middle"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+              Заявки
+              <span id="ordersBadge" hidden style="position:absolute;top:-6px;right:-6px;min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:var(--red);color:#fff;font-size:11px;font-weight:700;line-height:18px;text-align:center"></span>
+            </button>
             <button class="btn btn--ghost" id="btnNicheConfig" title="Справочник ниш и пауз «Выбран → Опубликован»">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;vertical-align:middle"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
               Ниши
@@ -373,8 +378,27 @@
     </div>
   </div>
 
+  <!-- Заявки клиентов на оплату: подтверждение/отклонение + начисление отзывов -->
+  <div class="modal-backdrop" id="ordersModal">
+    <div class="modal" style="max-width:680px">
+      <div class="modal__header">
+        <h3>Заявки на оплату</h3>
+        <button class="btn--icon" data-close>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal__body">
+        <div style="font-size:12px;color:var(--text-mute);margin-bottom:10px">«Подтвердить» — отметит платёж как принятый у клиента в кабинете и начислит отзывы (по коду анкеты). Новую анкету заводишь сам.</div>
+        <div id="ordersList"></div>
+      </div>
+      <div class="modal__footer">
+        <button class="btn btn--ghost" data-close>Закрыть</button>
+      </div>
+    </div>
+  </div>
+
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260628a"></script>
+  <script src="../js/app.js?v=20260628b"></script>
   <script src="../js/supabase-client.js?v=20260528a"></script>
   <script src="../js/auth-gate.js"></script>
   <script src="../js/cloud-sync.js?v=20260624a"></script>
@@ -1300,6 +1324,118 @@
       Modal.close('requisitesModal');
       toast('Реквизиты и тарифы сохранены');
     });
+
+    /* ---- Заявки клиентов на оплату (client_orders, владелец видит все по RLS) ---- */
+    let _ordersCache = [];
+    function _sb() { return window.Supabase || {}; }
+    function _sbToken() { const S = _sb(); return (S.accessToken && S.accessToken()) || S.KEY; }
+    async function fetchOrders() {
+      const S = _sb();
+      if (!S.URL) return [];
+      try {
+        const res = await fetch(`${S.URL}/rest/v1/client_orders?select=*&order=created_at.desc&limit=100`,
+          { headers: { 'apikey': S.KEY, 'Authorization': `Bearer ${_sbToken()}`, 'Accept': 'application/json' } });
+        if (!res.ok) { console.warn('[orders] fetch', res.status); return []; }
+        return await res.json();
+      } catch (e) { console.warn('[orders] fetch err', e); return []; }
+    }
+    async function patchOrder(id, patch) {
+      const S = _sb();
+      try {
+        const res = await fetch(`${S.URL}/rest/v1/client_orders?id=eq.${id}`, {
+          method: 'PATCH',
+          headers: { 'apikey': S.KEY, 'Authorization': `Bearer ${_sbToken()}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+          body: JSON.stringify(patch)
+        });
+        return res.ok || res.status === 204;
+      } catch (e) { return false; }
+    }
+    function updateOrdersBadge() {
+      const n = _ordersCache.filter(o => o.status === 'new').length;
+      const b = document.getElementById('ordersBadge');
+      if (!b) return;
+      if (n > 0) { b.textContent = n; b.hidden = false; } else { b.hidden = true; }
+    }
+    async function refreshOrders() { _ordersCache = await fetchOrders(); updateOrdersBadge(); }
+    function orderBadge(s) {
+      if (s === 'confirmed') return '<span class="badge badge--green">Подтверждён</span>';
+      if (s === 'rejected')  return '<span class="badge badge--red">Отклонён</span>';
+      return '<span class="badge badge--orange">На проверке</span>';
+    }
+    function renderOrdersList() {
+      const wrap = document.getElementById('ordersList');
+      const orders = _ordersCache.slice().sort((a, b) =>
+        ((a.status === 'new' ? 0 : 1) - (b.status === 'new' ? 0 : 1)) ||
+        (b.created_at || '').localeCompare(a.created_at || ''));
+      if (!orders.length) { wrap.innerHTML = '<div class="muted" style="padding:18px;text-align:center">Заявок пока нет.</div>'; return; }
+      wrap.innerHTML = orders.map(o => {
+        const anketa = o.is_new_anketa
+          ? `🆕 новая «${escapeHtml(o.anketa_name || '—')}»`
+          : `${escapeHtml(o.anketa_code || '—')}${o.anketa_name ? ' (' + escapeHtml(o.anketa_name) + ')' : ''}`;
+        const sum = o.amount != null ? Number(o.amount).toLocaleString('ru-RU') + ' ₽' : '—';
+        const links = [
+          o.profile_url ? `<a href="${escapeHtml(o.profile_url)}" target="_blank" rel="noopener">🔗 профиль</a>` : '',
+          o.receipt_url ? `<a href="${escapeHtml(o.receipt_url)}" target="_blank" rel="noopener">🧾 чек</a>` : ''
+        ].filter(Boolean).join(' · ');
+        const actions = o.status === 'new'
+          ? `<div style="display:flex;gap:8px;margin-top:10px">
+               <button class="btn btn--primary btn--sm" data-confirm="${o.id}">✓ Подтвердить</button>
+               <button class="btn btn--ghost btn--sm" data-reject="${o.id}" style="color:var(--red)">Отклонить</button>
+             </div>` : '';
+        return `
+          <div style="border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:10px;background:var(--bg-elev-2)">
+            <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap">
+              <div style="font-weight:600">${escapeHtml(o.client_name || o.client_email || 'клиент')}</div>
+              ${orderBadge(o.status)}
+            </div>
+            <div style="font-size:13px;margin-top:4px">Анкета: ${anketa} · Тариф: ${escapeHtml(o.tariff_name || '—')}${o.qty ? ' · ' + o.qty + ' отз.' : ''} · <b>${sum}</b></div>
+            <div style="font-size:12px;color:var(--text-mute);margin-top:3px">${fmtDate(o.created_at)}${o.offer_agreed ? ' · ✅ оферта принята' : ''}${links ? ' · ' + links : ''}${o.comment ? ' · 💬 ' + escapeHtml(o.comment) : ''}</div>
+            ${actions}
+          </div>`;
+      }).join('');
+      wrap.querySelectorAll('[data-confirm]').forEach(b => b.addEventListener('click', () => confirmOrder(Number(b.dataset.confirm))));
+      wrap.querySelectorAll('[data-reject]').forEach(b => b.addEventListener('click', () => rejectOrder(Number(b.dataset.reject))));
+    }
+    async function confirmOrder(id) {
+      const o = _ordersCache.find(x => x.id === id);
+      if (!o) return;
+      const ok = await patchOrder(id, { status: 'confirmed', confirmed_at: new Date().toISOString() });
+      if (!ok) { toast('Не удалось подтвердить заявку', 'error'); return; }
+      o.status = 'confirmed';
+      // начисление отзывов: ordered += qty клиенту с этим кодом анкеты
+      const qty = Number(o.qty) || 0;
+      let credited = false;
+      if (qty > 0 && o.anketa_code) {
+        const code = String(o.anketa_code).toLowerCase().trim();
+        const client = (Store.state.clients || []).find(c => String(c.code || '').toLowerCase().trim() === code);
+        if (client) {
+          Store.updateClient(client.id, { ordered: (Number(client.ordered) || 0) + qty });
+          credited = true;
+          toast(`Подтверждено. Начислено ${qty} отзывов клиенту ${client.code}`, 'success');
+          render();
+        }
+      }
+      if (!credited) toast(`Заявка подтверждена.${qty ? ` Начисли ${qty} отзывов вручную (анкета новая/не найдена).` : ''}`, 'success');
+      updateOrdersBadge();
+      renderOrdersList();
+    }
+    async function rejectOrder(id) {
+      if (!confirm('Отклонить эту заявку?')) return;
+      const ok = await patchOrder(id, { status: 'rejected' });
+      if (!ok) { toast('Не удалось отклонить', 'error'); return; }
+      const o = _ordersCache.find(x => x.id === id);
+      if (o) o.status = 'rejected';
+      updateOrdersBadge();
+      renderOrdersList();
+    }
+    document.getElementById('btnOrders').addEventListener('click', async () => {
+      document.getElementById('ordersList').innerHTML = '<div class="muted" style="padding:18px;text-align:center">Загрузка…</div>';
+      Modal.open('ordersModal');
+      await refreshOrders();
+      renderOrdersList();
+    });
+    // фоновая загрузка для бейджа (после готовности Supabase-бэкенда/сессии)
+    (_sb().ready || Promise.resolve()).then(refreshOrders);
 
     /* ---- Фильтры ---- */
     document.getElementById('fTariff').addEventListener('change', e => { filters.tariff = e.target.value; render(); });

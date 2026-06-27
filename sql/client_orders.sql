@@ -67,6 +67,17 @@ create policy client_orders_auth_select
   on public.client_orders for select to authenticated
   using (client_email = (auth.jwt() ->> 'email'));
 
+-- Владелец (role='owner' в JWT-метаданных) видит и ПРАВИТ все заявки —
+-- для раздела «Заявки» в CRM: подтверждение/отклонение оплаты. Permissive-
+-- политики OR-ятся: клиент видит свои, владелец — все.
+drop policy if exists client_orders_owner_all on public.client_orders;
+create policy client_orders_owner_all on public.client_orders
+  for all to authenticated
+  using ( coalesce(auth.jwt() -> 'user_metadata' ->> 'role',
+                   auth.jwt() -> 'app_metadata' ->> 'role') = 'owner' )
+  with check ( coalesce(auth.jwt() -> 'user_metadata' ->> 'role',
+                        auth.jwt() -> 'app_metadata' ->> 'role') = 'owner' );
+
 -- ВАЖНО: RLS отдельно от table-GRANT. На этой инсталляции CRM-фронт и кабинет
 -- ходят под ролью `authenticated` (JWT), `anon` не используется. У новой таблицы
 -- table-grant'ов нет по умолчанию — выдаём их явно, иначе даже валидный JWT
@@ -75,7 +86,7 @@ create policy client_orders_auth_select
 drop policy if exists client_orders_anon_select on public.client_orders;
 drop policy if exists client_orders_anon_update on public.client_orders;
 
-grant select, insert on public.client_orders to authenticated;
+grant select, insert, update on public.client_orders to authenticated;
 grant usage, select on sequence public.client_orders_id_seq to authenticated;
 -- service_role (notifier / будущий админ-бэкенд) уже имеет всё; на всякий случай:
 grant all on public.client_orders to service_role;

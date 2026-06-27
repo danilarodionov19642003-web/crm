@@ -9,7 +9,7 @@
   <meta http-equiv="Expires" content="0"/>
   <title>Личный кабинет — Mentori</title>
   <link rel="stylesheet" href="../../css/styles.css?v=20260609a"/>
-  <link rel="stylesheet" href="client.css?v=20260628a"/>
+  <link rel="stylesheet" href="client.css?v=20260628b"/>
 </head>
 <body class="cli-body">
   <div data-cli-header></div>
@@ -24,6 +24,9 @@
       </div>
       <button class="cli-order-cta__btn" id="cliOrderBtn" type="button">💳 Заказать отзывы</button>
     </div>
+
+    <!-- Мои заказы: заявки клиента со статусом (на проверке / подтверждён). -->
+    <div class="cli-orders" data-cli-orders hidden></div>
 
     <!-- Бесплатные MTProxy для Telegram — наверху, чтобы клиент сразу мог
          включить рабочий прокси если у него Telegram не открывается.
@@ -60,7 +63,7 @@
   </div>
 
   <script src="../../js/supabase-client.js?v=20260528a"></script>
-  <script src="./client-app.js?v=20260628a"></script>
+  <script src="./client-app.js?v=20260628b"></script>
   <script>
   (async () => {
     const ok = await window.ClientApp.requireLogin();
@@ -80,6 +83,8 @@
     }
     // Заказ отзывов (реквизиты/тарифы из снимка). Если тарифов нет — CTA скрыт.
     window.ClientApp.renderOrder(snap && snap.payload);
+    // Мои заказы — заявки клиента со статусом (на проверке / подтверждён).
+    window.ClientApp.renderMyOrders(await window.ClientApp.loadMyOrders());
     // Прокси — независимо от snapshot, доступны всем залогиненным клиентам.
     window.ClientApp.renderProxies();
   })();
