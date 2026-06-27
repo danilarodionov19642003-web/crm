@@ -673,6 +673,219 @@
     }[c]));
   }
 
+  /* ====================================================================
+     Заказ отзывов (самообслуживание оплаты).
+     Клиент выбирает анкету (существующую/новую) + тариф, видит реквизиты,
+     жмёт «Я оплатил» → INSERT в client_orders (RLS: только свой email).
+     Триггер в БД пингует владельца в Telegram. Реквизиты/тарифы приходят
+     в snapshot.payload.payment (владелец задаёт их в CRM).
+     ==================================================================== */
+  let _orderPayload = null;   // последний snap.payload (anketas + payment)
+
+  function renderOrder(payload) {
+    _orderPayload = payload || null;
+    const cta = document.querySelector('[data-cli-order-cta]');
+    if (!cta) return;
+    const pay = (payload && payload.payment) || {};
+    const tariffs = pay.tariffs || [];
+    // Кнопку показываем только когда владелец задал И реквизиты, И тарифы —
+    // иначе клиенту нечем платить (форма заказа была бы бесполезной).
+    if (!tariffs.length || !(pay.requisites && pay.requisites.trim())) { cta.hidden = true; return; }
+    cta.hidden = false;
+    const btn = document.getElementById('cliOrderBtn');
+    if (btn && !btn._bound) { btn._bound = true; btn.addEventListener('click', openOrderModal); }
+    document.querySelectorAll('[data-cli-order-close]').forEach(el => {
+      if (el._bound) return; el._bound = true; el.addEventListener('click', closeOrderModal);
+    });
+  }
+
+  function closeOrderModal() {
+    const m = document.getElementById('cliOrderModal');
+    if (m) m.hidden = true;
+  }
+
+  function openOrderModal() {
+    const m = document.getElementById('cliOrderModal');
+    const body = document.querySelector('[data-cli-order-body]');
+    if (!m || !body || !_orderPayload) return;
+    const pay = _orderPayload.payment || {};
+    const tariffs = pay.tariffs || [];
+    const anketas = _orderPayload.anketas || [];
+    const hasExisting = anketas.length > 0;
+    body.innerHTML = `
+      <div class="cli-ord-field">
+        <div class="cli-ord-label">На какую анкету?</div>
+        <label class="cli-ord-radio"><input type="radio" name="ordTarget" value="existing" ${hasExisting ? 'checked' : 'disabled'}/> Существующая</label>
+        <select class="cli-ord-input" id="ordExisting" ${hasExisting ? '' : 'disabled'}>
+          ${anketas.map(a => `<option data-code="${escapeAttr(a.code || '')}" data-name="${escapeAttr(a.name || a.code || '')}">${escapeHtml(a.code || '')}${a.name ? ' · ' + escapeHtml(a.name) : ''}</option>`).join('')}
+        </select>
+        <label class="cli-ord-radio" style="margin-top:10px"><input type="radio" name="ordTarget" value="new" ${hasExisting ? '' : 'checked'}/> Новая анкета</label>
+        <input type="text" class="cli-ord-input" id="ordNewName" placeholder="имя новой анкеты (например: Кирилл / физика)" ${hasExisting ? 'disabled' : ''}/>
+      </div>
+      <div class="cli-ord-field">
+        <div class="cli-ord-label">Тариф</div>
+        <select class="cli-ord-input" id="ordTariff">
+          ${tariffs.map((t, i) => {
+            const lbl = t.unit === 'per'
+              ? `${escapeHtml(t.name || 'Тариф')} — ${Number(t.price || 0).toLocaleString('ru-RU')} ₽/шт (от ${Number(t.qty) || 1})`
+              : `${escapeHtml(t.name || 'Тариф')}${t.qty ? ' · ' + t.qty + ' отзывов' : ''}${t.price ? ' — ' + Number(t.price).toLocaleString('ru-RU') + ' ₽' : ''}`;
+            return `<option value="${i}">${lbl}</option>`;
+          }).join('')}
+        </select>
+      </div>
+      <div class="cli-ord-field" id="ordQtyWrap" hidden>
+        <div class="cli-ord-label">Количество отзывов</div>
+        <input type="number" class="cli-ord-input" id="ordQty"/>
+      </div>
+      <div class="cli-ord-amount" id="ordAmount"></div>
+      <div class="cli-ord-field">
+        <div class="cli-ord-label">Ссылка на профиль (если есть)</div>
+        <input type="url" class="cli-ord-input" id="ordProfileUrl" placeholder="ссылка на твою анкету/профиль"/>
+      </div>
+      ${pay.requisites ? `
+      <div class="cli-ord-field">
+        <div class="cli-ord-label">Реквизиты для оплаты</div>
+        <div class="cli-ord-req">${escapeHtml(pay.requisites)}</div>
+        <button type="button" class="cli-ord-copy" id="ordCopy">📋 Скопировать реквизиты</button>
+      </div>` : ''}
+      <div class="cli-ord-field">
+        <div class="cli-ord-label">Комментарий (необязательно)</div>
+        <textarea class="cli-ord-input" id="ordComment" rows="2" placeholder="например: оплатил по СБП в 14:30"></textarea>
+      </div>
+      <div class="cli-ord-result" id="ordResult"></div>
+      <button type="button" class="cli-ord-submit" id="ordSubmit">✅ Я оплатил</button>
+    `;
+    // переключение существующая/новая → активируем нужное поле
+    body.querySelectorAll('input[name="ordTarget"]').forEach(r => r.addEventListener('change', () => {
+      const isEx = (body.querySelector('input[name="ordTarget"]:checked') || {}).value === 'existing';
+      const ex = document.getElementById('ordExisting'); if (ex) ex.disabled = !isEx;
+      const nn = document.getElementById('ordNewName'); if (nn) nn.disabled = isEx;
+    }));
+    // тариф/количество → пересчёт суммы. Для «за шт» показываем поле кол-ва.
+    const tariffSel = document.getElementById('ordTariff');
+    const qtyWrap = document.getElementById('ordQtyWrap');
+    const qtyInp = document.getElementById('ordQty');
+    const amountEl = document.getElementById('ordAmount');
+    const curTariff = () => tariffs[Number(tariffSel.value) || 0] || {};
+    function recalcAmount() {
+      const t = curTariff();
+      const isPer = t.unit === 'per';
+      qtyWrap.hidden = !isPer;
+      let amount;
+      if (isPer) {
+        const minQ = Math.max(1, Number(t.qty) || 1);
+        qtyInp.min = minQ;
+        let q = Number(qtyInp.value) || minQ;
+        if (q < minQ) q = minQ;
+        amount = (Number(t.price) || 0) * q;
+      } else {
+        amount = Number(t.price) || 0;
+      }
+      amountEl.textContent = amount > 0 ? 'К оплате: ' + amount.toLocaleString('ru-RU') + ' ₽' : '';
+    }
+    tariffSel.addEventListener('change', () => {
+      const t = curTariff();
+      if (t.unit === 'per') qtyInp.value = Math.max(1, Number(t.qty) || 1);
+      recalcAmount();
+    });
+    qtyInp.addEventListener('input', recalcAmount);
+    recalcAmount();
+    const copyBtn = document.getElementById('ordCopy');
+    if (copyBtn) copyBtn.addEventListener('click', () => {
+      const txt = pay.requisites || '';
+      const done = () => { copyBtn.textContent = '✓ Скопировано'; setTimeout(() => copyBtn.textContent = '📋 Скопировать реквизиты', 1500); };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(done, () => copyBtn.textContent = 'Выдели и скопируй вручную');
+      else copyBtn.textContent = 'Выдели и скопируй вручную';
+    });
+    document.getElementById('ordSubmit').addEventListener('click', onOrderSubmit);
+    m.hidden = false;
+  }
+
+  async function onOrderSubmit() {
+    const btn = document.getElementById('ordSubmit');
+    const result = document.getElementById('ordResult');
+    const pay = (_orderPayload && _orderPayload.payment) || {};
+    const tariffs = pay.tariffs || [];
+    const target = (document.querySelector('input[name="ordTarget"]:checked') || {}).value || 'new';
+    const tariff = tariffs[Number(document.getElementById('ordTariff').value) || 0] || {};
+    const comment = (document.getElementById('ordComment').value || '').trim();
+    const profileUrl = (document.getElementById('ordProfileUrl').value || '').trim();
+
+    // кол-во + итоговая сумма: пакет — фиксированы из тарифа; за шт — qty×цена
+    let qty, amount;
+    if (tariff.unit === 'per') {
+      const minQ = Math.max(1, Number(tariff.qty) || 1);
+      qty = Math.max(minQ, Number((document.getElementById('ordQty') || {}).value) || minQ);
+      amount = (Number(tariff.price) || 0) * qty;
+    } else {
+      qty = Number(tariff.qty) || null;
+      amount = Number(tariff.price) || 0;
+    }
+
+    let anketa_code = null, anketa_name = '', is_new_anketa = false;
+    if (target === 'existing') {
+      const sel = document.getElementById('ordExisting');
+      const opt = sel && sel.options[sel.selectedIndex];
+      if (!opt) { result.className = 'cli-ord-result is-err'; result.textContent = 'Выбери анкету.'; return; }
+      anketa_code = opt.dataset.code || null;
+      anketa_name = opt.dataset.name || '';
+    } else {
+      is_new_anketa = true;
+      anketa_name = (document.getElementById('ordNewName').value || '').trim();
+      if (!anketa_name) { result.className = 'cli-ord-result is-err'; result.textContent = 'Впиши имя новой анкеты.'; return; }
+    }
+
+    btn.disabled = true; btn.textContent = 'Отправляю…';
+    const email = (Auth.email() || '').toLowerCase();
+    const ok = await submitOrder({
+      client_email: email,
+      client_name: Auth.name() || email,
+      anketa_code, anketa_name, is_new_anketa,
+      tariff_name: tariff.name || null,
+      tariff_price: tariff.price != null ? tariff.price : null,
+      qty: qty != null ? qty : null,
+      amount: amount != null ? amount : null,
+      profile_url: profileUrl || null,
+      comment: comment || null
+    });
+
+    if (ok) {
+      const box = document.querySelector('[data-cli-order-body]');
+      box.innerHTML = `
+        <div class="cli-ord-success">
+          <div style="font-size:36px">✅</div>
+          <div style="font-weight:700;margin:10px 0 4px">Заявка отправлена!</div>
+          <div style="color:var(--cli-muted,#888);font-size:13px">Проверим оплату и свяжемся. Спасибо!</div>
+          <button type="button" class="cli-ord-submit" id="ordDone" style="margin-top:18px">Закрыть</button>
+        </div>`;
+      document.getElementById('ordDone').addEventListener('click', closeOrderModal);
+    } else {
+      btn.disabled = false; btn.textContent = '✅ Я оплатил';
+      result.className = 'cli-ord-result is-err';
+      result.textContent = 'Не получилось отправить. Попробуй ещё раз или напиши менеджеру.';
+    }
+  }
+
+  async function submitOrder(payload) {
+    try {
+      const res = await fetch(`${_url()}/rest/v1/client_orders`, {
+        method: 'POST',
+        headers: {
+          'apikey': _key(),
+          'Authorization': `Bearer ${accessToken()}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=minimal'
+        },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok && res.status !== 201 && res.status !== 204) {
+        console.warn('[client-app] order insert failed', res.status, await res.text().catch(() => ''));
+        return false;
+      }
+      return true;
+    } catch (e) { console.warn('[client-app] submitOrder failed', e); return false; }
+  }
+
   window.ClientApp = {
     requireLogin,
     loadSnapshot,
@@ -683,6 +896,7 @@
     renderCalendar,
     renderProfileDetail,
     renderProxies,
+    renderOrder,
     fmtDate, fmtMoney, escapeHtml
   };
 })();

@@ -170,6 +170,21 @@
       this.state.proxyLinks ??= [];     // ссылки для смены IP (LTE-Center и др.)
       this.state.dailyTasks ??= [];     // ежедневные задачи Насте: с какого аккаунта работать с каким клиентом
       this.state.clientPortals ??= [];  // доступы клиентов (Флагман и т.п.) к личному кабинету: см. addClientPortal
+      // Реквизиты для оплаты + тарифы: владелец редактирует в CRM (модалка
+      // «Реквизиты и тарифы»), клиент видит их в кабинете при заказе отзывов.
+      // Кладутся в каждый client_snapshot через buildClientSnapshot.
+      // tariffs: {id, name, price, qty, unit}. unit='package' — фикс-пакет
+      // (price=итог, qty=число отзывов); unit='per' — за штуку (price=цена/шт,
+      // qty=минимум, клиент сам выбирает количество, сумма=price×qty).
+      this.state.paymentSettings ??= {
+        requisites: '',
+        tariffs: [
+          { id: 'support',   name: 'Поддержка профиля', price: 8290,  qty: 6,  unit: 'package' },
+          { id: 'develop',   name: 'Развитие профиля',  price: 15490, qty: 12, unit: 'package' },
+          { id: 'wholesale', name: 'Оптом',             price: 900,   qty: 20, unit: 'per' }
+        ],
+        updatedAt: null
+      };
       // Справочник ниш и пауз «Выбран → Опубликован» в днях.
       // Используется ботом для напоминаний публиковать отзыв (см. A3).
       // ⭐ ключ — это код категории, который проставляется у клиента (clients[].niche).
@@ -1434,6 +1449,11 @@
         anketas,
         totals,
         feed: feed.slice(0, 50),
+        // Реквизиты + тарифы для самостоятельного заказа отзывов из кабинета.
+        payment: {
+          requisites: (this.state.paymentSettings && this.state.paymentSettings.requisites) || '',
+          tariffs: (this.state.paymentSettings && this.state.paymentSettings.tariffs) || []
+        },
         generatedAt: new Date().toISOString()
       };
     },
