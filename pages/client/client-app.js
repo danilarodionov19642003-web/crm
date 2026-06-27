@@ -784,6 +784,14 @@
         <div class="cli-ord-label">Комментарий (необязательно)</div>
         <textarea class="cli-ord-input" id="ordComment" rows="2" placeholder="например: оплатил по СБП в 14:30"></textarea>
       </div>
+      ${(pay.offerText && pay.offerText.trim()) ? `
+      <div class="cli-ord-offer">
+        <div class="cli-ord-offer__text">${escapeHtml(pay.offerText).replace(/\n/g, '<br>')}</div>
+        <label class="cli-ord-offer__check">
+          <input type="checkbox" id="ordOffer"/>
+          <span>Я ознакомился и согласен с условиями заказа</span>
+        </label>
+      </div>` : ''}
       <div class="cli-ord-result" id="ordResult"></div>
       <button type="button" class="cli-ord-submit" id="ordSubmit">✅ Я оплатил</button>
     `;
@@ -868,6 +876,16 @@
       if (!anketa_name) { result.className = 'cli-ord-result is-err'; result.textContent = 'Впиши имя новой анкеты.'; return; }
     }
 
+    // согласие с офертой обязательно, если владелец задал её текст
+    const offerText = (pay.offerText || '').trim();
+    const offerChk = document.getElementById('ordOffer');
+    if (offerText && (!offerChk || !offerChk.checked)) {
+      result.className = 'cli-ord-result is-err';
+      result.textContent = 'Отметь согласие с условиями заказа.';
+      return;
+    }
+    const offer_agreed = !!(offerChk && offerChk.checked);
+
     btn.disabled = true;
     // чек (если приложен) — грузим в Storage ДО создания заявки
     const fileInp = document.getElementById('ordReceipt');
@@ -899,6 +917,7 @@
       amount: amount != null ? amount : null,
       profile_url: profileUrl || null,
       receipt_url: receipt_url || null,
+      offer_agreed: offer_agreed,
       comment: comment || null
     });
 

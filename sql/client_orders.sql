@@ -33,6 +33,7 @@ create table if not exists public.client_orders (
   comment       text,
   profile_url   text,                         -- ссылка на профиль клиента (упрощает работу владельцу)
   receipt_url   text,                         -- публичная ссылка на чек (Supabase Storage, bucket receipts)
+  offer_agreed  boolean default false,        -- клиент поставил галочку согласия с офертой
 
   -- обработка владельцем
   status        text not null default 'new', -- new | confirmed | rejected
@@ -44,6 +45,7 @@ create table if not exists public.client_orders (
 -- Идемпотентно для уже созданной таблицы (на Beget создана без profile_url):
 alter table public.client_orders add column if not exists profile_url text;
 alter table public.client_orders add column if not exists receipt_url text;
+alter table public.client_orders add column if not exists offer_agreed boolean default false;
 
 create index if not exists client_orders_status_idx
   on public.client_orders (status, created_at);

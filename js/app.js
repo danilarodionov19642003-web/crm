@@ -1452,10 +1452,11 @@
         anketas,
         totals,
         feed: feed.slice(0, 50),
-        // Реквизиты + тарифы для самостоятельного заказа отзывов из кабинета.
+        // Реквизиты + тарифы + текст оферты для самостоятельного заказа из кабинета.
         payment: {
           requisites: (this.state.paymentSettings && this.state.paymentSettings.requisites) || '',
-          tariffs: (this.state.paymentSettings && this.state.paymentSettings.tariffs) || []
+          tariffs: (this.state.paymentSettings && this.state.paymentSettings.tariffs) || [],
+          offerText: (this.state.paymentSettings && this.state.paymentSettings.offerText) || ''
         },
         generatedAt: new Date().toISOString()
       };

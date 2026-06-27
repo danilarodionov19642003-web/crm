@@ -361,6 +361,10 @@
         <div style="font-size:11px;color:var(--text-mute);margin-bottom:8px">Имя · цена · кол-во · тип. <b>Пакет</b> — фикс. цена за N отзывов. <b>За шт</b> — цена за штуку, клиент сам выбирает количество (поле «шт» = минимум).</div>
         <div id="tariffList" style="display:flex;flex-direction:column;gap:8px"></div>
         <button class="btn btn--ghost" id="tariffAdd" style="margin-top:12px;width:100%">+ Добавить тариф</button>
+
+        <label style="font-weight:600;font-size:13px;display:block;margin:16px 0 4px">Оферта (условия заказа)</label>
+        <div style="font-size:11px;color:var(--text-mute);margin-bottom:8px">Клиент в кабинете увидит этот текст и обязан поставить галочку согласия перед оплатой. Если оставить <b>пусто</b> — галочки не будет. Каждый пункт с новой строки.</div>
+        <textarea id="reqOffer" class="input" rows="5" placeholder="Например:&#10;1. Оплата за отзывы возврату не подлежит.&#10;2. Если анкету заблокировали — переносим оставшиеся отзывы на другую анкету." style="width:100%;font-size:13px;line-height:1.5;resize:vertical"></textarea>
       </div>
       <div class="modal__footer">
         <button class="btn btn--ghost" data-close>Отмена</button>
@@ -370,7 +374,7 @@
   </div>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260627b"></script>
+  <script src="../js/app.js?v=20260628a"></script>
   <script src="../js/supabase-client.js?v=20260528a"></script>
   <script src="../js/auth-gate.js"></script>
   <script src="../js/cloud-sync.js?v=20260624a"></script>
@@ -1243,8 +1247,14 @@
       wrap.querySelectorAll('[data-act="del-tariff"]').forEach(btn =>
         btn.addEventListener('click', e => e.target.closest('[data-tariff-row]').remove()));
     }
+    // Черновик оферты — подставляется при первом открытии (offerText ещё не задан).
+    const OFFER_DRAFT = [
+      '1. Оплата за размещение отзывов возврату не подлежит.',
+      '2. Если анкета (аккаунт) будет заблокирована площадкой, оставшиеся отзывы переносятся на другую анкету или другой период — без возврата средств.'
+    ].join('\n');
     document.getElementById('btnPayConfig').addEventListener('click', () => {
       const ps = Store.state.paymentSettings || {};
+      document.getElementById('reqOffer').value = ps.offerText != null ? ps.offerText : OFFER_DRAFT;
       // requisites теперь объект; legacy-строку кладём в «примечание»
       const r = ps.requisites;
       const req = (r && typeof r === 'object') ? r : { sbpPhone: '', bank: '', card: '', recipient: '', note: (typeof r === 'string' ? r : '') };
@@ -1283,6 +1293,7 @@
           note:      document.getElementById('reqNote').value.trim()
         },
         tariffs,
+        offerText: document.getElementById('reqOffer').value.trim(),
         updatedAt: new Date().toISOString()
       };
       Store.save();  // → push в crm_state → пересборка client_snapshots с payment
