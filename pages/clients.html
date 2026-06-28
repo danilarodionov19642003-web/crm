@@ -368,8 +368,8 @@
         <button class="btn btn--ghost" id="tariffAdd" style="margin-top:12px;width:100%">+ Добавить тариф</button>
 
         <label style="font-weight:600;font-size:13px;display:block;margin:16px 0 4px">Оферта (условия заказа)</label>
-        <div style="font-size:11px;color:var(--text-mute);margin-bottom:8px">Клиент в кабинете увидит этот текст и обязан поставить галочку согласия перед оплатой. Если оставить <b>пусто</b> — галочки не будет. Каждый пункт с новой строки.</div>
-        <textarea id="reqOffer" class="input" rows="5" placeholder="Например:&#10;1. Оплата за отзывы возврату не подлежит.&#10;2. Если анкету заблокировали — переносим оставшиеся отзывы на другую анкету." style="width:100%;font-size:13px;line-height:1.5;resize:vertical"></textarea>
+        <div style="font-size:11px;color:var(--text-mute);margin-bottom:8px">Клиент в кабинете увидит этот текст и обязан поставить галочку согласия перед оплатой (галочка обязательна всегда; если оставить <b>пусто</b> — покажется встроенный черновик). Каждый пункт с новой строки. При заказе текст условий сохраняется в заявку как доказательство согласия.</div>
+        <textarea id="reqOffer" class="input" rows="10" placeholder="Например:&#10;1. Оплата за отзывы возврату не подлежит.&#10;2. Если анкету заблокировали — переносим оставшиеся отзывы на другую анкету.&#10;3. ..." style="width:100%;min-height:200px;font-size:13px;line-height:1.55;resize:vertical;box-sizing:border-box"></textarea>
       </div>
       <div class="modal__footer">
         <button class="btn btn--ghost" data-close>Отмена</button>

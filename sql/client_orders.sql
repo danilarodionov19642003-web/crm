@@ -34,6 +34,7 @@ create table if not exists public.client_orders (
   profile_url   text,                         -- ссылка на профиль клиента (упрощает работу владельцу)
   receipt_url   text,                         -- публичная ссылка на чек (Supabase Storage, bucket receipts)
   offer_agreed  boolean default false,        -- клиент поставил галочку согласия с офертой
+  offer_text    text,                          -- СНИМОК текста условий на момент заказа (пруф согласия)
 
   -- обработка владельцем
   status        text not null default 'new', -- new | confirmed | rejected
@@ -46,6 +47,7 @@ create table if not exists public.client_orders (
 alter table public.client_orders add column if not exists profile_url text;
 alter table public.client_orders add column if not exists receipt_url text;
 alter table public.client_orders add column if not exists offer_agreed boolean default false;
+alter table public.client_orders add column if not exists offer_text text;
 
 create index if not exists client_orders_status_idx
   on public.client_orders (status, created_at);
@@ -126,8 +128,10 @@ begin
   -- telegram_username, kind, message, mentor_id, profile_id, new_status,
   -- old_status, status, attempts, last_error, created_at, sent_at, updated_at.
   -- (колонки created_by НЕТ — не вставляем). Поллер берёт pending по chat_id+message.
+  -- mentor_id переиспользуем под order_id — notifier берёт его для callback-кнопок
+  -- «Подтвердить/Отклонить» в Telegram (kind='client_order').
   insert into public.notification_outbox
-    (telegram_chat_id, kind, message, status)
+    (telegram_chat_id, kind, message, status, mentor_id)
   values (
     owner_chat,
     'client_order',
@@ -138,7 +142,8 @@ begin
     case when coalesce(NEW.profile_url, '') <> '' then E'\n🔗 ' || NEW.profile_url else '' end ||
     case when coalesce(NEW.receipt_url, '') <> '' then E'\n🧾 чек: ' || NEW.receipt_url else '' end ||
     case when coalesce(NEW.comment, '') <> '' then E'\n💬 ' || NEW.comment else '' end,
-    'pending'
+    'pending',
+    NEW.id::text
   );
   return NEW;
 end;

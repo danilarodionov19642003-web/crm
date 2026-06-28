@@ -848,13 +848,18 @@
     document.body.classList.add('cli-modal-open');  // блок скролла фона
   }
 
-  /** Окно с полным текстом условий заказа (открывается из галочки и из футера). */
-  function openTerms() {
+  /** Окно с текстом условий заказа. Без аргумента — текущие условия (из снимка);
+   *  с textOverride — показывает именно тот текст (снимок из конкретной заявки —
+   *  доказательство, с какими условиями клиент согласился). */
+  function openTerms(textOverride) {
     const m = document.getElementById('cliTermsModal');
     const body = document.querySelector('[data-cli-terms-body]');
     if (!m || !body) return;
-    const pay = (_orderPayload && _orderPayload.payment) || {};
-    const text = (pay.offerText && pay.offerText.trim()) ? pay.offerText : OFFER_DEFAULT;
+    let text = (typeof textOverride === 'string' && textOverride.trim()) ? textOverride : '';
+    if (!text) {
+      const pay = (_orderPayload && _orderPayload.payment) || {};
+      text = (pay.offerText && pay.offerText.trim()) ? pay.offerText : OFFER_DEFAULT;
+    }
     body.innerHTML = escapeHtml(text).replace(/\n/g, '<br>');
     m.hidden = false;
   }
@@ -935,6 +940,7 @@
       profile_url: profileUrl || null,
       receipt_url: receipt_url || null,
       offer_agreed: offer_agreed,
+      offer_text: (pay.offerText && pay.offerText.trim()) ? pay.offerText : OFFER_DEFAULT,
       comment: comment || null
     });
 
@@ -1012,7 +1018,7 @@
     try {
       const url = `${_url()}/rest/v1/client_orders`
         + `?client_email=eq.${encodeURIComponent(email)}`
-        + `&select=id,anketa_code,anketa_name,is_new_anketa,tariff_name,qty,amount,status,created_at`
+        + `&select=id,anketa_code,anketa_name,is_new_anketa,tariff_name,qty,amount,status,created_at,offer_agreed,offer_text`
         + `&order=created_at.desc&limit=40`;
       const res = await fetch(url, { headers: { 'apikey': _key(), 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' } });
       if (!res.ok) { console.warn('[client-app] loadMyOrders failed', res.status); return []; }
@@ -1025,30 +1031,50 @@
     confirmed: { label: 'Платёж подтверждён', cls: 'ok' },
     rejected:  { label: 'Отклонён',           cls: 'err' }
   };
+  function _fmtDateTime(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return fmtDate(iso);
+    const p = n => String(n).padStart(2, '0');
+    return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  }
+  let _myOrders = [];
   function renderMyOrders(orders) {
     const el = document.querySelector('[data-cli-orders]');
     if (!el) return;
-    if (!orders || !orders.length) { el.hidden = true; el.innerHTML = ''; return; }
+    _myOrders = orders || [];
+    if (!_myOrders.length) { el.hidden = true; el.innerHTML = ''; return; }
     el.hidden = false;
     el.innerHTML = `
       <h2 class="cli-section-title">Мои заказы</h2>
       <div class="cli-orders__list">
-        ${orders.map(o => {
+        ${_myOrders.map(o => {
           const st = ORDER_STATUS[o.status] || { label: o.status || '—', cls: '' };
           const anketa = o.is_new_anketa
             ? `новая «${escapeHtml(o.anketa_name || '—')}»`
             : escapeHtml(o.anketa_code || o.anketa_name || '—');
           const sum = o.amount ? ' · ' + Number(o.amount).toLocaleString('ru-RU') + ' ₽' : '';
+          // строка-доказательство согласия с условиями (видна клиенту = пруф)
+          const consent = o.offer_agreed
+            ? `<div class="cli-order__consent">✅ Условия заказа приняты · ${_fmtDateTime(o.created_at)}${o.offer_text ? ` · <button type="button" class="cli-order__terms" data-view-terms="${o.id}">посмотреть</button>` : ''}</div>`
+            : '';
           return `
             <div class="cli-order">
-              <div class="cli-order__main">
-                <div class="cli-order__title">${escapeHtml(o.tariff_name || 'Заказ')}${o.qty ? ' · ' + o.qty + ' отз.' : ''}</div>
-                <div class="cli-order__sub">${anketa} · ${fmtDate(o.created_at)}${sum}</div>
+              <div class="cli-order__row">
+                <div class="cli-order__main">
+                  <div class="cli-order__title">${escapeHtml(o.tariff_name || 'Заказ')}${o.qty ? ' · ' + o.qty + ' отз.' : ''}</div>
+                  <div class="cli-order__sub">${anketa} · ${_fmtDateTime(o.created_at)}${sum}</div>
+                </div>
+                <span class="cli-order__status cli-order__status--${st.cls}">${st.label}</span>
               </div>
-              <span class="cli-order__status cli-order__status--${st.cls}">${st.label}</span>
+              ${consent}
             </div>`;
         }).join('')}
       </div>`;
+    el.querySelectorAll('[data-view-terms]').forEach(b => b.addEventListener('click', () => {
+      const o = _myOrders.find(x => String(x.id) === b.dataset.viewTerms);
+      if (o) openTerms(o.offer_text);
+    }));
   }
 
   window.ClientApp = {
