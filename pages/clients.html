@@ -1373,6 +1373,12 @@
           ? `🆕 новая «${escapeHtml(o.anketa_name || '—')}»`
           : `${escapeHtml(o.anketa_code || '—')}${o.anketa_name ? ' (' + escapeHtml(o.anketa_name) + ')' : ''}`;
         const sum = o.amount != null ? Number(o.amount).toLocaleString('ru-RU') + ' ₽' : '—';
+        const _amt = Number(o.amount) || 0;
+        const _prepay = o.prepay_amount != null ? Number(o.prepay_amount) : _amt;
+        const _rest = Math.max(0, _amt - _prepay);
+        const payLine = o.pay_full
+          ? `💳 оплата 100%: <b>${_prepay.toLocaleString('ru-RU')} ₽</b>`
+          : `💳 предоплата 50%: <b>${_prepay.toLocaleString('ru-RU')} ₽</b> · остаток ${_rest.toLocaleString('ru-RU')} ₽ после выполнения`;
         const links = [
           o.profile_url ? `<a href="${escapeHtml(o.profile_url)}" target="_blank" rel="noopener">🔗 профиль</a>` : '',
           o.receipt_url ? `<a href="${escapeHtml(o.receipt_url)}" target="_blank" rel="noopener">🧾 чек</a>` : ''
@@ -1388,7 +1394,8 @@
               <div style="font-weight:600">${escapeHtml(o.client_name || o.client_email || 'клиент')}</div>
               ${orderBadge(o.status)}
             </div>
-            <div style="font-size:13px;margin-top:4px">Анкета: ${anketa} · Тариф: ${escapeHtml(o.tariff_name || '—')}${o.qty ? ' · ' + o.qty + ' отз.' : ''} · <b>${sum}</b></div>
+            <div style="font-size:13px;margin-top:4px">Анкета: ${anketa} · Тариф: ${escapeHtml(o.tariff_name || '—')}${o.qty ? ' · ' + o.qty + ' отз.' : ''} · сумма <b>${sum}</b></div>
+            <div style="font-size:12px;margin-top:3px">${payLine}</div>
             <div style="font-size:12px;color:var(--text-mute);margin-top:3px">${fmtDate(o.created_at)}${o.offer_agreed ? ' · ✅ оферта принята' : ''}${links ? ' · ' + links : ''}${o.comment ? ' · 💬 ' + escapeHtml(o.comment) : ''}</div>
             ${actions}
           </div>`;
@@ -1415,23 +1422,31 @@
     async function confirmOrder(id) {
       const o = _ordersCache.find(x => x.id === id);
       if (!o) return;
-      const ok = await patchOrder(id, { status: 'confirmed', confirmed_at: new Date().toISOString() });
+      const payFull = !!o.pay_full;
+      const amount = Number(o.amount) || 0;
+      const prepay = o.prepay_amount != null ? Number(o.prepay_amount) : amount;
+      const remStatus = payFull ? null : 'pending';   // остаток ждёт доплаты (Часть 2)
+      const ok = await patchOrder(id, { status: 'confirmed', confirmed_at: new Date().toISOString(), remainder_status: remStatus });
       if (!ok) { toast('Не удалось подтвердить заявку', 'error'); return; }
-      o.status = 'confirmed';
-      // начисление отзывов: ordered += qty клиенту с этим кодом анкеты
+      o.status = 'confirmed'; o.remainder_status = remStatus;
+      // начисление: отзывы + сумма заказа в анкету + предоплата как доход (Оплачено/Остаток)
       const qty = Number(o.qty) || 0;
-      let credited = false;
-      if (qty > 0 && o.anketa_code) {
-        const code = String(o.anketa_code).toLowerCase().trim();
-        const client = (Store.state.clients || []).find(c => String(c.code || '').toLowerCase().trim() === code);
-        if (client) {
-          Store.updateClient(client.id, { ordered: (Number(client.ordered) || 0) + qty });
-          credited = true;
-          toast(`Подтверждено. Начислено ${qty} отзывов клиенту ${client.code}`, 'success');
-          render();
+      const code = String(o.anketa_code || '').toLowerCase().trim();
+      const client = code ? (Store.state.clients || []).find(c => String(c.code || '').toLowerCase().trim() === code) : null;
+      if (client) {
+        Store.updateClient(client.id, {
+          ordered: (Number(client.ordered) || 0) + qty,
+          total: (Number(client.total) || 0) + amount
+        });
+        if (prepay > 0) {
+          Store.addIncome({ items: [{ accountId: client.id, amount: prepay }], service: 'Отзывы',
+            comment: payFull ? 'Оплата заказа (100%)' : 'Предоплата заказа (50%)' });
         }
+        toast(`Подтверждено. ${client.code}: +${qty} отзывов, оплачено ${prepay.toLocaleString('ru-RU')} ₽`, 'success');
+        render();
+      } else {
+        toast(`Заявка подтверждена.${qty ? ` Анкета новая/не найдена — начисли ${qty} отзывов и оплату вручную.` : ''}`, 'success');
       }
-      if (!credited) toast(`Заявка подтверждена.${qty ? ` Начисли ${qty} отзывов вручную (анкета новая/не найдена).` : ''}`, 'success');
       updateOrdersBadge();
       renderOrdersList();
     }

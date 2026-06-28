@@ -29,7 +29,10 @@ create table if not exists public.client_orders (
   tariff_name   text,
   tariff_price  numeric,                      -- цена тарифа (пакет — итог; опт — за штуку)
   qty           int,                          -- кол-во отзывов (пакет — из тарифа; опт — выбрал клиент)
-  amount        numeric,                      -- заявленная сумма к оплате (итог)
+  amount        numeric,                      -- ПОЛНАЯ сумма заказа (итог)
+  pay_full      boolean default false,        -- клиент выбрал оплату 100% сразу (иначе 50% предоплата)
+  prepay_amount numeric,                      -- сколько внесено при заказе (50% или 100% от amount)
+  remainder_status text,                      -- null|pending|requested|paid — судьба вторых 50% (Часть 2)
   comment       text,
   profile_url   text,                         -- ссылка на профиль клиента (упрощает работу владельцу)
   receipt_url   text,                         -- публичная ссылка на чек (Supabase Storage, bucket receipts)
@@ -48,6 +51,9 @@ alter table public.client_orders add column if not exists profile_url text;
 alter table public.client_orders add column if not exists receipt_url text;
 alter table public.client_orders add column if not exists offer_agreed boolean default false;
 alter table public.client_orders add column if not exists offer_text text;
+alter table public.client_orders add column if not exists pay_full boolean default false;
+alter table public.client_orders add column if not exists prepay_amount numeric;
+alter table public.client_orders add column if not exists remainder_status text;
 
 create index if not exists client_orders_status_idx
   on public.client_orders (status, created_at);
@@ -110,6 +116,7 @@ declare
   owner_chat bigint := 6876234451;   -- bot_owner_chat_id (@MentoriTG_bot)
   anketa_lbl text;
   tariff_lbl text;
+  pay_lbl text;
 begin
   anketa_lbl := case
     when NEW.is_new_anketa
@@ -123,6 +130,10 @@ begin
     || case when NEW.qty is not null then ' · ' || NEW.qty || ' шт' else '' end
     || case when NEW.amount is not null
             then ' · ' || trim(to_char(NEW.amount, 'FM999999990')) || ' ₽' else '' end;
+  -- «Оплачено сейчас: предоплата 50% / полностью + сумма»
+  pay_lbl := (case when NEW.pay_full then 'оплачено полностью' else 'предоплата 50%' end)
+    || case when NEW.prepay_amount is not null
+            then ': ' || trim(to_char(NEW.prepay_amount, 'FM999999990')) || ' ₽' else '' end;
 
   -- notification_outbox на Beget: id, client_email, telegram_chat_id,
   -- telegram_username, kind, message, mentor_id, profile_id, new_status,
@@ -138,7 +149,8 @@ begin
     '💰 Новая оплата!' || E'\n' ||
     '👤 ' || coalesce(NEW.client_name, NEW.client_email, 'клиент') || E'\n' ||
     'Анкета: ' || anketa_lbl || E'\n' ||
-    'Тариф: ' || tariff_lbl ||
+    'Тариф: ' || tariff_lbl || E'\n' ||
+    '💳 ' || pay_lbl ||
     case when coalesce(NEW.profile_url, '') <> '' then E'\n🔗 ' || NEW.profile_url else '' end ||
     case when coalesce(NEW.receipt_url, '') <> '' then E'\n🧾 чек: ' || NEW.receipt_url else '' end ||
     case when coalesce(NEW.comment, '') <> '' then E'\n💬 ' || NEW.comment else '' end,

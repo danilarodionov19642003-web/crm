@@ -758,6 +758,11 @@
         <div class="cli-ord-label">Количество отзывов</div>
         <input type="number" class="cli-ord-input" id="ordQty"/>
       </div>
+      <div class="cli-ord-field">
+        <div class="cli-ord-label">Оплата</div>
+        <label class="cli-ord-radio"><input type="radio" name="ordPay" value="half" checked/> Предоплата 50% сейчас (остаток — после выполнения)</label>
+        <label class="cli-ord-radio" style="margin-top:6px"><input type="radio" name="ordPay" value="full"/> Оплатить 100% сейчас</label>
+      </div>
       <div class="cli-ord-amount" id="ordAmount"></div>
       <div class="cli-ord-field">
         <div class="cli-ord-label">Ссылка на профиль (если есть)</div>
@@ -811,27 +816,35 @@
     const qtyInp = document.getElementById('ordQty');
     const amountEl = document.getElementById('ordAmount');
     const curTariff = () => tariffs[Number(tariffSel.value) || 0] || {};
-    function recalcAmount() {
+    // полная сумма заказа по выбранному тарифу/количеству
+    function orderFull() {
       const t = curTariff();
-      const isPer = t.unit === 'per';
-      qtyWrap.hidden = !isPer;
-      let amount;
-      if (isPer) {
+      if (t.unit === 'per') {
         const minQ = Math.max(1, Number(t.qty) || 1);
         qtyInp.min = minQ;
         let q = Number(qtyInp.value) || minQ;
         if (q < minQ) q = minQ;
-        amount = (Number(t.price) || 0) * q;
-      } else {
-        amount = Number(t.price) || 0;
+        return (Number(t.price) || 0) * q;
       }
-      amountEl.textContent = amount > 0 ? 'К оплате: ' + amount.toLocaleString('ru-RU') + ' ₽' : '';
+      return Number(t.price) || 0;
+    }
+    const isPayFull = () => (body.querySelector('input[name="ordPay"]:checked') || {}).value === 'full';
+    const fmtRub = n => Number(n).toLocaleString('ru-RU') + ' ₽';
+    function recalcAmount() {
+      qtyWrap.hidden = curTariff().unit !== 'per';
+      const full = orderFull();
+      if (full <= 0) { amountEl.innerHTML = ''; return; }
+      const payNow = isPayFull() ? full : Math.round(full / 2);
+      amountEl.innerHTML = `Сумма заказа: ${fmtRub(full)}<br>`
+        + `<b>К оплате сейчас: ${fmtRub(payNow)}</b>`
+        + (isPayFull() ? '' : `<br><span class="cli-ord-amount__rest">Остаток ${fmtRub(full - payNow)} — после выполнения</span>`);
     }
     tariffSel.addEventListener('change', () => {
       const t = curTariff();
       if (t.unit === 'per') qtyInp.value = Math.max(1, Number(t.qty) || 1);
       recalcAmount();
     });
+    body.querySelectorAll('input[name="ordPay"]').forEach(r => r.addEventListener('change', recalcAmount));
     qtyInp.addEventListener('input', recalcAmount);
     recalcAmount();
     // копирование каждого реквизита своей кнопкой
@@ -875,7 +888,7 @@
     const comment = (document.getElementById('ordComment').value || '').trim();
     const profileUrl = (document.getElementById('ordProfileUrl').value || '').trim();
 
-    // кол-во + итоговая сумма: пакет — фиксированы из тарифа; за шт — qty×цена
+    // кол-во + ПОЛНАЯ сумма заказа: пакет — фиксированы из тарифа; за шт — qty×цена
     let qty, amount;
     if (tariff.unit === 'per') {
       const minQ = Math.max(1, Number(tariff.qty) || 1);
@@ -885,6 +898,9 @@
       qty = Number(tariff.qty) || null;
       amount = Number(tariff.price) || 0;
     }
+    // выбор оплаты: 50% предоплата или 100% сразу
+    const pay_full = (document.querySelector('input[name="ordPay"]:checked') || {}).value === 'full';
+    const prepay_amount = pay_full ? amount : Math.round(amount / 2);
 
     let anketa_code = null, anketa_name = '', is_new_anketa = false;
     if (target === 'existing') {
@@ -937,6 +953,8 @@
       tariff_price: tariff.price != null ? tariff.price : null,
       qty: qty != null ? qty : null,
       amount: amount != null ? amount : null,
+      pay_full: pay_full,
+      prepay_amount: prepay_amount,
       profile_url: profileUrl || null,
       receipt_url: receipt_url || null,
       offer_agreed: offer_agreed,
@@ -1018,7 +1036,7 @@
     try {
       const url = `${_url()}/rest/v1/client_orders`
         + `?client_email=eq.${encodeURIComponent(email)}`
-        + `&select=id,anketa_code,anketa_name,is_new_anketa,tariff_name,qty,amount,status,created_at,offer_agreed,offer_text`
+        + `&select=id,anketa_code,anketa_name,is_new_anketa,tariff_name,qty,amount,status,created_at,offer_agreed,offer_text,pay_full,prepay_amount,remainder_status`
         + `&order=created_at.desc&limit=40`;
       const res = await fetch(url, { headers: { 'apikey': _key(), 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' } });
       if (!res.ok) { console.warn('[client-app] loadMyOrders failed', res.status); return []; }
@@ -1053,7 +1071,18 @@
           const anketa = o.is_new_anketa
             ? `новая «${escapeHtml(o.anketa_name || '—')}»`
             : escapeHtml(o.anketa_code || o.anketa_name || '—');
-          const sum = o.amount ? ' · ' + Number(o.amount).toLocaleString('ru-RU') + ' ₽' : '';
+          // оплата: предоплата/полная + остаток
+          const amt = Number(o.amount) || 0;
+          const prepay = o.prepay_amount != null ? Number(o.prepay_amount) : amt;
+          const rest = Math.max(0, amt - prepay);
+          let payLine = '';
+          if (o.status === 'confirmed') {
+            payLine = (o.pay_full || rest <= 0)
+              ? `<div class="cli-order__pay">💳 Оплачено полностью: ${fmtMoney(amt)}</div>`
+              : `<div class="cli-order__pay">💳 Оплачено: ${fmtMoney(prepay)} (предоплата) · Остаток: <b>${fmtMoney(rest)}</b> после выполнения</div>`;
+          } else if (o.status === 'new') {
+            payLine = `<div class="cli-order__pay">💳 К оплате: ${fmtMoney(prepay)}${o.pay_full ? ' (100%)' : ' (предоплата 50%)'}</div>`;
+          }
           // строка-доказательство согласия с условиями (видна клиенту = пруф)
           const consent = o.offer_agreed
             ? `<div class="cli-order__consent">✅ Условия заказа приняты · ${_fmtDateTime(o.created_at)}${o.offer_text ? ` · <button type="button" class="cli-order__terms" data-view-terms="${o.id}">посмотреть</button>` : ''}</div>`
@@ -1063,10 +1092,11 @@
               <div class="cli-order__row">
                 <div class="cli-order__main">
                   <div class="cli-order__title">${escapeHtml(o.tariff_name || 'Заказ')}${o.qty ? ' · ' + o.qty + ' отз.' : ''}</div>
-                  <div class="cli-order__sub">${anketa} · ${_fmtDateTime(o.created_at)}${sum}</div>
+                  <div class="cli-order__sub">${anketa} · ${_fmtDateTime(o.created_at)}</div>
                 </div>
                 <span class="cli-order__status cli-order__status--${st.cls}">${st.label}</span>
               </div>
+              ${payLine}
               ${consent}
             </div>`;
         }).join('')}
