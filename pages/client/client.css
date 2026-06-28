@@ -757,3 +757,12 @@ body:has(.cli-modal:not([hidden])) { overflow: hidden; }
 .cli-order__pay { font-size: 12.5px; color: var(--text-mute, #888); }
 .cli-order__pay b { color: var(--cli-accent); }
 .cli-ord-amount__rest { font-size: 12px; color: var(--text-mute, #888); font-weight: 400; }
+
+/* Оплатить остаток: CTA (зелёный) + строки выбора анкет */
+.cli-remain-cta { background: linear-gradient(135deg, rgba(34,197,94,0.10), rgba(34,197,94,0.02)); border-color: rgba(34,197,94,0.30); }
+.cli-remain-cta .cli-order-cta__btn { background: var(--cli-green); box-shadow: 0 8px 24px rgba(34,197,94,0.18); }
+.cli-remain-row { display: flex; align-items: center; gap: 10px; padding: 10px 4px; border-bottom: 1px solid var(--border); cursor: pointer; }
+.cli-remain-row:last-child { border-bottom: none; }
+.cli-remain-row input { width: 18px; height: 18px; accent-color: var(--cli-accent); flex: none; }
+.cli-remain-row__name { flex: 1; font-size: 14px; }
+.cli-remain-row__amt { font-weight: 700; font-size: 14px; white-space: nowrap; }

@@ -9,7 +9,7 @@
   <meta http-equiv="Expires" content="0"/>
   <title>Личный кабинет — Mentori</title>
   <link rel="stylesheet" href="../../css/styles.css?v=20260628a"/>
-  <link rel="stylesheet" href="client.css?v=20260628f"/>
+  <link rel="stylesheet" href="client.css?v=20260628g"/>
 </head>
 <body class="cli-body">
   <div data-cli-header></div>
@@ -23,6 +23,15 @@
         <div class="cli-order-cta__sub">Выбери тариф и анкету — покажем актуальные реквизиты для оплаты.</div>
       </div>
       <button class="cli-order-cta__btn" id="cliOrderBtn" type="button">💳 Заказать отзывы</button>
+    </div>
+
+    <!-- Оплатить остаток: показывается, если у клиента есть анкеты с остатком. -->
+    <div class="cli-order-cta cli-remain-cta" data-cli-remain-cta hidden>
+      <div class="cli-order-cta__text">
+        <div class="cli-order-cta__title">Остаток к оплате: <span data-cli-remain-total></span></div>
+        <div class="cli-order-cta__sub">Можно оплатить остаток по всем анкетам или по выбранным.</div>
+      </div>
+      <button class="cli-order-cta__btn" id="cliRemainBtn" type="button">Оплатить остаток</button>
     </div>
 
     <!-- Мои заказы: заявки клиента со статусом (на проверке / подтверждён). -->
@@ -78,8 +87,20 @@
     </div>
   </div>
 
+  <!-- Модалка доплаты остатка. Тело рендерит client-app.openRemainModal. -->
+  <div class="cli-modal" id="cliRemainModal" hidden>
+    <div class="cli-modal__backdrop" data-cli-remain-close></div>
+    <div class="cli-modal__box">
+      <div class="cli-modal__head">
+        <h3>Оплатить остаток</h3>
+        <button class="cli-modal__x" type="button" data-cli-remain-close>✕</button>
+      </div>
+      <div class="cli-modal__body" data-cli-remain-body></div>
+    </div>
+  </div>
+
   <script src="../../js/supabase-client.js?v=20260528a"></script>
-  <script src="./client-app.js?v=20260628f"></script>
+  <script src="./client-app.js?v=20260628g"></script>
   <script>
   (async () => {
     const ok = await window.ClientApp.requireLogin();
@@ -99,6 +120,9 @@
     }
     // Заказ отзывов (реквизиты/тарифы из снимка). Если тарифов нет — CTA скрыт.
     window.ClientApp.renderOrder(snap && snap.payload);
+    // Оплатить остаток — CTA, если у анкет есть остаток к оплате.
+    window.ClientApp.renderRemainder(snap && snap.payload);
+    document.querySelectorAll('[data-cli-remain-close]').forEach(el => el.addEventListener('click', () => window.ClientApp.closeRemainModal()));
     // Мои заказы — заявки клиента со статусом (на проверке / подтверждён).
     window.ClientApp.renderMyOrders(await window.ClientApp.loadMyOrders());
     // Прокси — независимо от snapshot, доступны всем залогиненным клиентам.

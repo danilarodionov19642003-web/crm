@@ -1107,6 +1107,126 @@
     }));
   }
 
+  /* ---- Оплатить остаток (по выбранным анкетам) ---- */
+  function renderRemainder(payload) {
+    if (payload) _orderPayload = payload;
+    const cta = document.querySelector('[data-cli-remain-cta]');
+    if (!cta) return;
+    const anketas = (payload && payload.anketas) || [];
+    const withRemain = anketas.filter(a => (Number(a.remain) || 0) > 0);
+    const total = withRemain.reduce((s, a) => s + (Number(a.remain) || 0), 0);
+    if (!withRemain.length || total <= 0) { cta.hidden = true; return; }
+    cta.hidden = false;
+    const totalEl = cta.querySelector('[data-cli-remain-total]');
+    if (totalEl) totalEl.textContent = fmtMoney(total);
+    const btn = document.getElementById('cliRemainBtn');
+    if (btn && !btn._bound) { btn._bound = true; btn.addEventListener('click', openRemainModal); }
+  }
+  function closeRemainModal() { const m = document.getElementById('cliRemainModal'); if (m) m.hidden = true; }
+
+  function _reqBlockHtml(req) {
+    const rows = _reqRows(req);
+    if (!rows.length) return '';
+    return `<div class="cli-ord-field"><div class="cli-ord-label">Реквизиты для оплаты</div>
+      <div class="cli-req-list">${rows.map(r => r.note
+        ? `<div class="cli-req-note">${escapeHtml(r.value)}</div>`
+        : `<div class="cli-req-row"><div class="cli-req-row__main"><div class="cli-req-row__label">${escapeHtml(r.label)}</div><div class="cli-req-row__val">${escapeHtml(r.value)}</div></div>${r.copy ? `<button type="button" class="cli-req-row__copy" data-copy="${escapeAttr(r.value)}">Копировать</button>` : ''}</div>`).join('')}</div></div>`;
+  }
+  function _bindCopyButtons(scope) {
+    scope.querySelectorAll('.cli-req-row__copy').forEach(b => b.addEventListener('click', () => {
+      const txt = b.getAttribute('data-copy') || '';
+      const done = () => { const o = b.textContent; b.textContent = '✓ Скопировано'; setTimeout(() => b.textContent = o, 1300); };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(done, () => { b.textContent = 'Выдели вручную'; });
+      else b.textContent = 'Выдели вручную';
+    }));
+  }
+
+  function openRemainModal() {
+    const m = document.getElementById('cliRemainModal');
+    const body = document.querySelector('[data-cli-remain-body]');
+    if (!m || !body || !_orderPayload) return;
+    const pay = _orderPayload.payment || {};
+    const anketas = (_orderPayload.anketas || []).filter(a => (Number(a.remain) || 0) > 0);
+    if (!anketas.length) return;
+    body.innerHTML = `
+      <div class="cli-ord-field">
+        <div class="cli-ord-label">Выбери анкеты для оплаты остатка</div>
+        ${anketas.map(a => `
+          <label class="cli-remain-row">
+            <input type="checkbox" class="cli-remain-chk" data-code="${escapeAttr(a.code || '')}" data-name="${escapeAttr(a.name || '')}" data-amount="${Number(a.remain) || 0}" checked/>
+            <span class="cli-remain-row__name">${escapeHtml(a.code || '')}${a.name ? ' · ' + escapeHtml(a.name) : ''}</span>
+            <span class="cli-remain-row__amt">${fmtMoney(Number(a.remain) || 0)}</span>
+          </label>`).join('')}
+      </div>
+      <div class="cli-ord-amount" id="remainTotal"></div>
+      ${_reqBlockHtml(pay.requisites)}
+      <div class="cli-ord-field">
+        <div class="cli-ord-label">Чек об оплате (PDF или фото, необязательно)</div>
+        <input type="file" class="cli-ord-file" id="remainReceipt" accept=".pdf,image/*"/>
+      </div>
+      <div class="cli-ord-result" id="remainResult"></div>
+      <button type="button" class="cli-ord-submit" id="remainSubmit">Я оплатил остаток</button>
+    `;
+    const recalc = () => {
+      const total = [...body.querySelectorAll('.cli-remain-chk:checked')].reduce((s, c) => s + (Number(c.dataset.amount) || 0), 0);
+      document.getElementById('remainTotal').innerHTML = `<b>К оплате: ${fmtMoney(total)}</b>`;
+    };
+    body.querySelectorAll('.cli-remain-chk').forEach(c => c.addEventListener('change', recalc));
+    recalc();
+    _bindCopyButtons(body);
+    document.getElementById('remainSubmit').addEventListener('click', onRemainSubmit);
+    m.hidden = false;
+  }
+
+  async function onRemainSubmit() {
+    const btn = document.getElementById('remainSubmit');
+    const result = document.getElementById('remainResult');
+    const body = document.querySelector('[data-cli-remain-body]');
+    const sel = [...body.querySelectorAll('.cli-remain-chk:checked')];
+    if (!sel.length) { result.className = 'cli-ord-result is-err'; result.textContent = 'Выбери хотя бы одну анкету.'; return; }
+    const items = sel.map(c => ({ code: c.dataset.code, name: c.dataset.name, amount: Number(c.dataset.amount) || 0 }))
+      .filter(i => i.amount > 0);
+    const total = items.reduce((s, i) => s + i.amount, 0);
+    if (!items.length || total <= 0) { result.className = 'cli-ord-result is-err'; result.textContent = 'Нет суммы к оплате.'; return; }
+
+    btn.disabled = true;
+    const fileInp = document.getElementById('remainReceipt');
+    const file = fileInp && fileInp.files && fileInp.files[0];
+    let receipt_url = null;
+    if (file) {
+      if (file.size > 50 * 1024 * 1024) { btn.disabled = false; result.className = 'cli-ord-result is-err'; result.textContent = 'Файл больше 50 МБ.'; return; }
+      btn.textContent = 'Загружаю чек…';
+      receipt_url = await uploadReceipt(file);
+      if (!receipt_url) { btn.disabled = false; result.className = 'cli-ord-result is-err'; result.textContent = 'Не получилось загрузить чек. Попробуй ещё или убери файл.'; return; }
+    }
+    btn.textContent = 'Отправляю…';
+    const email = (Auth.email() || '').toLowerCase();
+    const ok = await submitOrder({
+      client_email: email,
+      client_name: Auth.name() || email,
+      order_type: 'remainder',
+      anketa_name: items.map(i => i.code).join(', '),
+      items: items,
+      amount: total,
+      receipt_url: receipt_url || null
+    });
+    if (ok) {
+      body.innerHTML = `
+        <div class="cli-ord-success">
+          <div style="font-size:36px">✅</div>
+          <div style="font-weight:700;margin:10px 0 4px">Доплата отправлена!</div>
+          <div style="color:var(--cli-muted,#888);font-size:13px">Проверим оплату и подтвердим. Спасибо!</div>
+          <button type="button" class="cli-ord-submit" id="remainDone" style="margin-top:18px">Закрыть</button>
+        </div>`;
+      document.getElementById('remainDone').addEventListener('click', closeRemainModal);
+      loadMyOrders().then(renderMyOrders);
+    } else {
+      btn.disabled = false; btn.textContent = 'Я оплатил остаток';
+      result.className = 'cli-ord-result is-err';
+      result.textContent = 'Не получилось отправить. Попробуй ещё раз или напиши менеджеру.';
+    }
+  }
+
   window.ClientApp = {
     requireLogin,
     loadSnapshot,
@@ -1118,6 +1238,9 @@
     renderProfileDetail,
     renderProxies,
     renderOrder,
+    renderRemainder,
+    openRemainModal,
+    closeRemainModal,
     loadMyOrders,
     renderMyOrders,
     openTerms,

@@ -32,7 +32,9 @@ create table if not exists public.client_orders (
   amount        numeric,                      -- ПОЛНАЯ сумма заказа (итог)
   pay_full      boolean default false,        -- клиент выбрал оплату 100% сразу (иначе 50% предоплата)
   prepay_amount numeric,                      -- сколько внесено при заказе (50% или 100% от amount)
-  remainder_status text,                      -- null|pending|requested|paid — судьба вторых 50% (Часть 2)
+  remainder_status text,                      -- null|pending — есть ли у заказа неоплаченные 50%
+  order_type    text default 'order',         -- 'order' (новый заказ отзывов) | 'remainder' (доплата остатка)
+  items         jsonb,                         -- для remainder: [{code,name,amount}] по анкетам
   comment       text,
   profile_url   text,                         -- ссылка на профиль клиента (упрощает работу владельцу)
   receipt_url   text,                         -- публичная ссылка на чек (Supabase Storage, bucket receipts)
@@ -54,6 +56,8 @@ alter table public.client_orders add column if not exists offer_text text;
 alter table public.client_orders add column if not exists pay_full boolean default false;
 alter table public.client_orders add column if not exists prepay_amount numeric;
 alter table public.client_orders add column if not exists remainder_status text;
+alter table public.client_orders add column if not exists order_type text default 'order';
+alter table public.client_orders add column if not exists items jsonb;
 
 create index if not exists client_orders_status_idx
   on public.client_orders (status, created_at);
@@ -117,46 +121,45 @@ declare
   anketa_lbl text;
   tariff_lbl text;
   pay_lbl text;
+  msg text;
 begin
-  anketa_lbl := case
-    when NEW.is_new_anketa
-      then 'новая «' || coalesce(NEW.anketa_name, '—') || '»'
-    else coalesce(NEW.anketa_code, '') ||
-         case when coalesce(NEW.anketa_name, '') <> ''
-              then ' (' || NEW.anketa_name || ')' else '' end
-  end;
-  -- «Тариф · N шт · СУММА ₽»
-  tariff_lbl := coalesce(NEW.tariff_name, '—')
-    || case when NEW.qty is not null then ' · ' || NEW.qty || ' шт' else '' end
-    || case when NEW.amount is not null
-            then ' · ' || trim(to_char(NEW.amount, 'FM999999990')) || ' ₽' else '' end;
-  -- «Оплачено сейчас: предоплата 50% / полностью + сумма»
-  pay_lbl := (case when NEW.pay_full then 'оплачено полностью' else 'предоплата 50%' end)
-    || case when NEW.prepay_amount is not null
-            then ': ' || trim(to_char(NEW.prepay_amount, 'FM999999990')) || ' ₽' else '' end;
+  if NEW.order_type = 'remainder' then
+    -- доплата остатка по анкетам (anketa_name = сводка кодов, items = разбивка)
+    msg := '💰 Доплата остатка!' || E'\n'
+        || '👤 ' || coalesce(NEW.client_name, NEW.client_email, 'клиент') || E'\n'
+        || 'Анкеты: ' || coalesce(NEW.anketa_name, '—') || E'\n'
+        || 'Итого: ' || trim(to_char(coalesce(NEW.amount, 0), 'FM999999990')) || ' ₽'
+        || case when coalesce(NEW.receipt_url, '') <> '' then E'\n🧾 чек: ' || NEW.receipt_url else '' end
+        || case when coalesce(NEW.comment, '') <> '' then E'\n💬 ' || NEW.comment else '' end;
+  else
+    anketa_lbl := case
+      when NEW.is_new_anketa
+        then 'новая «' || coalesce(NEW.anketa_name, '—') || '»'
+      else coalesce(NEW.anketa_code, '') ||
+           case when coalesce(NEW.anketa_name, '') <> ''
+                then ' (' || NEW.anketa_name || ')' else '' end
+    end;
+    tariff_lbl := coalesce(NEW.tariff_name, '—')
+      || case when NEW.qty is not null then ' · ' || NEW.qty || ' шт' else '' end
+      || case when NEW.amount is not null
+              then ' · ' || trim(to_char(NEW.amount, 'FM999999990')) || ' ₽' else '' end;
+    pay_lbl := (case when NEW.pay_full then 'оплачено полностью' else 'предоплата 50%' end)
+      || case when NEW.prepay_amount is not null
+              then ': ' || trim(to_char(NEW.prepay_amount, 'FM999999990')) || ' ₽' else '' end;
+    msg := '💰 Новая оплата!' || E'\n'
+        || '👤 ' || coalesce(NEW.client_name, NEW.client_email, 'клиент') || E'\n'
+        || 'Анкета: ' || anketa_lbl || E'\n'
+        || 'Тариф: ' || tariff_lbl || E'\n'
+        || '💳 ' || pay_lbl
+        || case when coalesce(NEW.profile_url, '') <> '' then E'\n🔗 ' || NEW.profile_url else '' end
+        || case when coalesce(NEW.receipt_url, '') <> '' then E'\n🧾 чек: ' || NEW.receipt_url else '' end
+        || case when coalesce(NEW.comment, '') <> '' then E'\n💬 ' || NEW.comment else '' end;
+  end if;
 
-  -- notification_outbox на Beget: id, client_email, telegram_chat_id,
-  -- telegram_username, kind, message, mentor_id, profile_id, new_status,
-  -- old_status, status, attempts, last_error, created_at, sent_at, updated_at.
-  -- (колонки created_by НЕТ — не вставляем). Поллер берёт pending по chat_id+message.
-  -- mentor_id переиспользуем под order_id — notifier берёт его для callback-кнопок
-  -- «Подтвердить/Отклонить» в Telegram (kind='client_order').
+  -- mentor_id переиспользуем под order_id — notifier берёт его для callback-кнопок.
   insert into public.notification_outbox
     (telegram_chat_id, kind, message, status, mentor_id)
-  values (
-    owner_chat,
-    'client_order',
-    '💰 Новая оплата!' || E'\n' ||
-    '👤 ' || coalesce(NEW.client_name, NEW.client_email, 'клиент') || E'\n' ||
-    'Анкета: ' || anketa_lbl || E'\n' ||
-    'Тариф: ' || tariff_lbl || E'\n' ||
-    '💳 ' || pay_lbl ||
-    case when coalesce(NEW.profile_url, '') <> '' then E'\n🔗 ' || NEW.profile_url else '' end ||
-    case when coalesce(NEW.receipt_url, '') <> '' then E'\n🧾 чек: ' || NEW.receipt_url else '' end ||
-    case when coalesce(NEW.comment, '') <> '' then E'\n💬 ' || NEW.comment else '' end,
-    'pending',
-    NEW.id::text
-  );
+  values (owner_chat, 'client_order', msg, 'pending', NEW.id::text);
   return NEW;
 end;
 $$;
