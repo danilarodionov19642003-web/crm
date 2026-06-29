@@ -1317,7 +1317,9 @@
           note:      document.getElementById('reqNote').value.trim()
         },
         tariffs,
-        offerText: document.getElementById('reqOffer').value.trim(),
+        // пустое поле НЕ затирает существующую оферту (защита от случайной потери)
+        offerText: document.getElementById('reqOffer').value.trim()
+          || (Store.state.paymentSettings && Store.state.paymentSettings.offerText) || '',
         updatedAt: new Date().toISOString()
       };
       Store.save();  // → push в crm_state → пересборка client_snapshots с payment
