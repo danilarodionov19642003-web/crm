@@ -67,7 +67,27 @@
 .cli-header__logout:hover { border-color: var(--cli-red); color: var(--cli-red); }
 
 /* ---------- main ---------- */
-.cli-main { padding: 20px 16px 40px; max-width: 820px; margin: 0 auto; }
+.cli-main { padding: 20px 16px 40px; max-width: 1080px; margin: 0 auto; }
+
+/* Раскладка ПК: ряд оплат + две колонки. На телефоне всё в одну колонку. */
+.cli-cta-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px; }
+.cli-cta-row > .cli-order-cta { flex: 1 1 280px; margin: 0; }
+.cli-cols { display: grid; grid-template-columns: 1fr; gap: 24px; margin-top: 8px; align-items: start; }
+.cli-col { display: flex; flex-direction: column; min-width: 0; }
+@media (min-width: 860px) {
+  .cli-cols { grid-template-columns: 1.5fr 1fr; gap: 28px; }
+}
+/* Карточка «Условия оказания услуг» — кликабельная, открывает модалку */
+.cli-terms-card {
+  display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; cursor: pointer;
+  margin: 26px 0 0; padding: 14px 16px; border-radius: 16px;
+  background: var(--bg-2, var(--bg)); border: 1px solid rgba(255,122,0,0.30); box-shadow: var(--cli-shadow);
+  color: var(--text); font: inherit;
+}
+.cli-terms-card:hover { border-color: var(--cli-accent); }
+.cli-terms-card__icon { font-size: 22px; flex: none; }
+.cli-terms-card__title { display: block; font-weight: 700; font-size: 14px; }
+.cli-terms-card__sub { display: block; font-size: 12px; color: var(--text-mute, #888); margin-top: 2px; }
 
 .cli-section-title {
   font-size: 11px;
@@ -766,3 +786,13 @@ body:has(.cli-modal:not([hidden])) { overflow: hidden; }
 .cli-remain-row input { width: 18px; height: 18px; accent-color: var(--cli-accent); flex: none; }
 .cli-remain-row__name { flex: 1; font-size: 14px; }
 .cli-remain-row__amt { font-weight: 700; font-size: 14px; white-space: nowrap; }
+
+/* Мои заказы: «показать все» */
+.cli-orders__more { margin-top: 8px; }
+.cli-orders__more[hidden] { display: none; }
+.cli-orders__toggle {
+  width: 100%; margin-top: 8px; cursor: pointer; font: inherit; font-size: 13px;
+  padding: 9px; border-radius: 12px; border: 1px solid var(--border);
+  background: var(--bg-2, var(--bg)); color: var(--text-mute, #888);
+}
+.cli-orders__toggle:hover { border-color: var(--cli-accent); color: var(--text); }

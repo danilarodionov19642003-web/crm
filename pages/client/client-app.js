@@ -798,7 +798,7 @@
       <div class="cli-ord-offer">
         <label class="cli-ord-offer__check">
           <input type="checkbox" id="ordOffer"/>
-          <span>Я ознакомился и согласен с <a href="#" id="ordOfferLink">условиями заказа</a></span>
+          <span>Я ознакомился и согласен с <a href="#" id="ordOfferLink">условиями оказания услуг</a></span>
         </label>
       </div>
       <div class="cli-ord-result" id="ordResult"></div>
@@ -919,7 +919,7 @@
     const offerChk = document.getElementById('ordOffer');
     if (!offerChk || !offerChk.checked) {
       result.className = 'cli-ord-result is-err';
-      result.textContent = 'Отметь согласие с условиями заказа.';
+      result.textContent = 'Отметь согласие с условиями оказания услуг.';
       return;
     }
     const offer_agreed = true;
@@ -1056,6 +1056,47 @@
     const p = n => String(n).padStart(2, '0');
     return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
   }
+  function _orderCardHtml(o) {
+    const st = ORDER_STATUS[o.status] || { label: o.status || '—', cls: '' };
+    const isRem = o.order_type === 'remainder';
+    const amt = Number(o.amount) || 0;
+    let title, sub, payLine = '';
+    if (isRem) {
+      title = 'Доплата остатка';
+      sub = `${escapeHtml(o.anketa_name || '—')} · ${_fmtDateTime(o.created_at)}`;
+      payLine = `<div class="cli-order__pay">💳 ${o.status === 'confirmed' ? 'Оплачено' : 'К оплате'}: ${fmtMoney(amt)}</div>`;
+    } else {
+      const anketa = o.is_new_anketa
+        ? `новая «${escapeHtml(o.anketa_name || '—')}»`
+        : escapeHtml(o.anketa_code || o.anketa_name || '—');
+      title = `${escapeHtml(o.tariff_name || 'Заказ')}${o.qty ? ' · ' + o.qty + ' отз.' : ''}`;
+      sub = `${anketa} · ${_fmtDateTime(o.created_at)}`;
+      const prepay = o.prepay_amount != null ? Number(o.prepay_amount) : amt;
+      const rest = Math.max(0, amt - prepay);
+      if (o.status === 'confirmed') {
+        payLine = (o.pay_full || rest <= 0)
+          ? `<div class="cli-order__pay">💳 Оплачено полностью: ${fmtMoney(amt)}</div>`
+          : `<div class="cli-order__pay">💳 Оплачено: ${fmtMoney(prepay)} (предоплата) · Остаток: <b>${fmtMoney(rest)}</b> после выполнения</div>`;
+      } else if (o.status === 'new') {
+        payLine = `<div class="cli-order__pay">💳 К оплате: ${fmtMoney(prepay)}${o.pay_full ? ' (100%)' : ' (предоплата 50%)'}</div>`;
+      }
+    }
+    const consent = (!isRem && o.offer_agreed)
+      ? `<div class="cli-order__consent">✅ Условия оказания услуг приняты · ${_fmtDateTime(o.created_at)}${o.offer_text ? ` · <button type="button" class="cli-order__terms" data-view-terms="${o.id}">посмотреть</button>` : ''}</div>`
+      : '';
+    return `
+      <div class="cli-order">
+        <div class="cli-order__row">
+          <div class="cli-order__main">
+            <div class="cli-order__title">${title}</div>
+            <div class="cli-order__sub">${sub}</div>
+          </div>
+          <span class="cli-order__status cli-order__status--${st.cls}">${st.label}</span>
+        </div>
+        ${payLine}
+        ${consent}
+      </div>`;
+  }
   let _myOrders = [];
   function renderMyOrders(orders) {
     const el = document.querySelector('[data-cli-orders]');
@@ -1063,44 +1104,20 @@
     _myOrders = orders || [];
     if (!_myOrders.length) { el.hidden = true; el.innerHTML = ''; return; }
     el.hidden = false;
+    const rest = _myOrders.slice(1);  // показываем последний, остальные — по кнопке
     el.innerHTML = `
       <h2 class="cli-section-title">Мои заказы</h2>
-      <div class="cli-orders__list">
-        ${_myOrders.map(o => {
-          const st = ORDER_STATUS[o.status] || { label: o.status || '—', cls: '' };
-          const anketa = o.is_new_anketa
-            ? `новая «${escapeHtml(o.anketa_name || '—')}»`
-            : escapeHtml(o.anketa_code || o.anketa_name || '—');
-          // оплата: предоплата/полная + остаток
-          const amt = Number(o.amount) || 0;
-          const prepay = o.prepay_amount != null ? Number(o.prepay_amount) : amt;
-          const rest = Math.max(0, amt - prepay);
-          let payLine = '';
-          if (o.status === 'confirmed') {
-            payLine = (o.pay_full || rest <= 0)
-              ? `<div class="cli-order__pay">💳 Оплачено полностью: ${fmtMoney(amt)}</div>`
-              : `<div class="cli-order__pay">💳 Оплачено: ${fmtMoney(prepay)} (предоплата) · Остаток: <b>${fmtMoney(rest)}</b> после выполнения</div>`;
-          } else if (o.status === 'new') {
-            payLine = `<div class="cli-order__pay">💳 К оплате: ${fmtMoney(prepay)}${o.pay_full ? ' (100%)' : ' (предоплата 50%)'}</div>`;
-          }
-          // строка-доказательство согласия с условиями (видна клиенту = пруф)
-          const consent = o.offer_agreed
-            ? `<div class="cli-order__consent">✅ Условия заказа приняты · ${_fmtDateTime(o.created_at)}${o.offer_text ? ` · <button type="button" class="cli-order__terms" data-view-terms="${o.id}">посмотреть</button>` : ''}</div>`
-            : '';
-          return `
-            <div class="cli-order">
-              <div class="cli-order__row">
-                <div class="cli-order__main">
-                  <div class="cli-order__title">${escapeHtml(o.tariff_name || 'Заказ')}${o.qty ? ' · ' + o.qty + ' отз.' : ''}</div>
-                  <div class="cli-order__sub">${anketa} · ${_fmtDateTime(o.created_at)}</div>
-                </div>
-                <span class="cli-order__status cli-order__status--${st.cls}">${st.label}</span>
-              </div>
-              ${payLine}
-              ${consent}
-            </div>`;
-        }).join('')}
-      </div>`;
+      <div class="cli-orders__list">${_orderCardHtml(_myOrders[0])}</div>
+      ${rest.length ? `
+        <div class="cli-orders__list cli-orders__more" data-cli-orders-more hidden>${rest.map(_orderCardHtml).join('')}</div>
+        <button type="button" class="cli-orders__toggle" data-cli-orders-toggle>▾ Показать все заказы (${_myOrders.length})</button>` : ''}`;
+    const toggle = el.querySelector('[data-cli-orders-toggle]');
+    const more = el.querySelector('[data-cli-orders-more]');
+    if (toggle && more) toggle.addEventListener('click', () => {
+      const willOpen = more.hidden;
+      more.hidden = !willOpen;
+      toggle.textContent = willOpen ? '▴ Свернуть' : `▾ Показать все заказы (${_myOrders.length})`;
+    });
     el.querySelectorAll('[data-view-terms]').forEach(b => b.addEventListener('click', () => {
       const o = _myOrders.find(x => String(x.id) === b.dataset.viewTerms);
       if (o) openTerms(o.offer_text);
@@ -1108,14 +1125,27 @@
   }
 
   /* ---- Оплатить остаток (по выбранным анкетам) ---- */
-  function renderRemainder(payload) {
+  // Коды анкет, по которым УЖЕ есть неподтверждённая заявка на доплату —
+  // их не предлагаем повторно (защита от спама/дублей).
+  let _pendingRemainCodes = new Set();
+  function _payableRemain() {
+    const anketas = (_orderPayload && _orderPayload.anketas) || [];
+    return anketas.filter(a => (Number(a.remain) || 0) > 0
+      && !_pendingRemainCodes.has(String(a.code || '').toLowerCase().trim()));
+  }
+  function renderRemainder(payload, orders) {
     if (payload) _orderPayload = payload;
+    _pendingRemainCodes = new Set();
+    (orders || []).forEach(o => {
+      if (o.order_type === 'remainder' && o.status === 'new') {
+        (o.items || []).forEach(it => { if (it.code) _pendingRemainCodes.add(String(it.code).toLowerCase().trim()); });
+      }
+    });
     const cta = document.querySelector('[data-cli-remain-cta]');
     if (!cta) return;
-    const anketas = (payload && payload.anketas) || [];
-    const withRemain = anketas.filter(a => (Number(a.remain) || 0) > 0);
-    const total = withRemain.reduce((s, a) => s + (Number(a.remain) || 0), 0);
-    if (!withRemain.length || total <= 0) { cta.hidden = true; return; }
+    const payable = _payableRemain();
+    const total = payable.reduce((s, a) => s + (Number(a.remain) || 0), 0);
+    if (!payable.length || total <= 0) { cta.hidden = true; return; }
     cta.hidden = false;
     const totalEl = cta.querySelector('[data-cli-remain-total]');
     if (totalEl) totalEl.textContent = fmtMoney(total);
@@ -1146,7 +1176,7 @@
     const body = document.querySelector('[data-cli-remain-body]');
     if (!m || !body || !_orderPayload) return;
     const pay = _orderPayload.payment || {};
-    const anketas = (_orderPayload.anketas || []).filter(a => (Number(a.remain) || 0) > 0);
+    const anketas = _payableRemain();
     if (!anketas.length) return;
     body.innerHTML = `
       <div class="cli-ord-field">
@@ -1219,7 +1249,7 @@
           <button type="button" class="cli-ord-submit" id="remainDone" style="margin-top:18px">Закрыть</button>
         </div>`;
       document.getElementById('remainDone').addEventListener('click', closeRemainModal);
-      loadMyOrders().then(renderMyOrders);
+      loadMyOrders().then(o => { renderMyOrders(o); renderRemainder(_orderPayload, o); });
     } else {
       btn.disabled = false; btn.textContent = 'Я оплатил остаток';
       result.className = 'cli-ord-result is-err';
