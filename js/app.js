@@ -68,6 +68,10 @@
     '🏆 Выбран',
     '🎯 Готов'
   ];
+  // Исполнители откликов/заказов — для расчёта ЗП. Владелец (Данил) и его брат
+  // (Илья) работают под ОДНИМ логином CRM, поэтому на каждом статусе аккаунта
+  // можно отметить, КТО делал работу. Пустое значение = не указан.
+  const PERFORMERS = ['Данил', 'Илья'];
   const CITIES = ['МСК', 'СПБ', 'Прочее'];
 
   /** Извлекает город из кода аккаунта вида "2-1" (2=МСК, 3=СПБ, иначе — Прочее) */
@@ -1012,7 +1016,7 @@
      * Поставить/обновить статус. Если запись уже есть — апдейт + история.
      * Если нет — создаём. date опционально — по умолчанию сегодня.
      */
-    setProfileStatus(mentorId, profileId, status, comment = '', date = null) {
+    setProfileStatus(mentorId, profileId, status, comment = '', date = null, performer = undefined) {
       const list = this.state.profileStatuses;
       let rec = list.find(s => s.mentorId === mentorId && s.profileId === profileId);
       const stamp = date || todayISO();
@@ -1025,11 +1029,16 @@
         rec.status = status;
         rec.comment = comment;
         rec.date = stamp;
+        // performer (Данил/Илья для ЗП) задаётся только из модалок «Аккаунты».
+        // Прочие вызовы (график в clients.html, массовые операции) его опускают
+        // — тогда НЕ затираем уже выбранного исполнителя.
+        if (performer !== undefined) rec.performer = performer;
       } else {
         rec = {
           id: uid(),
           mentorId, profileId, status, comment,
           date: stamp,
+          performer: performer || '',
           history: []
         };
         list.push(rec);
@@ -1097,11 +1106,12 @@
       }).catch(e => console.warn('[Store] queueTelegramNotification failed', e));
     },
     /** Обновить только дату статуса, не меняя сам статус (inline edit из карточки) */
-    setProfileStatusDate(mentorId, profileId, date) {
+    setProfileStatusDate(mentorId, profileId, date, performer = undefined) {
       const rec = (this.state.profileStatuses || [])
         .find(s => s.mentorId === mentorId && s.profileId === profileId);
       if (!rec) return null;
       rec.date = date || todayISO();
+      if (performer !== undefined) rec.performer = performer;
       this.save();
       return rec;
     },
@@ -1851,7 +1861,7 @@
     fmtMoney, fmtDate, monthKey, monthLabel,
     uid, todayISO, tomorrowISO,
     SERVICES, EXPENSE_CATEGORIES, PERSONAL_CATEGORIES, TARIFFS, TARIFF_NAMES,
-    PROFILE_STATUSES, CITIES, cityFromCode
+    PROFILE_STATUSES, PERFORMERS, CITIES, cityFromCode
   };
 
   /* ------------------------------------------------------------------ */

@@ -297,6 +297,9 @@
       const color = CAL_COLORS[idx % CAL_COLORS.length];
       (a.statuses || []).forEach(s => {
         if (!s.date) return;
+        // Не дублируем события: «🎯 Готов» уже показан как «Опубликован отзыв»,
+        // а «📋 Запланировано» — как «Запланировано отклик». Сырые эти статусы скрываем.
+        if (s.status === '🎯 Готов' || s.status === '📋 Запланировано') return;
         events.push({
           date: String(s.date).slice(0, 10),
           color, anketa: a.name || a.code,
@@ -318,16 +321,22 @@
         });
       });
       // Запланированные дни — из admin'ского графика (client.schedule).
-      // Получаем через snapshot.anketas[].schedule.
+      // Гасим сделанное: план за день − откликов сделано (аккаунты со статусом
+      // ≠ «Запланировано», датированным этим днём). Сделал отклик → план уменьшается.
       (a.schedule || []).forEach(p => {
         if (!p.date || !p.count) return;
+        const d = String(p.date).slice(0, 10);
+        const doneToday = (a.statuses || []).filter(s =>
+          String(s.date || '').slice(0, 10) === d && s.status !== '📋 Запланировано').length;
+        const left = Math.max(0, (+p.count || 0) - doneToday);
+        if (left <= 0) return;  // все запланированные отклики за день сделаны — не показываем
         events.push({
-          date: String(p.date).slice(0, 10),
+          date: d,
           color, anketa: a.name || a.code,
           kind: 'planned', icon: '📅',
-          title: `Запланировано отклик${p.count > 1 ? 'ов' : ''} · ${p.count}`,
+          title: `Запланировано отклик${left > 1 ? 'ов' : ''} · ${left}`,
           sub: '', comment: '',
-          plannedCount: p.count
+          plannedCount: left
         });
       });
     });

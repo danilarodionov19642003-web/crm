@@ -398,7 +398,7 @@
   </div>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260628b"></script>
+  <script src="../js/app.js?v=20260701a"></script>
   <script src="../js/supabase-client.js?v=20260528a"></script>
   <script src="../js/auth-gate.js"></script>
   <script src="../js/cloud-sync.js?v=20260624a"></script>
@@ -1037,13 +1037,16 @@
         const isPast = iso < today;
         const planned = planMap[iso] || 0;
         const done = doneMap[iso] || 0;
+        // откликов СДЕЛАНО в этот день = аккаунты со статусом ≠ Запланировано (эмодзи ≠ 📋)
+        const accDoneToday = (accMap[iso] || []).filter(a => a.emoji !== '📋').length;
+        const plannedLeft = Math.max(0, planned - accDoneToday);  // осталось по плану (гасим сделанное)
         let cls = 'sch-day';
         if (isToday) cls += ' is-today';
         if (isPast)  cls += ' is-past';
-        if (planned > 0 && done > 0)      cls += ' has-both';
-        else if (done > 0)                cls += ' has-done';
-        else if (planned > 0 && !isPast)  cls += ' has-planned';
-        else if (planned > 0 && isPast)   cls += ' is-overdue';  // план был — не сделали
+        if (plannedLeft > 0 && done > 0)      cls += ' has-both';
+        else if (done > 0)                    cls += ' has-done';
+        else if (plannedLeft > 0 && !isPast)  cls += ' has-planned';
+        else if (plannedLeft > 0 && isPast)   cls += ' is-overdue';  // план был — не сделали
         const accHere = accMap[iso] || [];
         // Загрузка дня: сколько РАЗНЫХ клиентов на этот день (по всем клиентам)
         const dayClients = otherClientsOnDate(iso, c.id) + (planned > 0 ? 1 : 0);
@@ -1054,7 +1057,7 @@
         cells.push(`
           <div class="${cls}" data-date="${iso}">
             <div class="sch-day__num">${d}${loadBadge}</div>
-            ${planned > 0 ? `<div class="sch-day__planned">●${planned}</div>` : ''}
+            ${plannedLeft > 0 ? `<div class="sch-day__planned">●${plannedLeft}</div>` : ''}
             ${done > 0    ? `<div class="sch-day__done">✓${done}</div>`    : ''}
             ${accHere.length ? `<div class="sch-day__acc" title="${accHere.map(a => a.emoji + a.code).join('  ')}" style="font-size:9px;line-height:1.1;margin-top:1px;letter-spacing:-1px">${accHere.map(a => a.emoji).join('')}</div>` : ''}
           </div>

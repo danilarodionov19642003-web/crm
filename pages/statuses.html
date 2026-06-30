@@ -108,6 +108,45 @@
       font-weight: 500;
       margin-left: 2px;
     }
+    /* Бейдж исполнителя (Д/И) — кто делал отклик, для ЗП. */
+    .stg__chip__perf {
+      font-size: 10px;
+      font-weight: 700;
+      line-height: 1;
+      padding: 2px 5px;
+      border-radius: 8px;
+      background: rgba(99,102,241,0.18);
+      color: #a5b4fc;
+      margin-left: 1px;
+    }
+    /* Сводка по исполнителям (для ЗП) — сколько у кого аккаунтов/откликов. */
+    .perf-panel { margin: 14px 0 4px; }
+    .perf-panel__title {
+      font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+      color: var(--text-mute); margin-bottom: 8px;
+    }
+    .perf-cards { display: flex; flex-wrap: wrap; gap: 10px; }
+    .perf-card {
+      flex: 1 1 240px; min-width: 220px;
+      background: var(--bg-elev-2); border: 1px solid var(--border);
+      border-radius: 12px; padding: 12px 14px;
+    }
+    .perf-card--none { opacity: .75; }
+    .perf-card__head {
+      display: flex; align-items: baseline; justify-content: space-between;
+      gap: 10px; margin-bottom: 9px;
+    }
+    .perf-card__name { font-weight: 600; }
+    .perf-card__total { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .perf-card__total small { font-size: 11px; color: var(--text-mute); font-weight: 500; }
+    .perf-card__sts { display: flex; flex-wrap: wrap; gap: 5px; }
+    .perf-card__st {
+      font-size: 11px; padding: 2px 7px; border-radius: 8px;
+      background: rgba(255,255,255,0.05); color: var(--text-dim);
+    }
+    .perf-card__st b { color: var(--text); }
+    .perf-card__st.is-done { background: rgba(34,197,94,0.14); color: var(--green); }
+    .perf-card__st.is-done b { color: var(--green); }
 
     .reg-row { display:flex; gap:6px; align-items:flex-start; padding:4px 0; border-top:1px dashed var(--border); }
     .reg-row:first-child { border-top:none; }
@@ -236,6 +275,9 @@
 
         <section class="cards" id="stKpis"></section>
 
+        <!-- Сводка по исполнителям (Данил/Илья) — для ручного расчёта ЗП. -->
+        <section class="perf-panel" id="stPerformers" data-owner-only></section>
+
         <div style="display:flex;align-items:center;gap:12px;margin:14px 0 10px">
           <div class="acc-tabs" role="tablist">
             <button class="acc-tab is-active" data-tab="live" role="tab">📋 Активные <span class="tab-cnt" id="tabCntLive">0</span></button>
@@ -253,6 +295,9 @@
           </select>
           <select id="fStatus" class="select" style="min-width:200px">
             <option value="">Любой статус</option>
+          </select>
+          <select id="fPerformer" class="select" data-owner-only>
+            <option value="">Любой исполнитель</option>
           </select>
           <input type="text" id="fSearch" class="input" placeholder="Поиск по аккаунту, клиенту, владельцу..." style="flex:1;min-width:200px"/>
           <button class="btn btn--ghost" id="btnReset">Сбросить</button>
@@ -338,6 +383,7 @@
           <div class="field"><label>Дата статуса</label><input type="date" id="addDate" class="input"/></div>
         </div>
         <div class="field" style="margin-top:12px"><label>Комментарий</label><input type="text" id="addComment" class="input"/></div>
+        <div class="field" style="margin-top:12px"><label>Кто делал · для ЗП</label><select id="addPerformer" class="select"></select></div>
         <div class="field" id="addReviewWrap" style="margin-top:12px;display:none">
           <label>Текст опубликованного отзыва <span style="color:var(--red)">*</span></label>
           <textarea id="addReviewText" class="input" rows="5" placeholder="Вставьте текст отзыва, который был опубликован на площадке" style="resize:vertical;min-height:90px;font-family:inherit"></textarea>
@@ -363,6 +409,7 @@
           <div class="field"><label>Дата статуса</label><input type="date" id="chgDate" class="input"/></div>
           <div class="field" style="flex:2"><label>Комментарий</label><input type="text" id="chgComment" class="input"/></div>
         </div>
+        <div class="field" style="margin-top:12px"><label>Кто делал · для ЗП</label><select id="chgPerformer" class="select"></select></div>
         <!-- Поле ввода нового отзыва. Структура жёсткая — НЕ переписываем
              через innerHTML, иначе на повторное открытие модалки textarea
              не находится и весь обработчик падает с null. -->
@@ -430,7 +477,7 @@
   </style>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260628b"></script>
+  <script src="../js/app.js?v=20260701a"></script>
   <script src="../js/supabase-client.js?v=20260528a"></script>
   <script src="../js/auth-gate.js"></script>
   <script src="../js/cloud-sync.js?v=20260624a"></script>
@@ -442,7 +489,7 @@
 
   <script>
   document.addEventListener('DOMContentLoaded', () => {
-    const { Store, Modal, toast, fmtDate, todayISO, PROFILE_STATUSES, cityFromCode } = window.App;
+    const { Store, Modal, toast, fmtDate, todayISO, PROFILE_STATUSES, PERFORMERS, cityFromCode } = window.App;
     const { confirmDelete } = window.TableUtils;
 
     Store.load();
@@ -455,7 +502,7 @@
       document.querySelectorAll('[data-owner-only]').forEach(el => el.style.display = 'none');
     }
     // mode: 'live' — активные аккаунты, 'arch' — архивные (мягко удалённые)
-    const filters = { city: '', status: '', q: '', mode: 'live' };
+    const filters = { city: '', status: '', performer: '', q: '', mode: 'live' };
     // Какие карточки имеют развернутую форму «+ IP» — состояние локальное,
     // переживает re-render текущей страницы. Очищается при смене фильтров.
     const openIpForms = new Set();
@@ -492,6 +539,12 @@
     function fillStatusSelect(sel) {
       sel.innerHTML = PROFILE_STATUSES.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
     }
+    // Заполняет селект исполнителя (Данил/Илья) + опция «не указан» и выставляет val.
+    function fillPerformerSelect(sel, val) {
+      sel.innerHTML = '<option value="">— не указан —</option>'
+        + PERFORMERS.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');
+      sel.value = val || '';
+    }
 
     function getStatusFor(profileId, mentorId) {
       return (Store.state.profileStatuses || []).find(s => s.profileId === profileId && s.mentorId === mentorId) || null;
@@ -513,6 +566,35 @@
         cards.push(`<div class="card"><div class="card__label">${escapeHtml(s)}</div><div class="card__value">${counts[s]}</div></div>`);
       });
       document.getElementById('stKpis').innerHTML = cards.join('');
+    }
+
+    /* ---- Сводка по исполнителям (для ЗП): сколько у кого аккаунтов/откликов ---- */
+    function renderPerformers() {
+      const el = document.getElementById('stPerformers');
+      if (!el) return;
+      const ps = Store.state.profileStatuses || [];
+      const groups = [...PERFORMERS, '']; // исполнители + «— не указан —»
+      const cards = groups.map(person => {
+        const mine = ps.filter(r => (r.performer || '') === person);
+        if (person === '' && !mine.length) return ''; // пустой «не указан» не показываем
+        const accs = new Set(mine.map(r => r.profileId)).size;
+        const sts = PROFILE_STATUSES.map(s => {
+          const n = mine.filter(r => r.status === s).length;
+          if (!n) return '';
+          const isDone = s === '🎯 Готов';
+          return `<span class="perf-card__st${isDone ? ' is-done' : ''}">${escapeHtml(s)} <b>${n}</b></span>`;
+        }).filter(Boolean).join('');
+        const label = person || '— не указан —';
+        return `
+          <div class="perf-card${person ? '' : ' perf-card--none'}">
+            <div class="perf-card__head">
+              <span class="perf-card__name">👤 ${escapeHtml(label)}</span>
+              <span class="perf-card__total" title="Аккаунтов / откликов">${accs}<small> акк. · ${mine.length} откл.</small></span>
+            </div>
+            <div class="perf-card__sts">${sts || '<span class="perf-card__st" style="opacity:.5">нет отметок</span>'}</div>
+          </div>`;
+      }).filter(Boolean).join('');
+      el.innerHTML = `<div class="perf-panel__title">Кто сколько сделал · для ЗП</div><div class="perf-cards">${cards}</div>`;
     }
 
     /* ---- Карточки аккаунтов ---- */
@@ -553,6 +635,17 @@
           });
           if (!has) return false;
         }
+        if (filters.performer) {
+          // показать аккаунт, если хоть у одной анкеты исполнитель совпал.
+          // '__none__' = есть хоть один статус БЕЗ выбранного исполнителя.
+          const want = filters.performer;
+          const has = (p.mentorIds || []).some(mid => {
+            const st = getStatusFor(p.id, mid);
+            const perf = st ? (st.performer || '') : '';
+            return want === '__none__' ? (st && !perf) : perf === want;
+          });
+          if (!has) return false;
+        }
         return true;
       });
 
@@ -586,10 +679,15 @@
             const dateBadge = dateLabel
               ? `<span class="stg__chip__date" title="Дата статуса «${escapeHtml(s)}»: ${escapeHtml(fmtDate(st.date))}">${escapeHtml(dateLabel)}</span>`
               : '';
+            // Бейдж исполнителя (первая буква имени: Д / И) — кто делал, для ЗП.
+            const perfBadge = (st && st.performer)
+              ? `<span class="stg__chip__perf" title="Делал: ${escapeHtml(st.performer)}">${escapeHtml(st.performer.slice(0, 1))}</span>`
+              : '';
             const titleText = mentorFull(m)
               + (st && st.date ? '\nДата: ' + fmtDate(st.date) : '')
+              + (st && st.performer ? '\nДелал: ' + st.performer : '')
               + (st && st.comment ? '\n' + st.comment : '');
-            return `<span class="stg__chip" data-st="${kind}" data-act="chgst" data-pid="${p.id}" data-mid="${m.id}" title="${escapeHtml(titleText)}">${escapeHtml(mentorLabel(m))}${dateBadge}</span>`;
+            return `<span class="stg__chip" data-st="${kind}" data-act="chgst" data-pid="${p.id}" data-mid="${m.id}" title="${escapeHtml(titleText)}">${escapeHtml(mentorLabel(m))}${dateBadge}${perfBadge}</span>`;
           }).join('');
           return `<div class="stg__row"><div class="stg__lbl">${escapeHtml(s)}</div><div class="stg__items">${chips}</div></div>`;
         }).filter(Boolean).join('');
@@ -889,6 +987,7 @@
 
     function renderAll() {
       renderKpis();
+      renderPerformers();
       renderAccounts();
       renderMentors();
     }
@@ -954,6 +1053,7 @@
       document.getElementById('addMentor').innerHTML = opts || '<option value="">— все клиенты уже привязаны —</option>';
       fillStatusSelect(document.getElementById('addStatus'));
       document.getElementById('addStatus').value = PROFILE_STATUSES[0]; // 📋 Запланировано
+      fillPerformerSelect(document.getElementById('addPerformer'), '');
       document.getElementById('addComment').value = '';
       document.getElementById('addDate').value = window.App.todayISO();
       document.getElementById('addReviewText').value = '';
@@ -1008,7 +1108,8 @@
       const profile = profileById(addProfileId);
       profile.mentorIds = [...(profile.mentorIds || []), mid];
       Store.updateProfile(profile.id, { mentorIds: profile.mentorIds });
-      Store.setProfileStatus(mid, addProfileId, status, comment, date);
+      const performer = document.getElementById('addPerformer').value;
+      Store.setProfileStatus(mid, addProfileId, status, comment, date, performer);
       if (reviewText) {
         const myEmail = (window.AuthGate && window.AuthGate.email && window.AuthGate.email()) || '';
         Store.addReview({
@@ -1042,6 +1143,7 @@
       document.getElementById('chgStatus').value = cur ? cur.status : PROFILE_STATUSES[0];
       document.getElementById('chgComment').value = cur ? (cur.comment || '') : '';
       document.getElementById('chgDate').value = (cur && cur.date) ? cur.date : window.App.todayISO();
+      fillPerformerSelect(document.getElementById('chgPerformer'), cur ? cur.performer : '');
       document.getElementById('chgReviewText').value = '';
       toggleChgReviewField();
       // Если уже есть pending/approved отзыв для этой пары — показать его
@@ -1085,6 +1187,7 @@
       const newStatus = document.getElementById('chgStatus').value;
       const newComment = document.getElementById('chgComment').value.trim();
       const newDate = document.getElementById('chgDate').value || window.App.todayISO();
+      const newPerformer = document.getElementById('chgPerformer').value;
       const cur = getStatusFor(chgPid, chgMid);
       // Если новый статус «Готов», а у пары ещё нет review — требуем текст и создаём review.
       const existingReview = (Store.state.reviews || []).find(r => r.mentorId === chgMid && r.profileId === chgPid);
@@ -1106,12 +1209,13 @@
           : 'Снять статус «Готов»? Связанный отзыв на модерации удалится.';
         if (!confirmDelete(msg)) return;
       }
-      // Если реально ничего не поменялось в статусе/комментарии — просто подправим дату,
-      // чтобы не плодить бессмысленные записи в истории.
-      if (cur && cur.status === newStatus && (cur.comment || '') === newComment && cur.date !== newDate) {
-        Store.setProfileStatusDate(chgMid, chgPid, newDate);
+      // Если статус/комментарий не поменялись — обновляем только дату и/или
+      // исполнителя (без новой записи в истории, чтобы её не засорять).
+      // Иначе — полноценная смена статуса (запишет историю).
+      if (cur && cur.status === newStatus && (cur.comment || '') === newComment) {
+        Store.setProfileStatusDate(chgMid, chgPid, newDate, newPerformer);
       } else {
-        Store.setProfileStatus(chgMid, chgPid, newStatus, newComment, newDate);
+        Store.setProfileStatus(chgMid, chgPid, newStatus, newComment, newDate, newPerformer);
       }
       if (goingAway) {
         Store.deleteReviewsForPair(chgPid, chgMid);
@@ -1323,12 +1427,16 @@
     /* ---- фильтры ---- */
     document.getElementById('fStatus').innerHTML = '<option value="">Любой статус</option>' +
       PROFILE_STATUSES.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
+    document.getElementById('fPerformer').innerHTML = '<option value="">Любой исполнитель</option>' +
+      PERFORMERS.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('') +
+      '<option value="__none__">— без исполнителя —</option>';
     document.getElementById('fCity').addEventListener('change', e => { filters.city = e.target.value; renderAccounts(); });
     document.getElementById('fStatus').addEventListener('change', e => { filters.status = e.target.value; renderAccounts(); });
+    document.getElementById('fPerformer').addEventListener('change', e => { filters.performer = e.target.value; renderAccounts(); });
     document.getElementById('fSearch').addEventListener('input', e => { filters.q = e.target.value.trim().toLowerCase(); renderAccounts(); });
     document.getElementById('btnReset').addEventListener('click', () => {
-      filters.city = filters.status = filters.q = '';
-      ['fCity','fStatus','fSearch'].forEach(id => document.getElementById(id).value = '');
+      filters.city = filters.status = filters.performer = filters.q = '';
+      ['fCity','fStatus','fPerformer','fSearch'].forEach(id => document.getElementById(id).value = '');
       renderAccounts();
     });
     // Переключение «Активные / Архив»
