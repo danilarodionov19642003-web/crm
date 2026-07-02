@@ -25,6 +25,7 @@
   const STORAGE_KEY = 'mentori-crm-v2';
   const META_KEY    = 'mentori-crm-meta';   // { lastPushedAt, lastPulledAt }
   const PENDING_KEY = 'mentori-crm-pending'; // несохранённый push (для recovery после reload)
+  const PENDING_QUARANTINE_KEY = 'mentori-crm-pending-quarantine';
   const HISTORY_THROTTLE_MS = 5 * 60 * 1000;  // не чаще 1 снимка в 5 минут
   const POLL_INTERVAL_MS    = 60 * 1000;      // фоновый pull раз в минуту
   // Exponential backoff retry: 5с, 15с, 45с, 2мин, 5мин, потом каждые 5мин.
@@ -70,18 +71,29 @@
     return rows[0] || null;  // { data, updated_at } или null
   }
 
-  async function pushRemote(state) {
+  async function pushRemote(state, expectedUpdatedAt = serverUpdatedAt) {
     const updated_at = new Date().toISOString();
-    const body = JSON.stringify({ id: ROW_ID, data: state, updated_at });
-    // upsert через POST с Prefer: resolution=merge-duplicates
-    const url = `${_supaUrl()}/rest/v1/${TABLE}?on_conflict=id`;
+    const expected = expectedUpdatedAt ? encodeURIComponent(expectedUpdatedAt) : '';
+    const body = expected
+      ? JSON.stringify({ data: state, updated_at })
+      : JSON.stringify({ id: ROW_ID, data: state, updated_at });
+    const url = expected
+      ? `${_supaUrl()}/rest/v1/${TABLE}?id=eq.${ROW_ID}&updated_at=eq.${expected}&select=id`
+      : `${_supaUrl()}/rest/v1/${TABLE}?on_conflict=id`;
     const res = await fetch(url, {
-      method: 'POST',
-      headers: { ...(_hdr()), 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+      method: expected ? 'PATCH' : 'POST',
+      headers: {
+        ...(_hdr()),
+        'Prefer': expected ? 'return=representation' : 'resolution=merge-duplicates,return=minimal'
+      },
       body
     });
     if (!res.ok && res.status !== 201 && res.status !== 204) {
       throw new Error(`push ${res.status}: ${await res.text()}`);
+    }
+    if (expected) {
+      const rows = await res.json();
+      if (!rows || rows.length === 0) throw new Error('push conflict: crm_state changed during write');
     }
     setMeta({ lastPushedAt: updated_at });
     serverUpdatedAt = updated_at;             // мы только что записали — это новая «правда»
@@ -211,6 +223,125 @@
      устаревшая вкладка затирала свежие данные (инцидент 2026-06-24). */
   function tsMs(x) { const t = x ? Date.parse(x) : NaN; return isNaN(t) ? 0 : t; }
 
+  function cloneState(x) {
+    if (!x || typeof x !== 'object') return x;
+    try { return JSON.parse(JSON.stringify(x)); }
+    catch (_) { return x; }
+  }
+
+  function sameJson(a, b) {
+    try { return JSON.stringify(a) === JSON.stringify(b); }
+    catch (_) { return false; }
+  }
+
+  function mergeObjectPatch(out, localObj, baseObj, remoteObj) {
+    const keys = new Set([
+      ...Object.keys(localObj || {}),
+      ...Object.keys(baseObj || {}),
+      ...Object.keys(remoteObj || {})
+    ]);
+    keys.forEach(k => {
+      const lv = localObj ? localObj[k] : undefined;
+      const bv = baseObj ? baseObj[k] : undefined;
+      const rv = remoteObj ? remoteObj[k] : undefined;
+      const localChanged = !sameJson(lv, bv);
+      const remoteChanged = !sameJson(rv, bv);
+      if (!localChanged) return;
+      if (!remoteChanged || sameJson(lv, rv)) {
+        out[k] = cloneState(lv);
+      } else if (Array.isArray(lv) && Array.isArray(bv) && Array.isArray(rv)) {
+        out[k] = mergeArrayById(lv, bv, rv, k);
+      }
+    });
+  }
+
+  function mergeArrayById(localArr, baseArr, remoteArr, key) {
+    const allHaveIds = arr => arr.every(x => !x || typeof x !== 'object' || x.id);
+    if (!allHaveIds(localArr) || !allHaveIds(baseArr) || !allHaveIds(remoteArr)) {
+      return sameJson(remoteArr, baseArr) ? cloneState(localArr) : cloneState(remoteArr);
+    }
+    const baseById = new Map(baseArr.filter(x => x && x.id).map(x => [x.id, x]));
+    const localById = new Map(localArr.filter(x => x && x.id).map(x => [x.id, x]));
+    const remoteById = new Map(remoteArr.filter(x => x && x.id).map(x => [x.id, x]));
+    const out = remoteArr.map(x => cloneState(x));
+    const outIndex = new Map(out.filter(x => x && x.id).map((x, i) => [x.id, i]));
+
+    for (const [id, localItem] of localById.entries()) {
+      const baseItem = baseById.get(id);
+      const remoteItem = remoteById.get(id);
+      if (!baseItem) {
+        if (!remoteItem) {
+          out.push(cloneState(localItem));
+          outIndex.set(id, out.length - 1);
+        }
+        continue;
+      }
+      if (sameJson(localItem, baseItem)) continue;
+      if (!remoteItem || sameJson(remoteItem, baseItem) || sameJson(remoteItem, localItem)) {
+        const idx = outIndex.get(id);
+        if (idx == null) {
+          out.push(cloneState(localItem));
+          outIndex.set(id, out.length - 1);
+        } else {
+          out[idx] = cloneState(localItem);
+        }
+      } else {
+        console.warn(`[CloudSync] merge conflict in ${key}/${id}: kept remote item`);
+      }
+    }
+
+    for (const [id, baseItem] of baseById.entries()) {
+      if (localById.has(id)) continue;
+      const remoteItem = remoteById.get(id);
+      if (remoteItem && sameJson(remoteItem, baseItem)) {
+        const idx = outIndex.get(id);
+        if (idx != null) {
+          out.splice(idx, 1);
+          outIndex.clear();
+          out.forEach((x, i) => { if (x && x.id) outIndex.set(x.id, i); });
+        }
+      }
+    }
+    return out;
+  }
+
+  function mergePendingWithRemote(localState, baseState, remoteData) {
+    if (!localState || !baseState || !remoteData) return null;
+    const merged = cloneState(remoteData);
+    const keys = new Set([
+      ...Object.keys(localState || {}),
+      ...Object.keys(baseState || {}),
+      ...Object.keys(remoteData || {})
+    ]);
+    keys.forEach(k => {
+      const localVal = localState[k];
+      const baseVal = baseState[k];
+      const remoteVal = remoteData[k];
+      const localChanged = !sameJson(localVal, baseVal);
+      const remoteChanged = !sameJson(remoteVal, baseVal);
+      if (!localChanged) return;
+
+      if (Array.isArray(localVal) && Array.isArray(baseVal) && Array.isArray(remoteVal)) {
+        merged[k] = mergeArrayById(localVal, baseVal, remoteVal, k);
+        return;
+      }
+      if (
+        localVal && baseVal && remoteVal &&
+        typeof localVal === 'object' && typeof baseVal === 'object' && typeof remoteVal === 'object' &&
+        !Array.isArray(localVal) && !Array.isArray(baseVal) && !Array.isArray(remoteVal)
+      ) {
+        mergeObjectPatch(merged[k] || (merged[k] = {}), localVal, baseVal, remoteVal);
+        return;
+      }
+      if (!remoteChanged || sameJson(localVal, remoteVal)) {
+        merged[k] = cloneState(localVal);
+      } else {
+        console.warn(`[CloudSync] merge conflict in ${k}: kept remote value`);
+      }
+    });
+    return merged;
+  }
+
   /* ---- Pull: вытянуть удалённый state и заместить локальный ---- */
   async function pull({ silent = false } = {}) {
     if (!silent) setStatus('syncing', 'Загрузка…');
@@ -269,6 +400,8 @@
      Снимок этой катастрофы лежал в /tmp/crm_BROKEN_19_37.json (20.04.2026). */
   let pushTimer = null;
   let pendingState = null;
+  let pendingBase = null;          // снимок сервера, от которого сделан pendingState
+  let pendingBaseUpdatedAt = null;
   let pullCompleted = false;         // true после первого успешного fetchRemote
   let remoteSnapshot = null;         // последний известный облачный state — для safety-check
   let serverUpdatedAt = null;        // updated_at последней версии, которую мы видели/писали
@@ -296,13 +429,21 @@
 
   /* ---- Anti-race с ботом AKIRA ----
      Бот (AKIRA) дописывает в облако расходы/доходы через свой бэкенд
-     (source='bot', id='m...'). Наш фронт пушит ВЕСЬ state одним блобом и
+     (source='bot', id='m...'/'tg...'). Наш фронт пушит ВЕСЬ state одним блобом и
      может затереть свежие записи бота, если в нашей локальной копии их ещё
      нет. Поэтому ПЕРЕД каждым push подмешиваем из свежего облака записи бота
      (по этим ключам), которых у нас локально нет — union по id.
      Это сохраняет добавления бота, не воскрешая удалённые юзером записи
-     (берём ТОЛЬКО source='bot' и ТОЛЬКО отсутствующие локально id). */
+     (берём только bot-origin и только отсутствующие локально id). */
   const BOT_MERGE_KEYS = ['expenses', 'income'];
+  function isBotOriginRecord(r) {
+    const id = String((r && r.id) || '');
+    return !!(r && r.id && (
+      r.source === 'bot' ||
+      /^m[0-9a-f]{12}$/i.test(id) ||
+      /^tg[0-9a-f]{14}$/i.test(id)
+    ));
+  }
   function mergeBotAdditions(localState, remoteData) {
     if (!localState || !remoteData || typeof remoteData !== 'object') return localState;
     let injected = 0;
@@ -312,7 +453,7 @@
       if (!rem.length) continue;
       const loc = Array.isArray(out[k]) ? out[k] : [];
       const localIds = new Set(loc.map(x => x && x.id).filter(Boolean));
-      const missing = rem.filter(r => r && r.source === 'bot' && r.id && !localIds.has(r.id));
+      const missing = rem.filter(r => isBotOriginRecord(r) && !localIds.has(r.id));
       if (missing.length) {
         out[k] = loc.concat(missing);
         injected += missing.length;
@@ -331,7 +472,10 @@
   function persistPending(state) {
     try {
       localStorage.setItem(PENDING_KEY, JSON.stringify({
-        state, queued_at: new Date().toISOString()
+        state,
+        base: pendingBase,
+        baseUpdatedAt: pendingBaseUpdatedAt,
+        queued_at: new Date().toISOString()
       }));
     } catch (_) {}
   }
@@ -342,9 +486,21 @@
     try { return JSON.parse(localStorage.getItem(PENDING_KEY) || 'null'); }
     catch { return null; }
   }
+  function quarantinePersistedPending(saved, reason) {
+    try {
+      localStorage.setItem(PENDING_QUARANTINE_KEY, JSON.stringify({
+        saved,
+        reason,
+        quarantined_at: new Date().toISOString()
+      }));
+      localStorage.removeItem(PENDING_KEY);
+    } catch (_) {}
+  }
 
   function schedulePush(state) {
     pendingState = state;
+    pendingBase = cloneState(remoteSnapshot || {});
+    pendingBaseUpdatedAt = serverUpdatedAt || null;
     persistPending(state);            // ← на случай reload/closure
     if (!pullCompleted) {
       // не ставим таймер — flush запустится после первого pull
@@ -367,16 +523,16 @@
         localKeys: Object.keys(state || {}),
         remoteCounts: BIG_COLLECTIONS.reduce((o,k) => (o[k]=(remoteSnapshot[k]||[]).length, o), {})
       });
+      pendingState = state;
+      persistPending(state);
       setStatus('error', 'Push отклонён (защита)');
       return;
     }
     // SAFETY-CHECK 2: проверка конкурентности.
     // Перед push сверяемся с сервером — если updated_at там новее того, что
     // мы видели последний pull’ом, значит другая вкладка/устройство уже
-    // записали свежую версию. В таком случае не пушим (иначе затрём чужое),
-    // а делаем pull и просим страницы перерисоваться. Локальный мелкий клик,
-    // который привёл к этому push, придётся повторить — но это лучше, чем
-    // молча грохнуть ночные изменения с другого устройства.
+    // записали свежую версию. В таком случае не затираем чужое, а мержим
+    // pending относительно последней известной базы и повторяем guarded push.
     let _remote = null;
     try {
       _remote = await fetchRemote();
@@ -389,28 +545,50 @@
       // source=bot), которых нет в нашей копии — иначе полный push их затрёт.
       mergeBotAdditions(state, _remote.data);
       // Если сервер новее по ДРУГИМ данным (другая вкладка/устройство) — не затираем
-      // чужое: делаем pull. Записи бота уже либо в state (смёржили), либо в remote.
+      // чужое: мержим pending с remote. Записи бота уже либо в state, либо в remote.
       // Сравниваем ПО EPOCH (tsMs), не строкой. Конфликт = сервер новее нашей
       // базовой версии, ИЛИ мы вообще не знаем свою версию (serverUpdatedAt пуст),
       // а на сервере есть данные. В обоих случаях НЕ затираем — подтягиваем серверное.
       const _remoteMs = tsMs(_remote.updated_at);
       const _seenMs   = tsMs(serverUpdatedAt);
       if (remoteHasData(_remote.data) && (_remoteMs > _seenMs || !_seenMs)) {
-        console.warn('[CloudSync] CONFLICT: server newer/unknown base, pulling instead of pushing.', {
+        console.warn('[CloudSync] CONFLICT: server newer/unknown base, merging pending with remote.', {
           seen: serverUpdatedAt, server: _remote.updated_at, seenMs: _seenMs, remoteMs: _remoteMs
         });
+        const merged = mergePendingWithRemote(state, pendingBase, _remote.data);
         remoteSnapshot  = _remote.data;
         serverUpdatedAt = _remote.updated_at;
         setMeta({ lastPulledAt: _remote.updated_at });
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(_remote.data));
-        window.dispatchEvent(new CustomEvent('cloudstate:updated', { detail: _remote.data }));
-        setStatus('synced', 'Обновлено из облака');
+        if (!merged) {
+          quarantinePersistedPending({
+            state,
+            base: pendingBase,
+            baseUpdatedAt: pendingBaseUpdatedAt,
+            queued_at: new Date().toISOString()
+          }, 'conflict_without_base');
+          clearPersistedPending();
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(_remote.data));
+          window.dispatchEvent(new CustomEvent('cloudstate:updated', { detail: _remote.data }));
+          setStatus('error', 'Конфликт: черновик сохранён отдельно');
+          return;
+        }
+        pendingState = merged;
+        pendingBase = cloneState(_remote.data);
+        pendingBaseUpdatedAt = _remote.updated_at;
+        persistPending(merged);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+        window.dispatchEvent(new CustomEvent('cloudstate:updated', { detail: merged }));
+        setStatus('syncing', 'Слияние изменений…');
+        clearTimeout(pushTimer);
+        pushTimer = setTimeout(flush, 600);
         return;
       }
     }
     try {
       await pushRemote(state);
       retryAttempt = 0;                  // успех — сбрасываем счётчик retry
+      pendingBase = null;
+      pendingBaseUpdatedAt = null;
       clearPersistedPending();           // ушло в облако — больше не нужно держать
       setStatus('synced', 'Сохранено');
       // Зеркалим личные снимки клиентов — best effort, не блокирует основной push
@@ -422,6 +600,7 @@
       // Возвращаем state в pendingState чтобы следующий flush его подобрал.
       // НЕ чистим persistPending — он останется до успешного push.
       pendingState = state;
+      persistPending(state);
       const delay = RETRY_DELAYS_MS[Math.min(retryAttempt, RETRY_DELAYS_MS.length - 1)];
       retryAttempt++;
       setStatus('error', `Ошибка сохранения, повтор через ${Math.round(delay/1000)}с (попытка ${retryAttempt})`);
@@ -439,48 +618,16 @@
   window.addEventListener('online',  () => { setStatus('syncing','Восстановление…'); pull(); flush(); });
   window.addEventListener('offline', () => setStatus('offline','Оффлайн'));
 
-  /* ---- Push при закрытии вкладки ----
-     Дебаунс на 600 мс не успевает выстрелить, если юзер тут же закрыл
-     ноут/вкладку. Раньше из-за этого терялись «последние клики перед сном».
-     На pagehide/beforeunload отправляем pendingState через keepalive:true —
-     браузер гарантирует доставку даже после выгрузки страницы.
-     sendBeacon не подходит, так как требует фиксированный Content-Type
-     и не позволяет проставить apikey/Authorization. */
+  /* ---- Закрытие/сворачивание вкладки ----
+     Раньше здесь уходил keepalive push всего JSON-блоба без concurrency-check.
+     Это спасало последние клики, но могло затереть чужой свежий state. Теперь
+     только гарантируем локальный pending; обычный flush/recovery сделает merge. */
   function flushOnHide() {
     if (!pendingState || !pullCompleted) return;
     const state = pendingState;
     if (isEffectivelyEmpty(state) && remoteHasData(remoteSnapshot)) return;
-    // ANTI-RACE с ботом: при закрытии вкладки нет времени на fetch, поэтому
-    // подмешиваем записи бота из последнего известного снимка облака (remoteSnapshot).
     mergeBotAdditions(state, remoteSnapshot);
-    // НЕ обнуляем pendingState и НЕ чистим persistPending — keepalive-запрос
-    // может не долететь, тогда при следующей загрузке recoverPending() подберёт.
-    // Очистка произойдёт после успешного pushRemote (он удалит PENDING_KEY).
-    const updated_at = new Date().toISOString();
-    const body = JSON.stringify({ id: ROW_ID, data: state, updated_at });
-    const url = `${_supaUrl()}/rest/v1/${TABLE}?on_conflict=id`;
-    try {
-      fetch(url, {
-        method: 'POST',
-        headers: { ...(_hdr()), 'Prefer': 'resolution=merge-duplicates,return=minimal' },
-        body,
-        keepalive: true
-      });
-      setMeta({ lastPushedAt: updated_at });
-      // дублируем в историю — тоже keepalive, тоже best-effort
-      const histRow = {
-        state_id: ROW_ID,
-        data: state,
-        pushed_at: updated_at,
-        client_info: 'pagehide:' + (navigator.userAgent || '').slice(0, 180)
-      };
-      fetch(`${_supaUrl()}/rest/v1/${HISTORY_TABLE}`, {
-        method: 'POST',
-        headers: { ...(_hdr()), 'Prefer': 'return=minimal' },
-        body: JSON.stringify(histRow),
-        keepalive: true
-      });
-    } catch (e) { /* всё, что могли — сделали */ }
+    persistPending(state);
   }
   window.addEventListener('pagehide', flushOnHide);
   window.addEventListener('beforeunload', flushOnHide);
@@ -583,14 +730,21 @@
 
   /* ---- Recovery несохранённых изменений ----
      При предыдущей сессии push мог упасть (сеть, 5xx, закрытие вкладки).
-     pendingState мы успели сохранить в localStorage — поднимем его и
-     поставим в очередь. Если облако с тех пор обновили — concurrency-check
-     внутри flush() корректно сделает pull вместо push, ничего не затрёт. */
+     pendingState мы успели сохранить в localStorage вместе с merge-base —
+     поднимем его и поставим в очередь. Старые pending без базы не replay'им:
+     кладём в quarantine, чтобы не откатить свежую работу. */
   function recoverPending() {
     const saved = readPersistedPending();
     if (!saved || !saved.state) return;
+    if (!saved.base || !saved.baseUpdatedAt) {
+      console.warn('[CloudSync] pending push has no merge base; quarantined instead of replaying stale blob.');
+      quarantinePersistedPending(saved, 'missing_merge_base');
+      return;
+    }
     console.warn('[CloudSync] recovering pending push from', saved.queued_at);
     pendingState = saved.state;
+    pendingBase = saved.base;
+    pendingBaseUpdatedAt = saved.baseUpdatedAt;
     setStatus('syncing', 'Восстанавливаем несохранённое…');
     // не дёргаем flush сразу — он запустится после первого успешного pull
     // (см. ветку `if (pendingState) ...` внутри pull()).
@@ -605,12 +759,6 @@
     setTimeout(() => pull(), 50);
   });
 
-  /* ---- Если страница уже отрисована, а пришли свежие данные —
-         НЕ перезагружаем страницу (это вызывало бесконечную петлю,
-         когда accounts-sync и cloud-sync друг друга «перетягивают»).
-         Пробрасываем событие как cloudstate:updated — страницы сами
-         подписываются и перерисовываются без релоада. ---- */
-  window.addEventListener('store:reloaded', () => {
-    window.dispatchEvent(new CustomEvent('cloudstate:updated'));
-  });
+  /* store:reloaded — локальное событие страниц/модулей. Не прокидываем его
+     обратно в cloudstate:updated, иначе app.js и cloud-sync образуют цикл. */
 })();

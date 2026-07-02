@@ -3,6 +3,7 @@
 node_modules/
 .vscode/
 .idea/
+backups/
 
 # Claude Code локальные настройки (не коммитим)
 .claude/
