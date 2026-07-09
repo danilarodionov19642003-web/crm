@@ -1361,11 +1361,87 @@
       if (!b) return;
       if (n > 0) { b.textContent = n; b.hidden = false; } else { b.hidden = true; }
     }
-    async function refreshOrders() { _ordersCache = await fetchOrders(); updateOrdersBadge(); }
+    async function refreshOrders() {
+      _ordersCache = await fetchOrders();
+      reconcileConfirmedOrderIncome(_ordersCache);
+      updateOrdersBadge();
+    }
     function orderBadge(s) {
       if (s === 'confirmed') return '<span class="badge badge--green">Подтверждён</span>';
       if (s === 'rejected')  return '<span class="badge badge--red">Отклонён</span>';
       return '<span class="badge badge--orange">На проверке</span>';
+    }
+    function orderClientByCode(code) {
+      const norm = String(code || '').toLowerCase().trim();
+      if (!norm) return null;
+      return (Store.state.clients || []).find(c => String(c.code || '').toLowerCase().trim() === norm) || null;
+    }
+    function orderIncomeExists(order, items, comment) {
+      const oid = String(order.id);
+      const expected = (items || []).filter(it => it.accountId && Number(it.amount) > 0)
+        .map(it => ({ accountId: it.accountId, amount: Number(it.amount) }));
+      if (!expected.length) return false;
+      return (Store.state.income || []).some(inc => {
+        if (String(inc.clientOrderId || '') === oid) return true;
+        if (comment && inc.comment !== comment) return false;
+        if (!Array.isArray(inc.items)) return false;
+        return expected.every(exp => inc.items.some(it =>
+          it.accountId === exp.accountId && Number(it.amount) === exp.amount
+        ));
+      });
+    }
+    function addIncomeForOrder(order) {
+      const confirmedAt = order.confirmed_at || new Date().toISOString();
+      const date = confirmedAt.slice(0, 10) || todayISO();
+      if (order.order_type === 'remainder') {
+        const items = (order.items || []).map(it => {
+          const client = orderClientByCode(it.code);
+          return client && Number(it.amount) > 0
+            ? { accountId: client.id, amount: Number(it.amount) }
+            : null;
+        }).filter(Boolean);
+        if (!items.length) return { ok: false, reason: 'anketa_not_found' };
+        const comment = 'Доплата остатка';
+        if (orderIncomeExists(order, items, comment)) return { ok: true, skipped: true };
+        const inc = Store.addIncome({
+          date,
+          service: 'Отзывы',
+          comment,
+          items,
+          source: 'client_order',
+          clientOrderId: String(order.id),
+          createdAt: confirmedAt
+        });
+        return { ok: true, incomeId: inc.id, total: inc.amount, count: items.length };
+      }
+      const client = orderClientByCode(order.anketa_code);
+      const prepay = order.prepay_amount != null ? Number(order.prepay_amount) : Number(order.amount) || 0;
+      if (!client || prepay <= 0) return { ok: false, reason: 'anketa_not_found' };
+      const comment = order.pay_full ? 'Оплата заказа (100%)' : 'Предоплата заказа (50%)';
+      const items = [{ accountId: client.id, amount: prepay }];
+      if (orderIncomeExists(order, items, comment)) return { ok: true, skipped: true, client };
+      const inc = Store.addIncome({
+        date,
+        service: 'Отзывы',
+        comment,
+        items,
+        source: 'client_order',
+        clientOrderId: String(order.id),
+        createdAt: confirmedAt
+      });
+      return { ok: true, incomeId: inc.id, total: inc.amount, count: 1, client };
+    }
+    function reconcileConfirmedOrderIncome(orders) {
+      let fixed = 0;
+      (orders || []).forEach(o => {
+        if (o.status !== 'confirmed') return;
+        const res = addIncomeForOrder(o);
+        if (res.ok && !res.skipped) fixed++;
+      });
+      if (fixed > 0) {
+        toast(`Финансы синхронизированы: добавлено ${fixed} оплат из подтверждённых заявок`);
+        try { render(); } catch (_) {}
+      }
     }
     function renderOrdersList() {
       const wrap = document.getElementById('ordersList');
@@ -1429,22 +1505,21 @@
     async function confirmOrder(id) {
       const o = _ordersCache.find(x => x.id === id);
       if (!o) return;
+      const confirmedAt = new Date().toISOString();
       // ── доплата остатка по анкетам ──
       if (o.order_type === 'remainder') {
-        const ok = await patchOrder(id, { status: 'confirmed', confirmed_at: new Date().toISOString() });
-        if (!ok) { toast('Не удалось подтвердить', 'error'); return; }
+        const draft = Object.assign({}, o, { status: 'confirmed', confirmed_at: confirmedAt });
+        const res = addIncomeForOrder(draft);
+        if (!res.ok) { toast('Анкеты не найдены — зачти вручную', 'error'); return; }
+        const ok = await patchOrder(id, { status: 'confirmed', confirmed_at: confirmedAt });
+        if (!ok) {
+          if (res.incomeId) Store.deleteIncome(res.incomeId);
+          toast('Не удалось подтвердить', 'error');
+          return;
+        }
         o.status = 'confirmed';
-        let applied = 0, total = 0;
-        (o.items || []).forEach(it => {
-          const code = String(it.code || '').toLowerCase().trim();
-          const amt = Number(it.amount) || 0;
-          const client = code ? (Store.state.clients || []).find(c => String(c.code || '').toLowerCase().trim() === code) : null;
-          if (client && amt > 0) {
-            Store.addIncome({ items: [{ accountId: client.id, amount: amt }], service: 'Отзывы', comment: 'Доплата остатка' });
-            applied++; total += amt;
-          }
-        });
-        toast(applied ? `Доплата зачтена: ${total.toLocaleString('ru-RU')} ₽ по ${applied} анкет.` : 'Подтверждено (анкеты не найдены — зачти вручную)', 'success');
+        o.confirmed_at = confirmedAt;
+        toast(`Доплата зачтена: ${(res.total || 0).toLocaleString('ru-RU')} ₽ по ${res.count || 0} анкет.`, 'success');
         render(); updateOrdersBadge(); renderOrdersList();
         return;
       }
@@ -1452,25 +1527,43 @@
       const amount = Number(o.amount) || 0;
       const prepay = o.prepay_amount != null ? Number(o.prepay_amount) : amount;
       const remStatus = payFull ? null : 'pending';   // остаток ждёт доплаты (Часть 2)
-      const ok = await patchOrder(id, { status: 'confirmed', confirmed_at: new Date().toISOString(), remainder_status: remStatus });
-      if (!ok) { toast('Не удалось подтвердить заявку', 'error'); return; }
-      o.status = 'confirmed'; o.remainder_status = remStatus;
       // начисление: отзывы + сумма заказа в анкету + предоплата как доход (Оплачено/Остаток)
       const qty = Number(o.qty) || 0;
-      const code = String(o.anketa_code || '').toLowerCase().trim();
-      const client = code ? (Store.state.clients || []).find(c => String(c.code || '').toLowerCase().trim() === code) : null;
+      const client = orderClientByCode(o.anketa_code);
       if (client) {
+        const beforeOrdered = Number(client.ordered) || 0;
+        const beforeTotal = Number(client.total) || 0;
         Store.updateClient(client.id, {
-          ordered: (Number(client.ordered) || 0) + qty,
-          total: (Number(client.total) || 0) + amount
+          ordered: beforeOrdered + qty,
+          total: beforeTotal + amount
         });
-        if (prepay > 0) {
-          Store.addIncome({ items: [{ accountId: client.id, amount: prepay }], service: 'Отзывы',
-            comment: payFull ? 'Оплата заказа (100%)' : 'Предоплата заказа (50%)' });
+        const draft = Object.assign({}, o, { status: 'confirmed', confirmed_at: confirmedAt, remainder_status: remStatus });
+        const res = addIncomeForOrder(draft);
+        if (!res.ok) {
+          Store.updateClient(client.id, {
+            ordered: beforeOrdered,
+            total: beforeTotal
+          });
+          toast('Не удалось добавить оплату в финансы', 'error');
+          return;
         }
+        const ok = await patchOrder(id, { status: 'confirmed', confirmed_at: confirmedAt, remainder_status: remStatus });
+        if (!ok) {
+          if (res.incomeId) Store.deleteIncome(res.incomeId);
+          Store.updateClient(client.id, {
+            ordered: beforeOrdered,
+            total: beforeTotal
+          });
+          toast('Не удалось подтвердить заявку', 'error');
+          return;
+        }
+        o.status = 'confirmed'; o.remainder_status = remStatus; o.confirmed_at = confirmedAt;
         toast(`Подтверждено. ${client.code}: +${qty} отзывов, оплачено ${prepay.toLocaleString('ru-RU')} ₽`, 'success');
         render();
       } else {
+        const ok = await patchOrder(id, { status: 'confirmed', confirmed_at: confirmedAt, remainder_status: remStatus });
+        if (!ok) { toast('Не удалось подтвердить заявку', 'error'); return; }
+        o.status = 'confirmed'; o.remainder_status = remStatus; o.confirmed_at = confirmedAt;
         toast(`Заявка подтверждена.${qty ? ` Анкета новая/не найдена — начисли ${qty} отзывов и оплату вручную.` : ''}`, 'success');
       }
       updateOrdersBadge();
