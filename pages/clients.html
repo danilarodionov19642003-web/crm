@@ -472,6 +472,10 @@
       const paid = Number(client.paid) || 0;
       const patch = { tariff: name };
       if (!t) return patch;
+      const hasFinancialHistory = paid > 0
+        || (Number(client.total) || 0) > 0
+        || Store.getPaymentsForClient(client.id).length > 0;
+      if (hasFinancialHistory) return patch;
       if (t.unit === 'package') {
         patch.ordered = Number(t.qty) || 0;
         patch.total = Number(t.price) || 0;
@@ -666,8 +670,8 @@
           </div>
 
           <div class="cl-card__money">
-            <span><label>Оплачено</label><span class="pos" title="Только подтверждённые платежи из личного кабинета">${r.paid || 0}</span></span>
-            <span><label>Остаток</label><span class="${remain>0?'neg':''}" title="Считается автоматически: итог минус подтверждённые оплаты">${r.remain || 0}</span></span>
+            <span><label>Оплачено</label><span class="cl-editable pos" data-field="paid" data-type="number" title="Оплачено: обычно подтягивается из кабинета, но можно поправить вручную">${r.paid || 0}</span></span>
+            <span><label>Остаток</label><span class="cl-editable ${remain>0?'neg':''}" data-field="remain" data-type="number" title="Остаток к оплате: можно поправить вручную">${r.remain || 0}</span></span>
             <span><label>Старт</label><input type="date" class="cl-date" data-field="date" value="${r.date || ''}" title="Дата старта работы"/></span>
             <span><label>Дедлайн</label><input type="date" class="cl-date" data-field="deadline" value="${r.deadline || ''}"/>${overdue > 0 ? ` <span class="neg" style="font-size:11px">−${overdue}д</span>` : ''}</span>
           </div>
@@ -832,6 +836,10 @@
                 patch.total = total;
                 patch.remain = Math.max(0, total - (Number(c.paid) || 0));
               }
+            }
+            if (field === 'paid') {
+              const total = Number(c.total) || 0;
+              if (total > 0) patch.remain = Math.max(0, total - patch.paid);
             }
             if (field === 'total') {
               const total = Number(val) || 0;
