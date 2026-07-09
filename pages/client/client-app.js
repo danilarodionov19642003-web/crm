@@ -1085,7 +1085,9 @@
       if (o.status === 'confirmed') {
         payLine = (o.pay_full || rest <= 0)
           ? `<div class="cli-order__pay">💳 Оплачено полностью: ${fmtMoney(amt)}</div>`
-          : `<div class="cli-order__pay">💳 Оплачено: ${fmtMoney(prepay)} (предоплата) · Остаток: <b>${fmtMoney(rest)}</b> после выполнения</div>`;
+          : o.remainder_status === 'pending'
+            ? `<div class="cli-order__pay">💳 Оплачено: ${fmtMoney(prepay)} (предоплата) · Остаток: <b>${fmtMoney(rest)}</b> после выполнения</div>`
+            : `<div class="cli-order__pay">💳 Оплачено: ${fmtMoney(prepay)} + остаток ${fmtMoney(rest)}</div>`;
       } else if (o.status === 'new') {
         payLine = `<div class="cli-order__pay">💳 К оплате: ${fmtMoney(prepay)}${o.pay_full ? ' (100%)' : ' (предоплата 50%)'}</div>`;
       }
@@ -1133,27 +1135,44 @@
     }));
   }
 
-  /* ---- Оплатить остаток (по выбранным анкетам) ---- */
-  // Коды анкет, по которым УЖЕ есть неподтверждённая заявка на доплату —
-  // их не предлагаем повторно (защита от спама/дублей).
-  let _pendingRemainCodes = new Set();
+  /* ---- Оплатить остаток (по конкретным заказам) ---- */
+  // Старый остаток должен закрываться как отдельный пакет, даже если клиент
+  // уже создал новый заказ по той же анкете.
+  let _pendingRemainOrderIds = new Set();
   function _payableRemain() {
-    const anketas = (_orderPayload && _orderPayload.anketas) || [];
-    return anketas.filter(a => (Number(a.remain) || 0) > 0
-      && !_pendingRemainCodes.has(String(a.code || '').toLowerCase().trim()));
+    return (_myOrders || []).filter(o => {
+      if (!o || o.order_type === 'remainder') return false;
+      if (o.status !== 'confirmed' || o.remainder_status !== 'pending') return false;
+      if (_pendingRemainOrderIds.has(String(o.id))) return false;
+      return _remainOrderAmount(o) > 0;
+    });
+  }
+  function _remainOrderAmount(o) {
+    const amount = Number(o.amount) || 0;
+    const prepay = o.prepay_amount != null ? Number(o.prepay_amount) : amount;
+    return Math.max(0, amount - prepay);
+  }
+  function _remainOrderLabel(o) {
+    const code = o.anketa_code || o.anketa_name || '—';
+    const tariff = o.tariff_name || 'Пакет';
+    const date = _fmtDateTime(o.confirmed_at || o.created_at);
+    return `${code} · ${tariff}${date ? ' · ' + date : ''}`;
   }
   function renderRemainder(payload, orders) {
     if (payload) _orderPayload = payload;
-    _pendingRemainCodes = new Set();
+    _myOrders = orders || _myOrders || [];
+    _pendingRemainOrderIds = new Set();
     (orders || []).forEach(o => {
-      if (o.order_type === 'remainder' && o.status === 'new') {
-        (o.items || []).forEach(it => { if (it.code) _pendingRemainCodes.add(String(it.code).toLowerCase().trim()); });
+      if (o.order_type === 'remainder' && (o.status === 'new' || o.status === 'confirmed')) {
+        (o.items || []).forEach(it => {
+          if (it.source_order_id) _pendingRemainOrderIds.add(String(it.source_order_id));
+        });
       }
     });
     const cta = document.querySelector('[data-cli-remain-cta]');
     if (!cta) return;
     const payable = _payableRemain();
-    const total = payable.reduce((s, a) => s + (Number(a.remain) || 0), 0);
+    const total = payable.reduce((s, o) => s + _remainOrderAmount(o), 0);
     if (!payable.length || total <= 0) { cta.hidden = true; return; }
     cta.hidden = false;
     const totalEl = cta.querySelector('[data-cli-remain-total]');
@@ -1185,16 +1204,21 @@
     const body = document.querySelector('[data-cli-remain-body]');
     if (!m || !body || !_orderPayload) return;
     const pay = _orderPayload.payment || {};
-    const anketas = _payableRemain();
-    if (!anketas.length) return;
+    const orders = _payableRemain();
+    if (!orders.length) return;
     body.innerHTML = `
       <div class="cli-ord-field">
-        <div class="cli-ord-label">Выбери анкеты для оплаты остатка</div>
-        ${anketas.map(a => `
+        <div class="cli-ord-label">Выбери пакеты для оплаты остатка</div>
+        ${orders.map(o => `
           <label class="cli-remain-row">
-            <input type="checkbox" class="cli-remain-chk" data-code="${escapeAttr(a.code || '')}" data-name="${escapeAttr(a.name || '')}" data-amount="${Number(a.remain) || 0}" checked/>
-            <span class="cli-remain-row__name">${escapeHtml(a.code || '')}${a.name ? ' · ' + escapeHtml(a.name) : ''}</span>
-            <span class="cli-remain-row__amt">${fmtMoney(Number(a.remain) || 0)}</span>
+            <input type="checkbox" class="cli-remain-chk"
+              data-source-order-id="${escapeAttr(String(o.id))}"
+              data-code="${escapeAttr(o.anketa_code || '')}"
+              data-name="${escapeAttr(o.anketa_name || o.anketa_code || '')}"
+              data-label="${escapeAttr(_remainOrderLabel(o))}"
+              data-amount="${_remainOrderAmount(o)}" checked/>
+            <span class="cli-remain-row__name">${escapeHtml(_remainOrderLabel(o))}</span>
+            <span class="cli-remain-row__amt">${fmtMoney(_remainOrderAmount(o))}</span>
           </label>`).join('')}
       </div>
       <div class="cli-ord-amount" id="remainTotal"></div>
@@ -1223,7 +1247,13 @@
     const body = document.querySelector('[data-cli-remain-body]');
     const sel = [...body.querySelectorAll('.cli-remain-chk:checked')];
     if (!sel.length) { result.className = 'cli-ord-result is-err'; result.textContent = 'Выбери хотя бы одну анкету.'; return; }
-    const items = sel.map(c => ({ code: c.dataset.code, name: c.dataset.name, amount: Number(c.dataset.amount) || 0 }))
+    const items = sel.map(c => ({
+      code: c.dataset.code,
+      name: c.dataset.name,
+      label: c.dataset.label,
+      source_order_id: c.dataset.sourceOrderId,
+      amount: Number(c.dataset.amount) || 0
+    }))
       .filter(i => i.amount > 0);
     const total = items.reduce((s, i) => s + i.amount, 0);
     if (!items.length || total <= 0) { result.className = 'cli-ord-result is-err'; result.textContent = 'Нет суммы к оплате.'; return; }
@@ -1244,7 +1274,7 @@
       client_email: email,
       client_name: Auth.name() || email,
       order_type: 'remainder',
-      anketa_name: items.map(i => i.code).join(', '),
+      anketa_name: items.map(i => i.label || i.code).join(', '),
       items: items,
       amount: total,
       receipt_url: receipt_url || null

@@ -215,7 +215,7 @@
         <div class="field-row">
           <div class="field">
             <label for="mPaid">Оплачено, ₽</label>
-            <input type="number" id="mPaid" class="input" value="0" min="0" step="100"/>
+            <input type="number" id="mPaid" class="input" value="0" min="0" step="100" readonly title="Оплата подтягивается только после подтверждения платежа из личного кабинета"/>
           </div>
           <div class="field">
             <label for="mTotal">Итог, ₽</label>
@@ -453,8 +453,53 @@
     /* ---- Заполнение селектов в модалке ---- */
     document.getElementById('mPlatform').innerHTML =
       `<option value="">— не указана —</option>` + SERVICES.map(s => `<option value="${s}">${s}</option>`).join('');
+    function tariffByName(name) {
+      return TARIFFS.find(t => t.name === name) || null;
+    }
+    function tariffOptionLabel(t) {
+      const price = Number(t.price || 0).toLocaleString('ru-RU');
+      return t.unit === 'per'
+        ? `${t.name} — ${price} ₽/шт${t.qty ? ` (от ${t.qty})` : ''}`
+        : `${t.name} — ${price} ₽${t.qty ? ` · ${t.qty} отзывов` : ''}`;
+    }
+    function tariffTotal(t, ordered, fallback = 0) {
+      if (!t) return Number(fallback) || 0;
+      if (t.unit === 'per') return Math.max(0, Number(ordered) || 0) * (Number(t.price) || 0);
+      return Number(t.price) || 0;
+    }
+    function tariffPatch(name, client = {}) {
+      const t = tariffByName(name);
+      const paid = Number(client.paid) || 0;
+      const patch = { tariff: name };
+      if (!t) return patch;
+      if (t.unit === 'package') {
+        patch.ordered = Number(t.qty) || 0;
+        patch.total = Number(t.price) || 0;
+      } else {
+        const ordered = Math.max(0, Number(client.ordered) || 0);
+        patch.total = tariffTotal(t, ordered, client.total);
+      }
+      patch.remain = Math.max(0, (Number(patch.total) || 0) - paid);
+      return patch;
+    }
+    function refreshAddTariffTotals(forcePackageQty = false) {
+      const t = tariffByName(document.getElementById('mTariff').value);
+      const orderedEl = document.getElementById('mOrdered');
+      const totalEl = document.getElementById('mTotal');
+      const paidEl = document.getElementById('mPaid');
+      document.getElementById('mTariffDesc').textContent = t ? t.desc : '';
+      paidEl.value = '0';
+      if (!t) return;
+      if (t.unit === 'package') {
+        orderedEl.value = Number(t.qty) || 0;
+        totalEl.value = Number(t.price) || 0;
+      } else {
+        if (forcePackageQty) orderedEl.value = '0';
+        totalEl.value = tariffTotal(t, orderedEl.value);
+      }
+    }
     document.getElementById('mTariff').innerHTML =
-      TARIFFS.map(t => `<option value="${t.name}">${t.name} — ${t.price.toLocaleString('ru-RU')} ₽</option>`).join('');
+      TARIFFS.map(t => `<option value="${t.name}">${tariffOptionLabel(t)}</option>`).join('');
 
     // Селектор «Менеджер» убран (27.04.2026). Зарплата теперь начисляется
     // АВТОРУ ОТЗЫВА (review.authorEmail), а не менеджеру клиента, потому
@@ -462,10 +507,8 @@
     // переключение менеджера задним числом перебрасывало все отзывы
     // новому. См. js/reviews-sync.js.
 
-    document.getElementById('mTariff').addEventListener('change', e => {
-      const t = TARIFFS.find(x => x.name === e.target.value);
-      document.getElementById('mTariffDesc').textContent = t ? t.desc : '';
-    });
+    document.getElementById('mTariff').addEventListener('change', () => refreshAddTariffTotals(true));
+    document.getElementById('mOrdered').addEventListener('input', () => refreshAddTariffTotals(false));
 
     /* ---- Селект фильтра по тарифам ---- */
     function refreshFilterOptions() {
@@ -623,8 +666,8 @@
           </div>
 
           <div class="cl-card__money">
-            <span><label>Оплачено</label><span class="cl-editable pos" data-field="paid" data-type="number">${r.paid || 0}</span></span>
-            <span><label>Остаток</label><span class="cl-editable ${remain>0?'neg':''}" data-field="remain" data-type="number">${r.remain || 0}</span></span>
+            <span><label>Оплачено</label><span class="pos" title="Только подтверждённые платежи из личного кабинета">${r.paid || 0}</span></span>
+            <span><label>Остаток</label><span class="${remain>0?'neg':''}" title="Считается автоматически: итог минус подтверждённые оплаты">${r.remain || 0}</span></span>
             <span><label>Старт</label><input type="date" class="cl-date" data-field="date" value="${r.date || ''}" title="Дата старта работы"/></span>
             <span><label>Дедлайн</label><input type="date" class="cl-date" data-field="deadline" value="${r.deadline || ''}"/>${overdue > 0 ? ` <span class="neg" style="font-size:11px">−${overdue}д</span>` : ''}</span>
           </div>
@@ -639,6 +682,10 @@
             <button class="btn btn--ghost btn--sm" data-act="schedule" title="График откликов по дням">
               ${ico('<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>')} ${countScheduledForClient(r)}
             </button>
+            <label class="btn btn--ghost btn--sm" title="Показывать этому клиенту тариф Постоянник 800 ₽/шт в личном кабинете" style="gap:6px">
+              <input type="checkbox" data-act="toggle-regular-tariff" ${r.allowRegularTariff ? 'checked' : ''} style="margin:0"/>
+              800
+            </label>
             <button class="btn btn--ghost btn--sm" data-act="toggle-closed"
                     title="${r.closed ? 'Открыть клиента заново (вернётся в активные)' : 'Закрыть клиента — исключить из пульса кэша / KPI'}"
                     style="${r.closed ? 'color:#22c55e;border-color:rgba(34,197,94,0.3)' : ''}">
@@ -777,11 +824,18 @@
           makeEditable(cell, val => {
             const isNum = cell.dataset.type === 'number';
             const patch = { [field]: isNum ? (Number(val) || 0) : val };
-            if (field === 'paid' || field === 'total') {
-              const c = Store.state.clients.find(x => x.id === id);
-              const paid = field === 'paid' ? Number(val) : Number(c.paid) || 0;
-              const total = field === 'total' ? Number(val) : Number(c.total) || 0;
-              if (total > 0) patch.remain = Math.max(0, total - paid);
+            const c = Store.state.clients.find(x => x.id === id) || {};
+            if (field === 'ordered') {
+              const t = tariffByName(c.tariff);
+              if (t && t.unit === 'per') {
+                const total = tariffTotal(t, patch.ordered);
+                patch.total = total;
+                patch.remain = Math.max(0, total - (Number(c.paid) || 0));
+              }
+            }
+            if (field === 'total') {
+              const total = Number(val) || 0;
+              patch.remain = Math.max(0, total - (Number(c.paid) || 0));
             }
             Store.updateClient(id, patch);
             render();
@@ -791,7 +845,11 @@
         // dropdowns
         tr.querySelectorAll('select[data-field]').forEach(sel => {
           sel.addEventListener('change', e => {
-            Store.updateClient(id, { [sel.dataset.field]: e.target.value });
+            const c = Store.state.clients.find(x => x.id === id) || {};
+            const patch = sel.dataset.field === 'tariff'
+              ? tariffPatch(e.target.value, c)
+              : { [sel.dataset.field]: e.target.value };
+            Store.updateClient(id, patch);
             // Смена менеджера → пересчитать зп и обновить KPI на дашборде/Сотрудниках.
             if (sel.dataset.field === 'assignedEmail' && window.ReviewsSync) {
               window.ReviewsSync.recompute();
@@ -822,6 +880,13 @@
         // график отзывов
         const schBtn = tr.querySelector('[data-act="schedule"]');
         if (schBtn) schBtn.addEventListener('click', e => { e.stopPropagation(); openSchedule(id); });
+        const regularChk = tr.querySelector('[data-act="toggle-regular-tariff"]');
+        if (regularChk) regularChk.addEventListener('change', e => {
+          e.stopPropagation();
+          Store.updateClient(id, { allowRegularTariff: e.target.checked === true });
+          toast(e.target.checked ? 'Постоянник включён для кабинета' : 'Постоянник скрыт из кабинета');
+          render();
+        });
         // toggle «закрыт / активен» — флаг client.closed
         const closeBtn = tr.querySelector('[data-act="toggle-closed"]');
         if (closeBtn) closeBtn.addEventListener('click', e => {
@@ -1309,7 +1374,8 @@
         const price = Math.max(0, Number(row.querySelector('[data-tf="price"]').value) || 0);
         const qty = Math.max(0, Number(row.querySelector('[data-tf="qty"]').value) || 0);
         const unit = row.querySelector('[data-tf="unit"]').value === 'per' ? 'per' : 'package';
-        tariffs.push({ id: 't_' + Math.random().toString(36).slice(2, 7), name, price, qty, unit });
+        const canonical = TARIFFS.find(t => t.name.toLowerCase() === name.toLowerCase());
+        tariffs.push({ id: canonical ? canonical.id : 't_' + Math.random().toString(36).slice(2, 7), name, price, qty, unit });
       });
       Store.state.paymentSettings = {
         requisites: {
@@ -1519,6 +1585,12 @@
         }
         o.status = 'confirmed';
         o.confirmed_at = confirmedAt;
+        const sourceIds = [...new Set((o.items || []).map(it => it && it.source_order_id).filter(Boolean))];
+        for (const sourceId of sourceIds) {
+          await patchOrder(sourceId, { remainder_status: null });
+          const src = _ordersCache.find(x => String(x.id) === String(sourceId));
+          if (src) src.remainder_status = null;
+        }
         toast(`Доплата зачтена: ${(res.total || 0).toLocaleString('ru-RU')} ₽ по ${res.count || 0} анкет.`, 'success');
         render(); updateOrdersBadge(); renderOrdersList();
         return;
@@ -1604,7 +1676,7 @@
       ['mOrdered','mPaid','mTotal'].forEach(id => document.getElementById(id).value = '0');
       document.getElementById('mPlatform').value = '';
       document.getElementById('mTariff').value = TARIFF_NAMES[0];
-      document.getElementById('mTariffDesc').textContent = TARIFFS[0].desc;
+      refreshAddTariffTotals(true);
       document.getElementById('mDate').value = todayISO();
       document.getElementById('mDeadline').value = '';
       Modal.open('addModal');
@@ -1613,7 +1685,9 @@
     document.getElementById('mSave').addEventListener('click', () => {
       const name = document.getElementById('mName').value.trim();
       if (!name) { toast('Укажите имя клиента', 'error'); return; }
-      const paid = Number(document.getElementById('mPaid').value) || 0;
+      const paid = 0;
+      document.getElementById('mPaid').value = '0';
+      refreshAddTariffTotals(false);
       const total = Number(document.getElementById('mTotal').value) || 0;
       Store.addClient({
         name,

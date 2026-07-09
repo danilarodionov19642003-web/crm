@@ -51,11 +51,13 @@
   ];
 
   const TARIFFS = [
-    { id: 'basic',    name: 'Базовый',  price: 800,   desc: 'Любое кол-во отзывов · 800 ₽/шт' },
-    { id: 'standard', name: 'Стандарт', price: 1000,  desc: 'Любое кол-во отзывов · 1000 ₽/шт' },
-    { id: 'premium',  name: 'Премиум',  price: 15490, desc: '12 отзывов / мес — фиксированная подписка' }
+    { id: 'support',   name: 'Поддержка',  price: 8490,  qty: 6,  unit: 'package', desc: '6 отзывов · 8 490 ₽' },
+    { id: 'develop',   name: 'Развитие',   price: 15490, qty: 12, unit: 'package', desc: '12 отзывов · 15 490 ₽' },
+    { id: 'wholesale', name: 'Опт',        price: 900,   qty: 20, unit: 'per',     desc: 'от 20 отзывов · 900 ₽/шт' },
+    { id: 'regular',   name: 'Постоянник', price: 800,   qty: 0,  unit: 'per',     desc: '800 ₽/шт · количество вручную' }
   ];
   const TARIFF_NAMES = TARIFFS.map(t => t.name);
+  const DEFAULT_PAYMENT_TARIFFS = TARIFFS.map(({ id, name, price, qty, unit }) => ({ id, name, price, qty, unit }));
 
   /* ------------------------------------------------------------------ */
   /* Справочники для новых модулей (статусы, города)                    */
@@ -185,13 +187,11 @@
         // отдельной кнопкой в кабинете. (legacy: мог быть строкой — мигрируем
         // в модалке «Реквизиты» в поле note.)
         requisites: { sbpPhone: '', bank: '', card: '', recipient: '', note: '' },
-        tariffs: [
-          { id: 'support',   name: 'Поддержка профиля', price: 8290,  qty: 6,  unit: 'package' },
-          { id: 'develop',   name: 'Развитие профиля',  price: 15490, qty: 12, unit: 'package' },
-          { id: 'wholesale', name: 'Оптом',             price: 900,   qty: 20, unit: 'per' }
-        ],
+        tariffs: DEFAULT_PAYMENT_TARIFFS.map(t => ({ ...t })),
         updatedAt: null
       };
+      this._normalizePaymentSettings();
+      this.state.clients.forEach(c => { c.tariff = mapTariff(c.tariff); });
       // Справочник ниш и пауз «Выбран → Опубликован» в днях.
       // Используется ботом для напоминаний публиковать отзыв (см. A3).
       // ⭐ ключ — это код категории, который проставляется у клиента (clients[].niche).
@@ -538,6 +538,37 @@
       this.save();
     },
 
+    _normalizePaymentSettings() {
+      const ps = this.state.paymentSettings || {};
+      if (!Array.isArray(ps.tariffs)) ps.tariffs = [];
+      const byId = Object.fromEntries(DEFAULT_PAYMENT_TARIFFS.map(t => [t.id, t]));
+      const legacyByName = {
+        'поддержка профиля': 'support',
+        'поддержка': 'support',
+        'развитие профиля': 'develop',
+        'развитие': 'develop',
+        'опт': 'wholesale',
+        'постоянник': 'regular',
+        'базовый': 'regular',
+        'стандарт': 'wholesale',
+        'премиум': 'develop'
+      };
+      const seen = new Set();
+      const normalized = [];
+      ps.tariffs.forEach(t => {
+        const legacyId = legacyByName[String(t.name || '').trim().toLowerCase()];
+        const id = byId[t.id] ? t.id : legacyId;
+        if (!id || seen.has(id)) return;
+        seen.add(id);
+        normalized.push({ ...byId[id] });
+      });
+      DEFAULT_PAYMENT_TARIFFS.forEach(t => {
+        if (!seen.has(t.id)) normalized.push({ ...t });
+      });
+      ps.tariffs = normalized;
+      this.state.paymentSettings = ps;
+    },
+
     /* ---------- Clients ---------- */
     addClient(rec) {
       const item = Object.assign({
@@ -545,6 +576,7 @@
         platform: '', name: '', code: '', tariff: TARIFF_NAMES[0],
         ordered: 0, done: 0,
         paid: 0, remain: 0, total: 0,
+        allowRegularTariff: false,
         date: todayISO(), deadline: '', overdueDays: 0,
         assignedEmail: '', avatarUrl: ''
       }, rec);
@@ -1456,6 +1488,14 @@
         acc.total   += a.total;
         return acc;
       }, { ordered: 0, done: 0, paid: 0, remain: 0, total: 0 });
+      const regularAllowed = (portal.mentorIds || [])
+        .map(mid => (this.state.mentors || []).find(m => m.id === mid))
+        .map(m => String((m && m.code) || '').toLowerCase().trim())
+        .some(code => (this.state.clients || []).some(c =>
+          String(c.code || '').toLowerCase().trim() === code && c.allowRegularTariff === true
+        ));
+      const paymentTariffs = ((this.state.paymentSettings && this.state.paymentSettings.tariffs) || [])
+        .filter(t => t && (t.id !== 'regular' || regularAllowed));
       return {
         email: portal.email,
         name: portal.name || '',
@@ -1465,7 +1505,7 @@
         // Реквизиты + тарифы + текст оферты для самостоятельного заказа из кабинета.
         payment: {
           requisites: (this.state.paymentSettings && this.state.paymentSettings.requisites) || '',
-          tariffs: (this.state.paymentSettings && this.state.paymentSettings.tariffs) || [],
+          tariffs: paymentTariffs,
           offerText: (this.state.paymentSettings && this.state.paymentSettings.offerText) || ''
         },
         generatedAt: new Date().toISOString()
@@ -1738,13 +1778,15 @@
     }
   };
 
-  /** Маппинг тарифов из xlsx → наши три */
+  /** Маппинг тарифов из xlsx/старых карточек → текущий прайс */
   function mapTariff(raw) {
     const s = String(raw || '').trim().toLowerCase();
     if (!s) return TARIFF_NAMES[0];
-    if (s.includes('1000') || s.includes('№2')) return 'Стандарт';
-    if (s.includes('поддерж') || s.includes('развит') || s.includes('рост') || s.includes('№3') || s.includes('№4')) return 'Премиум';
-    return 'Базовый';
+    if (s.includes('опт') || s.includes('900') || s.includes('1000') || s.includes('№2')) return 'Опт';
+    if (s.includes('постоян') || s.includes('кастом') || s.includes('800') || s.includes('баз')) return 'Постоянник';
+    if (s.includes('развит') || s.includes('рост') || s.includes('15490') || s.includes('15 490') || s.includes('прем') || s.includes('№4')) return 'Развитие';
+    if (s.includes('поддерж') || s.includes('8490') || s.includes('8 490') || s.includes('8290') || s.includes('8 290') || s.includes('№3')) return 'Поддержка';
+    return TARIFF_NAMES.includes(raw) ? raw : TARIFF_NAMES[0];
   }
 
   /* ------------------------------------------------------------------ */
