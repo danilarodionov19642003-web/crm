@@ -398,10 +398,10 @@
   </div>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260710a"></script>
+  <script src="../js/app.js?v=20260710b"></script>
   <script src="../js/supabase-client.js?v=20260528a"></script>
   <script src="../js/auth-gate.js"></script>
-  <script src="../js/cloud-sync.js?v=20260703a"></script>
+  <script src="../js/cloud-sync.js?v=20260710b"></script>
   <script src="../js/accounts-sync.js"></script>
   <script src="../js/reviews-sync.js"></script>
   <script src="../js/schedule-apply.js?v=20260522b"></script>
@@ -1456,19 +1456,43 @@
       if (!norm) return null;
       return (Store.state.clients || []).find(c => String(c.code || '').toLowerCase().trim() === norm) || null;
     }
-    function orderIncomeExists(order, items, comment) {
+    function findOrderIncome(order, items, comment) {
       const oid = String(order.id);
       const expected = (items || []).filter(it => it.accountId && Number(it.amount) > 0)
         .map(it => ({ accountId: it.accountId, amount: Number(it.amount) }));
-      if (!expected.length) return false;
-      return (Store.state.income || []).some(inc => {
-        if (String(inc.clientOrderId || '') === oid) return true;
+      if (!expected.length) return null;
+      const exact = (Store.state.income || []).find(inc => String(inc.clientOrderId || '') === oid);
+      if (exact) return exact;
+      const targetAt = Date.parse(order.confirmed_at || order.created_at || '') || 0;
+      const candidates = (Store.state.income || []).filter(inc => {
         if (comment && inc.comment !== comment) return false;
         if (!Array.isArray(inc.items)) return false;
         return expected.every(exp => inc.items.some(it =>
           it.accountId === exp.accountId && Number(it.amount) === exp.amount
         ));
       });
+      if (!candidates.length) return null;
+      candidates.sort((a, b) => {
+        const da = Math.abs((Date.parse(a.createdAt || a.date || '') || 0) - targetAt);
+        const db = Math.abs((Date.parse(b.createdAt || b.date || '') || 0) - targetAt);
+        return da - db;
+      });
+      const closest = candidates[0];
+      if (targetAt) {
+        const closestAt = Date.parse(closest.createdAt || closest.date || '') || 0;
+        if (!closestAt || Math.abs(closestAt - targetAt) > 5 * 60 * 1000) return null;
+      }
+      return closest;
+    }
+    function orderIncomeExists(order, items, comment) {
+      const match = findOrderIncome(order, items, comment);
+      if (!match) return false;
+      if (!match.clientOrderId || match.source !== 'client_order') {
+        match.clientOrderId = String(order.id);
+        match.source = 'client_order';
+        Store.save();
+      }
+      return true;
     }
     function addIncomeForOrder(order) {
       const confirmedAt = order.confirmed_at || new Date().toISOString();
@@ -1547,7 +1571,7 @@
         const actions = `<div style="display:flex;gap:8px;margin-top:10px">
             ${o.status === 'new' ? `<button class="btn btn--primary btn--sm" data-confirm="${o.id}">✓ Подтвердить</button>
             <button class="btn btn--ghost btn--sm" data-reject="${o.id}" style="color:var(--red)">Отклонить</button>` : ''}
-            <button class="btn btn--ghost btn--sm" data-del="${o.id}" style="color:var(--text-mute);margin-left:auto" title="Удалить заявку (исчезнет и у клиента)">🗑</button>
+            <button class="btn btn--ghost btn--sm" data-del="${o.id}" style="color:var(--text-mute);margin-left:auto" title="${o.status === 'confirmed' ? 'Отменить заказ и все начисления' : 'Удалить заявку'}">🗑</button>
           </div>`;
         return `
           <div style="border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:10px;background:var(--bg-elev-2)">
@@ -1567,8 +1591,24 @@
       wrap.querySelectorAll('[data-reject]').forEach(b => b.addEventListener('click', () => rejectOrder(Number(b.dataset.reject))));
       wrap.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => deleteOrder(Number(b.dataset.del))));
     }
+    const _deletingOrders = new Set();
     async function deleteOrder(id) {
-      if (!confirm('Удалить заявку безвозвратно? Исчезнет и у клиента в кабинете.')) return;
+      if (_deletingOrders.has(id)) return;
+      _deletingOrders.add(id);
+      try {
+        await deleteOrderOnce(id);
+      } finally {
+        _deletingOrders.delete(id);
+      }
+    }
+    async function deleteOrderOnce(id) {
+      const order = _ordersCache.find(x => x.id === id);
+      if (!order) return;
+      const confirmed = order.status === 'confirmed';
+      const question = confirmed
+        ? 'Отменить подтверждённый заказ? CRM удалит заявку, связанную оплату, начисленную сумму и отзывы.'
+        : 'Удалить заявку безвозвратно? Она исчезнет и у клиента в кабинете.';
+      if (!confirm(question)) return;
       const S = _sb();
       try {
         const res = await fetch(`${S.URL}/rest/v1/client_orders?id=eq.${id}`, {
@@ -1577,12 +1617,54 @@
         });
         if (!(res.ok || res.status === 204)) { toast('Не удалось удалить', 'error'); return; }
       } catch (e) { toast('Не удалось удалить', 'error'); return; }
+      if (confirmed) {
+        if (order.order_type === 'remainder') {
+          const items = (order.items || []).map(it => {
+            const client = orderClientByCode(it.code);
+            return client && Number(it.amount) > 0
+              ? { accountId: client.id, amount: Number(it.amount) }
+              : null;
+          }).filter(Boolean);
+          const income = findOrderIncome(order, items, 'Доплата остатка');
+          if (income) Store.deleteIncome(income.id);
+          const sourceIds = [...new Set((order.items || []).map(it => it && it.source_order_id).filter(Boolean))];
+          for (const sourceId of sourceIds) await patchOrder(sourceId, { remainder_status: 'pending' });
+        } else {
+          const client = orderClientByCode(order.anketa_code);
+          if (client) {
+            const prepay = order.prepay_amount != null ? Number(order.prepay_amount) : Number(order.amount) || 0;
+            const comment = order.pay_full ? 'Оплата заказа (100%)' : 'Предоплата заказа (50%)';
+            const income = findOrderIncome(order, [{ accountId: client.id, amount: prepay }], comment);
+            if (income) Store.deleteIncome(income.id);
+            const nextOrdered = Math.max(0, (Number(client.ordered) || 0) - (Number(order.qty) || 0));
+            const nextTotal = Math.max(0, (Number(client.total) || 0) - (Number(order.amount) || 0));
+            Store.updateClient(client.id, {
+              tariff: nextOrdered === 0 && nextTotal === 0 ? '' : client.tariff,
+              ordered: nextOrdered,
+              total: nextTotal,
+              remain: Math.max(0, (Number(client.remain) || 0) - (Number(order.amount) || 0))
+            });
+          }
+        }
+      }
       _ordersCache = _ordersCache.filter(x => x.id !== id);
       updateOrdersBadge();
       renderOrdersList();
-      toast('Заявка удалена');
+      render();
+      toast(confirmed ? 'Заказ и все его начисления отменены' : 'Заявка удалена');
     }
+    const _confirmingOrders = new Set();
     async function confirmOrder(id) {
+      const order = _ordersCache.find(x => x.id === id);
+      if (!order || order.status !== 'new' || _confirmingOrders.has(id)) return;
+      _confirmingOrders.add(id);
+      try {
+        await confirmOrderOnce(id);
+      } finally {
+        _confirmingOrders.delete(id);
+      }
+    }
+    async function confirmOrderOnce(id) {
       const o = _ordersCache.find(x => x.id === id);
       if (!o) return;
       const confirmedAt = new Date().toISOString();

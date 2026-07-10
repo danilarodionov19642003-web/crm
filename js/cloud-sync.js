@@ -438,11 +438,14 @@
   const BOT_MERGE_KEYS = ['expenses', 'income'];
   function isBotOriginRecord(r) {
     const id = String((r && r.id) || '');
-    return !!(r && r.id && (
-      r.source === 'bot' ||
-      /^m[0-9a-f]{12}$/i.test(id) ||
-      /^tg[0-9a-f]{14}$/i.test(id)
-    ));
+    if (!r || !r.id) return false;
+    // Распределённые оплаты создаёт CRM. Их uid иногда случайно выглядит как
+    // bot-id `m` + 12 hex, поэтому проверка только по id воскрешала удалённые
+    // клиентские платежи из старого серверного снимка.
+    if (r.source === 'client_order' || (Array.isArray(r.items) && r.items.length)) return false;
+    return r.source === 'bot'
+      || /^tg[0-9a-f]{14}$/i.test(id)
+      || (!r.source && /^m[0-9a-f]{12}$/i.test(id));
   }
   function mergeBotAdditions(localState, remoteData) {
     if (!localState || !remoteData || typeof remoteData !== 'object') return localState;
