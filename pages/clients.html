@@ -196,7 +196,7 @@
           <select id="mPlatform" class="select"></select>
         </div>
         <div class="field">
-          <label for="mTariff">Тариф</label>
+          <label for="mTariff">Тариф (необязательно)</label>
           <select id="mTariff" class="select"></select>
           <div id="mTariffDesc" style="font-size:12px;color:var(--text-mute);margin-top:4px"></div>
         </div>
@@ -398,7 +398,7 @@
   </div>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260701a"></script>
+  <script src="../js/app.js?v=20260710a"></script>
   <script src="../js/supabase-client.js?v=20260528a"></script>
   <script src="../js/auth-gate.js"></script>
   <script src="../js/cloud-sync.js?v=20260703a"></script>
@@ -493,7 +493,11 @@
       const paidEl = document.getElementById('mPaid');
       document.getElementById('mTariffDesc').textContent = t ? t.desc : '';
       paidEl.value = '0';
-      if (!t) return;
+      if (!t) {
+        orderedEl.value = '0';
+        totalEl.value = '0';
+        return;
+      }
       if (t.unit === 'package') {
         orderedEl.value = Number(t.qty) || 0;
         totalEl.value = Number(t.price) || 0;
@@ -503,7 +507,8 @@
       }
     }
     document.getElementById('mTariff').innerHTML =
-      TARIFFS.map(t => `<option value="${t.name}">${tariffOptionLabel(t)}</option>`).join('');
+      `<option value="">— выберет клиент при покупке —</option>`
+      + TARIFFS.map(t => `<option value="${t.name}">${tariffOptionLabel(t)}</option>`).join('');
 
     // Селектор «Менеджер» убран (27.04.2026). Зарплата теперь начисляется
     // АВТОРУ ОТЗЫВА (review.authorEmail), а не менеджеру клиента, потому
@@ -647,6 +652,7 @@
 
           <div class="cl-card__meta">
             <select class="select" data-field="tariff" title="Тариф">
+              <option value="" ${!r.tariff?'selected':''}>тариф не выбран</option>
               ${TARIFF_NAMES.map(t => `<option value="${t}" ${r.tariff===t?'selected':''}>${t}</option>`).join('')}
             </select>
             <select class="select" data-field="platform" title="Площадка">
@@ -838,8 +844,8 @@
               }
             }
             if (field === 'paid') {
-              const total = Number(c.total) || 0;
-              if (total > 0) patch.remain = Math.max(0, total - patch.paid);
+              const delta = patch.paid - (Number(c.paid) || 0);
+              patch.remain = Math.max(0, (Number(c.remain) || 0) - delta);
             }
             if (field === 'total') {
               const total = Number(val) || 0;
@@ -970,7 +976,7 @@
       if (!c) return;
       const payments = Store.getPaymentsForClient(clientId);
       const totalPaid = payments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
-      const remain = Math.max(0, (Number(c.total) || 0) - (Number(c.paid) || 0));
+      const remain = Math.max(0, Number(c.remain) || 0);
 
       document.getElementById('payTitle').textContent =
         `Платежи · ${c.code ? c.code + ' · ' : ''}${c.name || 'Клиент'}`;
@@ -1613,16 +1619,25 @@
       if (client) {
         const beforeOrdered = Number(client.ordered) || 0;
         const beforeTotal = Number(client.total) || 0;
+        const beforeRemain = Number(client.remain) || 0;
+        const beforeTariff = client.tariff || '';
+        const orderTariff = TARIFFS.find(t =>
+          String(t.name).toLowerCase() === String(o.tariff_name || '').trim().toLowerCase()
+        );
         Store.updateClient(client.id, {
+          tariff: orderTariff ? orderTariff.name : beforeTariff,
           ordered: beforeOrdered + qty,
-          total: beforeTotal + amount
+          total: beforeTotal + amount,
+          remain: beforeRemain + amount
         });
         const draft = Object.assign({}, o, { status: 'confirmed', confirmed_at: confirmedAt, remainder_status: remStatus });
         const res = addIncomeForOrder(draft);
         if (!res.ok) {
           Store.updateClient(client.id, {
+            tariff: beforeTariff,
             ordered: beforeOrdered,
-            total: beforeTotal
+            total: beforeTotal,
+            remain: beforeRemain
           });
           toast('Не удалось добавить оплату в финансы', 'error');
           return;
@@ -1631,8 +1646,10 @@
         if (!ok) {
           if (res.incomeId) Store.deleteIncome(res.incomeId);
           Store.updateClient(client.id, {
+            tariff: beforeTariff,
             ordered: beforeOrdered,
-            total: beforeTotal
+            total: beforeTotal,
+            remain: beforeRemain
           });
           toast('Не удалось подтвердить заявку', 'error');
           return;
@@ -1683,7 +1700,7 @@
       ['mName','mCode'].forEach(id => document.getElementById(id).value = '');
       ['mOrdered','mPaid','mTotal'].forEach(id => document.getElementById(id).value = '0');
       document.getElementById('mPlatform').value = '';
-      document.getElementById('mTariff').value = TARIFF_NAMES[0];
+      document.getElementById('mTariff').value = '';
       refreshAddTariffTotals(true);
       document.getElementById('mDate').value = todayISO();
       document.getElementById('mDeadline').value = '';

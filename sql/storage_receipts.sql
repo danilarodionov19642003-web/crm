@@ -15,8 +15,10 @@
 --    FILE_STORAGE_BACKEND_PATH=/var/lib/storage/ENABLE_IMAGE_TRANSFORMATION=false.
 --
 -- 2) nginx (/etc/nginx/sites-available/mentori-site): добавлен location
---    `/sb/storage/v1/` → proxy_pass http://127.0.0.1:5000/ (стрипит префикс),
+--    `^~ /sb/storage/v1/` → proxy_pass http://127.0.0.1:5000/ (стрипит префикс),
 --    client_max_body_size 50m, CORS reflect-origin (как у /sb/rest/v1/).
+--    `^~` обязательно: иначе общий regex для .jpg/.png перехватывает OPTIONS
+--    загрузки чека и возвращает 404 до обращения к Storage API.
 --
 -- 3) SQL ниже (роль + схема + гранты + bucket + политика). ГРАБЛИ:
 --    - роль supabase_storage_admin: login password = POSTGRES_PASSWORD (из .env),

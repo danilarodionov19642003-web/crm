@@ -51,7 +51,7 @@
   ];
 
   const TARIFFS = [
-    { id: 'support',   name: 'Поддержка',  price: 8490,  qty: 6,  unit: 'package', desc: '6 отзывов · 8 490 ₽' },
+    { id: 'support',   name: 'Поддержка',  price: 8290,  qty: 6,  unit: 'package', desc: '6 отзывов · 8 290 ₽' },
     { id: 'develop',   name: 'Развитие',   price: 15490, qty: 12, unit: 'package', desc: '12 отзывов · 15 490 ₽' },
     { id: 'wholesale', name: 'Опт',        price: 900,   qty: 20, unit: 'per',     desc: 'от 20 отзывов · 900 ₽/шт' },
     { id: 'regular',   name: 'Постоянник', price: 800,   qty: 0,  unit: 'per',     desc: '800 ₽/шт · количество вручную' }
@@ -488,9 +488,9 @@
       items.forEach(({ accountId, amount }) => {
         const c = this.state.clients.find(x => x.id === accountId);
         if (!c) return;
-        c.paid = Math.max(0, (Number(c.paid) || 0) + sign * Number(amount));
-        const total = Number(c.total) || 0;
-        if (total > 0) c.remain = Math.max(0, total - c.paid);
+        const delta = sign * Number(amount);
+        c.paid = Math.max(0, (Number(c.paid) || 0) + delta);
+        c.remain = Math.max(0, (Number(c.remain) || 0) - delta);
       });
     },
 
@@ -573,7 +573,7 @@
     addClient(rec) {
       const item = Object.assign({
         id: uid(),
-        platform: '', name: '', code: '', tariff: TARIFF_NAMES[0],
+        platform: '', name: '', code: '', tariff: '',
         ordered: 0, done: 0,
         paid: 0, remain: 0, total: 0,
         allowRegularTariff: false,
@@ -1781,7 +1781,7 @@
   /** Маппинг тарифов из xlsx/старых карточек → текущий прайс */
   function mapTariff(raw) {
     const s = String(raw || '').trim().toLowerCase();
-    if (!s) return TARIFF_NAMES[0];
+    if (!s) return '';
     if (s.includes('опт') || s.includes('900') || s.includes('1000') || s.includes('№2')) return 'Опт';
     if (s.includes('постоян') || s.includes('кастом') || s.includes('800') || s.includes('баз')) return 'Постоянник';
     if (s.includes('развит') || s.includes('рост') || s.includes('15490') || s.includes('15 490') || s.includes('прем') || s.includes('№4')) return 'Развитие';
