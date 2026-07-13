@@ -691,20 +691,45 @@
      ==================================================================== */
   let _orderPayload = null;   // последний snap.payload (anketas + payment)
 
-  // Юридические тексты версионируются отдельно от настроек оплаты. В CRM можно
-  // добавить условия конкретного заказа, но они не подменяют единую оферту.
+  // Оферта одна: кабинет читает её из /legal/offer.html и сохраняет точный
+  // текст в заказе. При недоступности документа заказ не отправляется.
   const LEGAL = window.MentoriLegal || {};
-  const LEGAL_VERSION = LEGAL.version || '2026-07-13';
-  const OFFER_DEFAULT = LEGAL.offerText || 'Публичная оферта Mentori: /legal/offer.html';
+  const OFFER_VERSION = LEGAL.offerVersion || LEGAL.version || '2026-07-13-2';
+  const CONSENT_VERSION = LEGAL.consentVersion || '2026-07-13';
   const DATA_CONSENT_DEFAULT = LEGAL.consentText || 'Согласие на обработку персональных данных Mentori: /legal/consent.html';
+  let _canonicalOfferText = '';
+  let _canonicalOfferPromise = null;
 
-  function _offerText(pay) {
-    let extra = String((pay && pay.offerText) || '').trim();
-    // Старый встроенный черновик содержал безусловный запрет возврата и не
-    // должен становиться дополнением к новой оферте.
-    if (/оплата за размещение отзывов возврату не подлежит/i.test(extra)
-      || /без возврата средств/i.test(extra)) extra = '';
-    return OFFER_DEFAULT + (extra ? `\n\nДОПОЛНИТЕЛЬНЫЕ УСЛОВИЯ ЗАКАЗА\n${extra}` : '');
+  function preloadLegalDocuments() {
+    if (_canonicalOfferText) return Promise.resolve(_canonicalOfferText);
+    if (_canonicalOfferPromise) return _canonicalOfferPromise;
+    _canonicalOfferPromise = fetch('../../legal/offer.html?v=20260713d', { cache: 'no-store' })
+      .then(res => {
+        if (!res.ok) throw new Error(`offer ${res.status}`);
+        return res.text();
+      })
+      .then(html => {
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        const main = doc.querySelector('.legal-main');
+        if (!main) throw new Error('offer body not found');
+        const blocks = [...main.querySelectorAll('h1, .legal-date, h2, p, li')]
+          .map(el => String(el.textContent || '').trim())
+          .filter(Boolean);
+        const requisites = main.querySelector('.legal-requisites');
+        if (requisites) blocks.push(String(requisites.textContent || '').replace(/\s+/g, ' ').trim());
+        const text = blocks.join('\n\n');
+        if (text.length < 1000 || !/Публичная оферта/i.test(text)) throw new Error('offer text is incomplete');
+        _canonicalOfferText = text;
+        return text;
+      })
+      .catch(error => {
+        console.warn('[client-app] canonical offer unavailable', error);
+        return '';
+      })
+      .finally(() => {
+        _canonicalOfferPromise = null;
+      });
+    return _canonicalOfferPromise;
   }
 
   /** Реквизиты → массив строк {label, value, copy, note} для рендера с кнопками
@@ -887,8 +912,15 @@
   /** Окно с текстом условий заказа. Без аргумента — текущие условия;
    *  с textOverride — показывает именно тот текст (снимок из конкретной заявки —
    *  доказательство, с какими условиями клиент согласился). */
-  function openTerms(textOverride) {
-    openLegalText('Публичная оферта', textOverride, _offerText((_orderPayload && _orderPayload.payment) || {}));
+  async function openTerms(textOverride) {
+    const text = (typeof textOverride === 'string' && textOverride.trim())
+      ? textOverride
+      : await preloadLegalDocuments();
+    openLegalText(
+      'Публичная оферта',
+      text,
+      'Не удалось загрузить Публичную оферту. Обновите страницу и попробуйте ещё раз.'
+    );
   }
 
   function openDataConsent(textOverride) {
@@ -911,6 +943,12 @@
   async function onOrderSubmit() {
     const btn = document.getElementById('ordSubmit');
     const result = document.getElementById('ordResult');
+    const offerText = await preloadLegalDocuments();
+    if (!offerText) {
+      result.className = 'cli-ord-result is-err';
+      result.textContent = 'Не удалось загрузить Публичную оферту. Обновите страницу и попробуйте ещё раз.';
+      return;
+    }
     const pay = (_orderPayload && _orderPayload.payment) || {};
     const tariffs = pay.tariffs || [];
     const target = (document.querySelector('input[name="ordTarget"]:checked') || {}).value || 'new';
@@ -995,11 +1033,11 @@
       profile_url: profileUrl || null,
       receipt_url: receipt_url || null,
       offer_agreed: offer_agreed,
-      offer_text: _offerText(pay),
-      offer_version: LEGAL_VERSION,
+      offer_text: offerText,
+      offer_version: OFFER_VERSION,
       personal_data_agreed: personal_data_agreed,
       personal_data_consent_text: DATA_CONSENT_DEFAULT,
-      personal_data_consent_version: LEGAL_VERSION,
+      personal_data_consent_version: CONSENT_VERSION,
       consent_user_agent: String(navigator.userAgent || '').slice(0, 1000),
       comment: comment || null
     });
@@ -1173,43 +1211,27 @@
   }
 
   /* ---- Оплатить остаток (по конкретным заказам) ---- */
-  // Старый остаток должен закрываться как отдельный пакет, даже если клиент
-  // уже создал новый заказ по той же анкете.
-  let _pendingRemainOrderIds = new Set();
-  function _payableRemain() {
-    return (_myOrders || []).filter(o => {
-      if (!o || o.order_type === 'remainder') return false;
-      if (o.status !== 'confirmed' || o.remainder_status !== 'pending') return false;
-      if (_pendingRemainOrderIds.has(String(o.id))) return false;
-      return _remainOrderAmount(o) > 0;
+  // Часть старых карточек появилась до client_orders. Калькулятор добавляет
+  // разницу из карточки к современным остаткам и защищает от повторной заявки.
+  function _payableRemainItems() {
+    const anketas = (_orderPayload && _orderPayload.anketas) || [];
+    const calculator = window.MentoriRemainder;
+    if (!calculator || typeof calculator.calculate !== 'function') return [];
+    return calculator.calculate(_myOrders || [], anketas).map(item => {
+      const date = _fmtDateTime(item.confirmed_at);
+      const label = item.kind === 'legacy'
+        ? `${item.code || item.name || 'Анкета'} · остаток по карточке`
+        : `${item.code || item.name || '—'} · ${item.tariff_name || 'Пакет'}${date ? ' · ' + date : ''}`;
+      return { ...item, label };
     });
-  }
-  function _remainOrderAmount(o) {
-    const amount = Number(o.amount) || 0;
-    const prepay = o.prepay_amount != null ? Number(o.prepay_amount) : amount;
-    return Math.max(0, amount - prepay);
-  }
-  function _remainOrderLabel(o) {
-    const code = o.anketa_code || o.anketa_name || '—';
-    const tariff = o.tariff_name || 'Пакет';
-    const date = _fmtDateTime(o.confirmed_at || o.created_at);
-    return `${code} · ${tariff}${date ? ' · ' + date : ''}`;
   }
   function renderRemainder(payload, orders) {
     if (payload) _orderPayload = payload;
     _myOrders = orders || _myOrders || [];
-    _pendingRemainOrderIds = new Set();
-    (orders || []).forEach(o => {
-      if (o.order_type === 'remainder' && (o.status === 'new' || o.status === 'confirmed')) {
-        (o.items || []).forEach(it => {
-          if (it.source_order_id) _pendingRemainOrderIds.add(String(it.source_order_id));
-        });
-      }
-    });
     const cta = document.querySelector('[data-cli-remain-cta]');
     if (!cta) return;
-    const payable = _payableRemain();
-    const total = payable.reduce((s, o) => s + _remainOrderAmount(o), 0);
+    const payable = _payableRemainItems();
+    const total = payable.reduce((s, item) => s + item.amount, 0);
     if (!payable.length || total <= 0) { cta.hidden = true; return; }
     cta.hidden = false;
     const totalEl = cta.querySelector('[data-cli-remain-total]');
@@ -1241,21 +1263,21 @@
     const body = document.querySelector('[data-cli-remain-body]');
     if (!m || !body || !_orderPayload) return;
     const pay = _orderPayload.payment || {};
-    const orders = _payableRemain();
-    if (!orders.length) return;
+    const items = _payableRemainItems();
+    if (!items.length) return;
     body.innerHTML = `
       <div class="cli-ord-field">
         <div class="cli-ord-label">Выбери пакеты для оплаты остатка</div>
-        ${orders.map(o => `
+        ${items.map(item => `
           <label class="cli-remain-row">
             <input type="checkbox" class="cli-remain-chk"
-              data-source-order-id="${escapeAttr(String(o.id))}"
-              data-code="${escapeAttr(o.anketa_code || '')}"
-              data-name="${escapeAttr(o.anketa_name || o.anketa_code || '')}"
-              data-label="${escapeAttr(_remainOrderLabel(o))}"
-              data-amount="${_remainOrderAmount(o)}" checked/>
-            <span class="cli-remain-row__name">${escapeHtml(_remainOrderLabel(o))}</span>
-            <span class="cli-remain-row__amt">${fmtMoney(_remainOrderAmount(o))}</span>
+              data-source-order-id="${escapeAttr(item.source_order_id)}"
+              data-code="${escapeAttr(item.code)}"
+              data-name="${escapeAttr(item.name)}"
+              data-label="${escapeAttr(item.label)}"
+              data-amount="${item.amount}" checked/>
+            <span class="cli-remain-row__name">${escapeHtml(item.label)}</span>
+            <span class="cli-remain-row__amt">${fmtMoney(item.amount)}</span>
           </label>`).join('')}
       </div>
       <div class="cli-ord-amount" id="remainTotal"></div>
@@ -1292,6 +1314,12 @@
   async function onRemainSubmit() {
     const btn = document.getElementById('remainSubmit');
     const result = document.getElementById('remainResult');
+    const offerText = await preloadLegalDocuments();
+    if (!offerText) {
+      result.className = 'cli-ord-result is-err';
+      result.textContent = 'Не удалось загрузить Публичную оферту. Обновите страницу и попробуйте ещё раз.';
+      return;
+    }
     const body = document.querySelector('[data-cli-remain-body]');
     const sel = [...body.querySelectorAll('.cli-remain-chk:checked')];
     if (!sel.length) { result.className = 'cli-ord-result is-err'; result.textContent = 'Выбери хотя бы одну анкету.'; return; }
@@ -1299,7 +1327,7 @@
       code: c.dataset.code,
       name: c.dataset.name,
       label: c.dataset.label,
-      source_order_id: c.dataset.sourceOrderId,
+      source_order_id: c.dataset.sourceOrderId || null,
       amount: Number(c.dataset.amount) || 0
     }))
       .filter(i => i.amount > 0);
@@ -1333,11 +1361,11 @@
       amount: total,
       receipt_url: receipt_url || null,
       offer_agreed: true,
-      offer_text: _offerText((_orderPayload && _orderPayload.payment) || {}),
-      offer_version: LEGAL_VERSION,
+      offer_text: offerText,
+      offer_version: OFFER_VERSION,
       personal_data_agreed: true,
       personal_data_consent_text: DATA_CONSENT_DEFAULT,
-      personal_data_consent_version: LEGAL_VERSION,
+      personal_data_consent_version: CONSENT_VERSION,
       consent_user_agent: String(navigator.userAgent || '').slice(0, 1000)
     });
     if (ok) {
@@ -1359,6 +1387,7 @@
 
   window.ClientApp = {
     requireLogin,
+    preloadLegalDocuments,
     loadSnapshot,
     renderHeader,
     renderTotals,

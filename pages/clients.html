@@ -367,9 +367,7 @@
         <div id="tariffList" style="display:flex;flex-direction:column;gap:8px"></div>
         <button class="btn btn--ghost" id="tariffAdd" style="margin-top:12px;width:100%">+ Добавить тариф</button>
 
-        <label style="font-weight:600;font-size:13px;display:block;margin:16px 0 4px">Дополнительные условия заказа</label>
-        <div style="font-size:11px;color:var(--text-mute);margin-bottom:8px">Необязательное дополнение к единой Публичной оферте Mentori. Оно не заменяет оферту и сохраняется вместе с ней в заявке. Не добавляйте сюда безусловный запрет возврата.</div>
-        <textarea id="reqOffer" class="input" rows="6" placeholder="Например: особый срок или согласованный порядок выполнения для текущих заказов" style="width:100%;min-height:130px;font-size:13px;line-height:1.55;resize:vertical;box-sizing:border-box"></textarea>
+        <div style="font-size:11px;color:var(--text-mute);margin-top:16px">Публичная оферта едина для сайта и личного кабинета и редактируется только в <code>/legal/offer.html</code>.</div>
       </div>
       <div class="modal__footer">
         <button class="btn btn--ghost" data-close>Отмена</button>
@@ -1353,16 +1351,8 @@
       wrap.querySelectorAll('[data-act="del-tariff"]').forEach(btn =>
         btn.addEventListener('click', e => e.target.closest('[data-tariff-row]').remove()));
     }
-    // Единая оферта находится в /legal/offer.html. Здесь хранится только
-    // необязательное дополнение для конкретных заказов.
-    const OFFER_DRAFT = '';
-    function safeAdditionalTerms(text) {
-      const value = String(text || '').trim();
-      return /оплата за размещение отзывов возврату не подлежит|без возврата средств/i.test(value) ? '' : value;
-    }
     document.getElementById('btnPayConfig').addEventListener('click', () => {
       const ps = Store.state.paymentSettings || {};
-      document.getElementById('reqOffer').value = ps.offerText != null ? safeAdditionalTerms(ps.offerText) : OFFER_DRAFT;
       // requisites теперь объект; legacy-строку кладём в «примечание»
       const r = ps.requisites;
       const req = (r && typeof r === 'object') ? r : { sbpPhone: '', bank: '', card: '', recipient: '', note: (typeof r === 'string' ? r : '') };
@@ -1402,8 +1392,8 @@
           note:      document.getElementById('reqNote').value.trim()
         },
         tariffs,
-        // Храним только безопасное необязательное дополнение к единой оферте.
-        offerText: safeAdditionalTerms(document.getElementById('reqOffer').value),
+        // Оферта едина для сайта и кабинета; старые отдельные тексты очищаем.
+        offerText: '',
         updatedAt: new Date().toISOString()
       };
       Store.save();  // → push в crm_state → пересборка client_snapshots с payment

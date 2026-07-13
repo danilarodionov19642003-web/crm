@@ -118,12 +118,14 @@
   </div>
 
   <script src="../../js/supabase-client.js?v=20260528a"></script>
-  <script src="./legal-content.js?v=20260713a"></script>
-  <script src="./client-app.js?v=20260713a"></script>
+  <script src="./legal-content.js?v=20260713c"></script>
+  <script src="./remainder-calculator.js?v=20260713a"></script>
+  <script src="./client-app.js?v=20260713c"></script>
   <script>
   (async () => {
     const ok = await window.ClientApp.requireLogin();
     if (!ok) return;
+    await window.ClientApp.preloadLegalDocuments();
     const snap = await window.ClientApp.loadSnapshot();
     window.ClientApp.renderHeader(snap);
     if (!snap || !snap.payload) {
