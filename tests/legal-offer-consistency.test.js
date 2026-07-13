@@ -11,13 +11,17 @@ const legalContent = read('pages/client/legal-content.js');
 const clients = read('pages/clients.html');
 const crmApp = read('js/app.js');
 
-assert.match(offer, /Редакция 2 от 13 июля 2026 года/);
+assert.match(offer, /Редакция 3 от 13 июля 2026 года/);
+assert.match(offer, /стратегия сопровождения профиля, рассчитанная на цикл работы с обратной связью до 6 публикаций/);
+assert.match(offer, /расширенная стратегия развития и сопровождения профиля, рассчитанная на цикл работы с обратной связью до 12 публикаций/);
+assert.match(offer, /не означают продажу готовых отзывов/);
+assert.match(offer, /реальном опыте взаимодействия автора с Заказчиком/);
 assert.match(offer, /оплаченные суммы после акцепта заказа возврату не подлежат/);
 assert.match(offer, /не предоставляет Заказчику внутренние калькуляции/);
 assert.match(offer, /Обязательные права потребителя не ограничиваются/);
 assert.equal((offer.match(/<h2>/g) || []).length, 11, 'в оферте должно быть 11 разделов');
 
-assert.match(app, /fetch\('\.\.\/\.\.\/legal\/offer\.html\?v=20260713d'/);
+assert.match(app, /fetch\('\.\.\/\.\.\/legal\/offer\.html\?v=20260713e'/);
 assert.match(app, /offer_text: offerText/);
 assert.doesNotMatch(app, /LEGAL\.offerText|pay\.offerText/);
 assert.doesNotMatch(legalContent, /offerText|возврату не подлежат/);

@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  const offerVersion = '2026-07-13-2';
+  const offerVersion = '2026-07-13-3';
   const consentVersion = '2026-07-13';
   const consentText = [
     'СОГЛАСИЕ НА ОБРАБОТКУ ПЕРСОНАЛЬНЫХ ДАННЫХ',

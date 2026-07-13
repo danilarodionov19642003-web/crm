@@ -694,7 +694,7 @@
   // Оферта одна: кабинет читает её из /legal/offer.html и сохраняет точный
   // текст в заказе. При недоступности документа заказ не отправляется.
   const LEGAL = window.MentoriLegal || {};
-  const OFFER_VERSION = LEGAL.offerVersion || LEGAL.version || '2026-07-13-2';
+  const OFFER_VERSION = LEGAL.offerVersion || LEGAL.version || '2026-07-13-3';
   const CONSENT_VERSION = LEGAL.consentVersion || '2026-07-13';
   const DATA_CONSENT_DEFAULT = LEGAL.consentText || 'Согласие на обработку персональных данных Mentori: /legal/consent.html';
   let _canonicalOfferText = '';
@@ -703,7 +703,7 @@
   function preloadLegalDocuments() {
     if (_canonicalOfferText) return Promise.resolve(_canonicalOfferText);
     if (_canonicalOfferPromise) return _canonicalOfferPromise;
-    _canonicalOfferPromise = fetch('../../legal/offer.html?v=20260713d', { cache: 'no-store' })
+    _canonicalOfferPromise = fetch('../../legal/offer.html?v=20260713e', { cache: 'no-store' })
       .then(res => {
         if (!res.ok) throw new Error(`offer ${res.status}`);
         return res.text();
