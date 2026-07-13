@@ -684,10 +684,10 @@
 
   /* ====================================================================
      Заказ отзывов (самообслуживание оплаты).
-     Клиент выбирает анкету (существующую/новую) + тариф, видит реквизиты,
-     жмёт «Я оплатил» → INSERT в client_orders (RLS: только свой email).
-     Триггер в БД пингует владельца в Telegram. Реквизиты/тарифы приходят
-     в snapshot.payload.payment (владелец задаёт их в CRM).
+     Клиент выбирает анкету (существующую/новую) + тариф и жмёт
+     «Я оплатил» → INSERT в client_orders (RLS: только свой email).
+     Триггер в БД пингует владельца в Telegram. Тарифы приходят в
+     snapshot.payload.payment (владелец задаёт их в CRM).
      ==================================================================== */
   let _orderPayload = null;   // последний snap.payload (anketas + payment)
 
@@ -732,29 +732,13 @@
     return _canonicalOfferPromise;
   }
 
-  /** Реквизиты → массив строк {label, value, copy, note} для рендера с кнопками
-   *  «Копировать». Понимает и новый объект, и legacy-строку. Пустые поля скрыты. */
-  function _reqRows(req) {
-    if (!req) return [];
-    if (typeof req === 'string') return req.trim() ? [{ label: '', value: req.trim(), note: true }] : [];
-    const rows = [];
-    if ((req.sbpPhone  || '').trim()) rows.push({ label: 'СБП (телефон)', value: req.sbpPhone.trim(),  copy: true });
-    if ((req.bank      || '').trim()) rows.push({ label: 'Банк',          value: req.bank.trim(),      copy: false });
-    if ((req.card      || '').trim()) rows.push({ label: 'Карта',         value: req.card.trim(),      copy: true });
-    if ((req.recipient || '').trim()) rows.push({ label: 'Получатель',    value: req.recipient.trim(), copy: false });
-    if ((req.note      || '').trim()) rows.push({ label: '',              value: req.note.trim(),      note: true });
-    return rows;
-  }
-
   function renderOrder(payload) {
     _orderPayload = payload || null;
     const cta = document.querySelector('[data-cli-order-cta]');
     if (!cta) return;
     const pay = (payload && payload.payment) || {};
     const tariffs = pay.tariffs || [];
-    // Кнопку показываем только когда владелец задал И реквизиты, И тарифы —
-    // иначе клиенту нечем платить (форма заказа была бы бесполезной).
-    if (!tariffs.length || !_reqRows(pay.requisites).length) { cta.hidden = true; return; }
+    if (!tariffs.length) { cta.hidden = true; return; }
     cta.hidden = false;
     const btn = document.getElementById('cliOrderBtn');
     if (btn && !btn._bound) { btn._bound = true; btn.addEventListener('click', openOrderModal); }
@@ -812,25 +796,6 @@
         <div class="cli-ord-label">Ссылка на профиль (если есть)</div>
         <input type="url" class="cli-ord-input" id="ordProfileUrl" placeholder="ссылка на твою анкету/профиль"/>
       </div>
-      ${(() => {
-        const rows = _reqRows(pay.requisites);
-        if (!rows.length) return '';
-        return `
-      <div class="cli-ord-field">
-        <div class="cli-ord-label">Реквизиты для оплаты</div>
-        <div class="cli-req-list">
-          ${rows.map(r => r.note
-            ? `<div class="cli-req-note">${escapeHtml(r.value)}</div>`
-            : `<div class="cli-req-row">
-                 <div class="cli-req-row__main">
-                   <div class="cli-req-row__label">${escapeHtml(r.label)}</div>
-                   <div class="cli-req-row__val">${escapeHtml(r.value)}</div>
-                 </div>
-                 ${r.copy ? `<button type="button" class="cli-req-row__copy" data-copy="${escapeAttr(r.value)}">Копировать</button>` : ''}
-               </div>`).join('')}
-        </div>
-      </div>`;
-      })()}
       <div class="cli-ord-field">
         <div class="cli-ord-label">Чек об оплате (PDF или фото, необязательно)</div>
         <input type="file" class="cli-ord-file" id="ordReceipt" accept=".pdf,image/*"/>
@@ -1241,28 +1206,10 @@
   }
   function closeRemainModal() { const m = document.getElementById('cliRemainModal'); if (m) m.hidden = true; }
 
-  function _reqBlockHtml(req) {
-    const rows = _reqRows(req);
-    if (!rows.length) return '';
-    return `<div class="cli-ord-field"><div class="cli-ord-label">Реквизиты для оплаты</div>
-      <div class="cli-req-list">${rows.map(r => r.note
-        ? `<div class="cli-req-note">${escapeHtml(r.value)}</div>`
-        : `<div class="cli-req-row"><div class="cli-req-row__main"><div class="cli-req-row__label">${escapeHtml(r.label)}</div><div class="cli-req-row__val">${escapeHtml(r.value)}</div></div>${r.copy ? `<button type="button" class="cli-req-row__copy" data-copy="${escapeAttr(r.value)}">Копировать</button>` : ''}</div>`).join('')}</div></div>`;
-  }
-  function _bindCopyButtons(scope) {
-    scope.querySelectorAll('.cli-req-row__copy').forEach(b => b.addEventListener('click', () => {
-      const txt = b.getAttribute('data-copy') || '';
-      const done = () => { const o = b.textContent; b.textContent = '✓ Скопировано'; setTimeout(() => b.textContent = o, 1300); };
-      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(done, () => { b.textContent = 'Выдели вручную'; });
-      else b.textContent = 'Выдели вручную';
-    }));
-  }
-
   function openRemainModal() {
     const m = document.getElementById('cliRemainModal');
     const body = document.querySelector('[data-cli-remain-body]');
     if (!m || !body || !_orderPayload) return;
-    const pay = _orderPayload.payment || {};
     const items = _payableRemainItems();
     if (!items.length) return;
     body.innerHTML = `
@@ -1281,7 +1228,6 @@
           </label>`).join('')}
       </div>
       <div class="cli-ord-amount" id="remainTotal"></div>
-      ${_reqBlockHtml(pay.requisites)}
       <div class="cli-ord-field">
         <div class="cli-ord-label">Чек об оплате (PDF или фото, необязательно)</div>
         <input type="file" class="cli-ord-file" id="remainReceipt" accept=".pdf,image/*"/>
@@ -1305,7 +1251,6 @@
     };
     body.querySelectorAll('.cli-remain-chk').forEach(c => c.addEventListener('change', recalc));
     recalc();
-    _bindCopyButtons(body);
     document.getElementById('remainOfferLink').addEventListener('click', e => { e.preventDefault(); openTerms(); });
     document.getElementById('remainSubmit').addEventListener('click', onRemainSubmit);
     m.hidden = false;

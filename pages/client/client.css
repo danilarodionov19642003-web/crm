@@ -702,27 +702,6 @@ textarea.cli-ord-input { resize: vertical; }
 .cli-ord-success { text-align: center; padding: 20px 6px; }
 .cli-ord-amount { font-weight: 700; font-size: 15px; color: var(--cli-accent); margin: -4px 0 14px; min-height: 0; }
 
-/* Реквизиты построчно с кнопкой «Копировать» у каждого поля */
-.cli-req-list { display: flex; flex-direction: column; gap: 8px; }
-.cli-req-row {
-  display: flex; align-items: center; gap: 10px;
-  padding: 10px 12px; border-radius: 10px;
-  border: 1px solid rgba(255,122,0,0.30); background: rgba(255,122,0,0.06);
-}
-.cli-req-row__main { flex: 1; min-width: 0; }
-.cli-req-row__label { font-size: 11px; color: var(--text-mute, #888); }
-.cli-req-row__val { font-size: 15px; font-weight: 600; word-break: break-word; }
-.cli-req-row__copy {
-  flex: none; cursor: pointer; white-space: nowrap;
-  font-size: 12px; font-weight: 600; padding: 8px 12px; border-radius: 9px;
-  border: 1px solid var(--cli-accent); background: var(--bg-2, var(--bg)); color: var(--cli-accent);
-}
-.cli-req-row__copy:hover { background: var(--cli-accent); color: #fff; }
-.cli-req-note {
-  font-size: 13px; line-height: 1.5; white-space: pre-wrap; word-break: break-word;
-  padding: 10px 12px; border-radius: 10px; border: 1px dashed var(--border); color: var(--text);
-}
-
 /* Блокировка скролла фоновой страницы, пока открыта модалка заказа */
 body.cli-modal-open { overflow: hidden; }
 

@@ -176,9 +176,8 @@
       this.state.proxyLinks ??= [];     // ссылки для смены IP (LTE-Center и др.)
       this.state.dailyTasks ??= [];     // ежедневные задачи Насте: с какого аккаунта работать с каким клиентом
       this.state.clientPortals ??= [];  // доступы клиентов (Флагман и т.п.) к личному кабинету: см. addClientPortal
-      // Реквизиты для оплаты + тарифы: владелец редактирует в CRM (модалка
-      // «Реквизиты и тарифы»), клиент видит их в кабинете при заказе отзывов.
-      // Кладутся в каждый client_snapshot через buildClientSnapshot.
+      // Реквизиты для оплаты + тарифы владелец редактирует в CRM. Клиентские
+      // снимки получают только тарифы; реквизиты остаются внутри админской CRM.
       // tariffs: {id, name, price, qty, unit}. unit='package' — фикс-пакет
       // (price=итог, qty=число отзывов); unit='per' — за штуку (price=цена/шт,
       // qty=минимум, клиент сам выбирает количество, сумма=price×qty).
@@ -1507,10 +1506,10 @@
         anketas,
         totals,
         feed: feed.slice(0, 50),
-        // Реквизиты и тарифы для самостоятельного заказа из кабинета.
+        // Тарифы для самостоятельного заказа из кабинета. Реквизиты остаются
+        // только в админской настройке и клиентам не передаются.
         // Каноническую оферту кабинет загружает напрямую из /legal/offer.html.
         payment: {
-          requisites: (this.state.paymentSettings && this.state.paymentSettings.requisites) || '',
           tariffs: paymentTariffs
         },
         generatedAt: new Date().toISOString()
