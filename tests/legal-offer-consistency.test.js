@@ -9,6 +9,7 @@ const offer = read('legal/offer.html');
 const app = read('pages/client/client-app.js');
 const legalContent = read('pages/client/legal-content.js');
 const clients = read('pages/clients.html');
+const crmApp = read('js/app.js');
 
 assert.match(offer, /Редакция 2 от 13 июля 2026 года/);
 assert.match(offer, /оплаченные суммы после акцепта заказа возврату не подлежат/);
@@ -21,6 +22,8 @@ assert.match(app, /offer_text: offerText/);
 assert.doesNotMatch(app, /LEGAL\.offerText|pay\.offerText/);
 assert.doesNotMatch(legalContent, /offerText|возврату не подлежат/);
 assert.doesNotMatch(clients, /id="reqOffer"|safeAdditionalTerms|OFFER_DRAFT/);
-assert.match(clients, /offerText: ''/);
+assert.doesNotMatch(clients, /offerText/);
+assert.match(crmApp, /delete ps\.offerText/);
+assert.doesNotMatch(crmApp, /paymentSettings\.offerText/);
 
 console.log('legal offer consistency: OK');

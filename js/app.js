@@ -568,6 +568,9 @@
         if (!seen.has(t.id)) normalized.push({ ...t });
       });
       ps.tariffs = normalized;
+      // Оферта хранится только в /legal/offer.html. Удаляем устаревшую копию
+      // из общего CRM-состояния, чтобы она не попадала в новые снимки клиентов.
+      delete ps.offerText;
       this.state.paymentSettings = ps;
     },
 
@@ -1504,11 +1507,11 @@
         anketas,
         totals,
         feed: feed.slice(0, 50),
-        // Реквизиты + тарифы + текст оферты для самостоятельного заказа из кабинета.
+        // Реквизиты и тарифы для самостоятельного заказа из кабинета.
+        // Каноническую оферту кабинет загружает напрямую из /legal/offer.html.
         payment: {
           requisites: (this.state.paymentSettings && this.state.paymentSettings.requisites) || '',
-          tariffs: paymentTariffs,
-          offerText: (this.state.paymentSettings && this.state.paymentSettings.offerText) || ''
+          tariffs: paymentTariffs
         },
         generatedAt: new Date().toISOString()
       };
