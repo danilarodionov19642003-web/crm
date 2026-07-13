@@ -40,6 +40,11 @@ create table if not exists public.client_orders (
   receipt_url   text,                         -- публичная ссылка на чек (Supabase Storage, bucket receipts)
   offer_agreed  boolean default false,        -- клиент поставил галочку согласия с офертой
   offer_text    text,                          -- СНИМОК текста условий на момент заказа (пруф согласия)
+  offer_version text,                          -- редакция оферты, например 2026-07-13
+  personal_data_agreed boolean default false,  -- ОТДЕЛЬНАЯ галочка согласия на обработку ПД
+  personal_data_consent_text text,              -- снимок отдельного согласия на момент заказа
+  personal_data_consent_version text,           -- редакция согласия
+  consent_user_agent text,                      -- браузер/устройство как часть журнала акцепта
 
   -- обработка владельцем
   status        text not null default 'new', -- new | confirmed | rejected
@@ -53,6 +58,11 @@ alter table public.client_orders add column if not exists profile_url text;
 alter table public.client_orders add column if not exists receipt_url text;
 alter table public.client_orders add column if not exists offer_agreed boolean default false;
 alter table public.client_orders add column if not exists offer_text text;
+alter table public.client_orders add column if not exists offer_version text;
+alter table public.client_orders add column if not exists personal_data_agreed boolean default false;
+alter table public.client_orders add column if not exists personal_data_consent_text text;
+alter table public.client_orders add column if not exists personal_data_consent_version text;
+alter table public.client_orders add column if not exists consent_user_agent text;
 alter table public.client_orders add column if not exists pay_full boolean default false;
 alter table public.client_orders add column if not exists prepay_amount numeric;
 alter table public.client_orders add column if not exists remainder_status text;

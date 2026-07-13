@@ -691,11 +691,21 @@
      ==================================================================== */
   let _orderPayload = null;   // последний snap.payload (anketas + payment)
 
-  // Текст оферты по умолчанию (если владелец не задал свой в CRM → «Реквизиты»).
-  // Галочка согласия показывается всегда — так клиент не закажет без согласия.
-  const OFFER_DEFAULT = '1. Оплата за размещение отзывов возврату не подлежит.\n'
-    + '2. Если анкета (аккаунт) будет заблокирована площадкой, оставшиеся отзывы '
-    + 'переносятся на другую анкету или другой период — без возврата средств.';
+  // Юридические тексты версионируются отдельно от настроек оплаты. В CRM можно
+  // добавить условия конкретного заказа, но они не подменяют единую оферту.
+  const LEGAL = window.MentoriLegal || {};
+  const LEGAL_VERSION = LEGAL.version || '2026-07-13';
+  const OFFER_DEFAULT = LEGAL.offerText || 'Публичная оферта Mentori: /legal/offer.html';
+  const DATA_CONSENT_DEFAULT = LEGAL.consentText || 'Согласие на обработку персональных данных Mentori: /legal/consent.html';
+
+  function _offerText(pay) {
+    let extra = String((pay && pay.offerText) || '').trim();
+    // Старый встроенный черновик содержал безусловный запрет возврата и не
+    // должен становиться дополнением к новой оферте.
+    if (/оплата за размещение отзывов возврату не подлежит/i.test(extra)
+      || /без возврата средств/i.test(extra)) extra = '';
+    return OFFER_DEFAULT + (extra ? `\n\nДОПОЛНИТЕЛЬНЫЕ УСЛОВИЯ ЗАКАЗА\n${extra}` : '');
+  }
 
   /** Реквизиты → массив строк {label, value, copy, note} для рендера с кнопками
    *  «Копировать». Понимает и новый объект, и legacy-строку. Пустые поля скрыты. */
@@ -807,7 +817,11 @@
       <div class="cli-ord-offer">
         <label class="cli-ord-offer__check">
           <input type="checkbox" id="ordOffer"/>
-          <span>Я ознакомился и согласен с <a href="#" id="ordOfferLink">условиями оказания услуг</a></span>
+          <span>Я принимаю <a href="#" id="ordOfferLink">Публичную оферту</a></span>
+        </label>
+        <label class="cli-ord-offer__check">
+          <input type="checkbox" id="ordPersonalData"/>
+          <span>Я отдельно даю <a href="../../legal/consent.html" target="_blank" rel="noopener">согласие на обработку персональных данных</a> и ознакомлен с <a href="../../legal/privacy.html" target="_blank" rel="noopener">Политикой конфиденциальности</a></span>
         </label>
       </div>
       <div class="cli-ord-result" id="ordResult"></div>
@@ -870,18 +884,25 @@
     document.body.classList.add('cli-modal-open');  // блок скролла фона
   }
 
-  /** Окно с текстом условий заказа. Без аргумента — текущие условия (из снимка);
+  /** Окно с текстом условий заказа. Без аргумента — текущие условия;
    *  с textOverride — показывает именно тот текст (снимок из конкретной заявки —
    *  доказательство, с какими условиями клиент согласился). */
   function openTerms(textOverride) {
+    openLegalText('Публичная оферта', textOverride, _offerText((_orderPayload && _orderPayload.payment) || {}));
+  }
+
+  function openDataConsent(textOverride) {
+    openLegalText('Согласие на обработку данных', textOverride, DATA_CONSENT_DEFAULT);
+  }
+
+  function openLegalText(title, textOverride, fallback) {
     const m = document.getElementById('cliTermsModal');
     const body = document.querySelector('[data-cli-terms-body]');
     if (!m || !body) return;
+    const titleEl = m.querySelector('[data-cli-terms-title]');
+    if (titleEl) titleEl.textContent = title;
     let text = (typeof textOverride === 'string' && textOverride.trim()) ? textOverride : '';
-    if (!text) {
-      const pay = (_orderPayload && _orderPayload.payment) || {};
-      text = (pay.offerText && pay.offerText.trim()) ? pay.offerText : OFFER_DEFAULT;
-    }
+    if (!text) text = fallback;
     body.innerHTML = escapeHtml(text).replace(/\n/g, '<br>');
     m.hidden = false;
   }
@@ -924,14 +945,21 @@
       if (!anketa_name) { result.className = 'cli-ord-result is-err'; result.textContent = 'Впиши имя новой анкеты.'; return; }
     }
 
-    // согласие с офертой обязательно (галочка показывается всегда)
+    // Оферта и обработка персональных данных подтверждаются отдельно.
     const offerChk = document.getElementById('ordOffer');
     if (!offerChk || !offerChk.checked) {
       result.className = 'cli-ord-result is-err';
-      result.textContent = 'Отметь согласие с условиями оказания услуг.';
+      result.textContent = 'Подтверди принятие Публичной оферты.';
+      return;
+    }
+    const personalDataChk = document.getElementById('ordPersonalData');
+    if (!personalDataChk || !personalDataChk.checked) {
+      result.className = 'cli-ord-result is-err';
+      result.textContent = 'Дай отдельное согласие на обработку персональных данных.';
       return;
     }
     const offer_agreed = true;
+    const personal_data_agreed = true;
 
     btn.disabled = true;
     // чек (если приложен) — грузим в Storage ДО создания заявки
@@ -967,7 +995,12 @@
       profile_url: profileUrl || null,
       receipt_url: receipt_url || null,
       offer_agreed: offer_agreed,
-      offer_text: (pay.offerText && pay.offerText.trim()) ? pay.offerText : OFFER_DEFAULT,
+      offer_text: _offerText(pay),
+      offer_version: LEGAL_VERSION,
+      personal_data_agreed: personal_data_agreed,
+      personal_data_consent_text: DATA_CONSENT_DEFAULT,
+      personal_data_consent_version: LEGAL_VERSION,
+      consent_user_agent: String(navigator.userAgent || '').slice(0, 1000),
       comment: comment || null
     });
 
@@ -1045,7 +1078,7 @@
     try {
       const url = `${_url()}/rest/v1/client_orders`
         + `?client_email=eq.${encodeURIComponent(email)}`
-        + `&select=id,anketa_code,anketa_name,is_new_anketa,tariff_name,qty,amount,status,created_at,confirmed_at,offer_agreed,offer_text,pay_full,prepay_amount,remainder_status,order_type,items`
+        + `&select=id,anketa_code,anketa_name,is_new_anketa,tariff_name,qty,amount,status,created_at,confirmed_at,offer_agreed,offer_text,offer_version,personal_data_agreed,personal_data_consent_text,personal_data_consent_version,pay_full,prepay_amount,remainder_status,order_type,items`
         + `&order=created_at.desc&limit=40`;
       const res = await fetch(url, { headers: { 'apikey': _key(), 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' } });
       if (!res.ok) { console.warn('[client-app] loadMyOrders failed', res.status); return []; }
@@ -1092,8 +1125,8 @@
         payLine = `<div class="cli-order__pay">💳 К оплате: ${fmtMoney(prepay)}${o.pay_full ? ' (100%)' : ' (предоплата 50%)'}</div>`;
       }
     }
-    const consent = (!isRem && o.offer_agreed)
-      ? `<div class="cli-order__consent">✅ Условия оказания услуг приняты · ${_fmtDateTime(o.created_at)}${o.offer_text ? ` · <button type="button" class="cli-order__terms" data-view-terms="${o.id}">посмотреть</button>` : ''}</div>`
+    const consent = o.offer_agreed
+      ? `<div class="cli-order__consent">✅ Оферта${o.offer_version ? ' ' + escapeHtml(o.offer_version) : ''} принята${o.personal_data_agreed ? ' · согласие на обработку данных дано' : ''} · ${_fmtDateTime(o.created_at)}${o.offer_text ? ` · <button type="button" class="cli-order__terms" data-view-terms="${o.id}">оферта</button>` : ''}${o.personal_data_consent_text ? ` · <button type="button" class="cli-order__terms" data-view-consent="${o.id}">согласие</button>` : ''}</div>`
       : '';
     return `
       <div class="cli-order">
@@ -1132,6 +1165,10 @@
     el.querySelectorAll('[data-view-terms]').forEach(b => b.addEventListener('click', () => {
       const o = _myOrders.find(x => String(x.id) === b.dataset.viewTerms);
       if (o) openTerms(o.offer_text);
+    }));
+    el.querySelectorAll('[data-view-consent]').forEach(b => b.addEventListener('click', () => {
+      const o = _myOrders.find(x => String(x.id) === b.dataset.viewConsent);
+      if (o) openDataConsent(o.personal_data_consent_text);
     }));
   }
 
@@ -1227,6 +1264,16 @@
         <div class="cli-ord-label">Чек об оплате (PDF или фото, необязательно)</div>
         <input type="file" class="cli-ord-file" id="remainReceipt" accept=".pdf,image/*"/>
       </div>
+      <div class="cli-ord-offer">
+        <label class="cli-ord-offer__check">
+          <input type="checkbox" id="remainOffer"/>
+          <span>Я принимаю <a href="#" id="remainOfferLink">Публичную оферту</a></span>
+        </label>
+        <label class="cli-ord-offer__check">
+          <input type="checkbox" id="remainPersonalData"/>
+          <span>Я отдельно даю <a href="../../legal/consent.html" target="_blank" rel="noopener">согласие на обработку персональных данных</a> и ознакомлен с <a href="../../legal/privacy.html" target="_blank" rel="noopener">Политикой конфиденциальности</a></span>
+        </label>
+      </div>
       <div class="cli-ord-result" id="remainResult"></div>
       <button type="button" class="cli-ord-submit" id="remainSubmit">Я оплатил остаток</button>
     `;
@@ -1237,6 +1284,7 @@
     body.querySelectorAll('.cli-remain-chk').forEach(c => c.addEventListener('change', recalc));
     recalc();
     _bindCopyButtons(body);
+    document.getElementById('remainOfferLink').addEventListener('click', e => { e.preventDefault(); openTerms(); });
     document.getElementById('remainSubmit').addEventListener('click', onRemainSubmit);
     m.hidden = false;
   }
@@ -1257,6 +1305,12 @@
       .filter(i => i.amount > 0);
     const total = items.reduce((s, i) => s + i.amount, 0);
     if (!items.length || total <= 0) { result.className = 'cli-ord-result is-err'; result.textContent = 'Нет суммы к оплате.'; return; }
+    if (!document.getElementById('remainOffer').checked) {
+      result.className = 'cli-ord-result is-err'; result.textContent = 'Подтверди принятие Публичной оферты.'; return;
+    }
+    if (!document.getElementById('remainPersonalData').checked) {
+      result.className = 'cli-ord-result is-err'; result.textContent = 'Дай отдельное согласие на обработку персональных данных.'; return;
+    }
 
     btn.disabled = true;
     const fileInp = document.getElementById('remainReceipt');
@@ -1277,7 +1331,14 @@
       anketa_name: items.map(i => i.label || i.code).join(', '),
       items: items,
       amount: total,
-      receipt_url: receipt_url || null
+      receipt_url: receipt_url || null,
+      offer_agreed: true,
+      offer_text: _offerText((_orderPayload && _orderPayload.payment) || {}),
+      offer_version: LEGAL_VERSION,
+      personal_data_agreed: true,
+      personal_data_consent_text: DATA_CONSENT_DEFAULT,
+      personal_data_consent_version: LEGAL_VERSION,
+      consent_user_agent: String(navigator.userAgent || '').slice(0, 1000)
     });
     if (ok) {
       body.innerHTML = `
@@ -1313,6 +1374,7 @@
     loadMyOrders,
     renderMyOrders,
     openTerms,
+    openDataConsent,
     closeTerms,
     fmtDate, fmtMoney, escapeHtml
   };

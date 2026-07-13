@@ -50,11 +50,11 @@
       </div>
 
       <div class="cli-col cli-col--right">
-        <!-- Условия оказания услуг — видимой карточкой, открывает модалку -->
+        <!-- Публичная оферта — видимой карточкой, открывает модалку -->
         <button type="button" class="cli-terms-card" data-cli-terms>
           <span class="cli-terms-card__icon">📄</span>
           <span class="cli-terms-card__body">
-            <span class="cli-terms-card__title">Условия оказания услуг</span>
+            <span class="cli-terms-card__title">Публичная оферта</span>
             <span class="cli-terms-card__sub">оплата, сроки, возвраты, гарантии — нажми, чтобы прочитать</span>
           </span>
         </button>
@@ -71,6 +71,14 @@
         <div data-cli-feed style="margin-top:22px"></div>
       </div>
     </div>
+
+    <footer class="cli-foot">
+      <a class="cli-foot__link" href="../../legal/privacy.html" target="_blank" rel="noopener">Политика конфиденциальности</a>
+      <span aria-hidden="true">·</span>
+      <a class="cli-foot__link" href="../../legal/consent.html" target="_blank" rel="noopener">Согласие на обработку данных</a>
+      <span aria-hidden="true">·</span>
+      <a class="cli-foot__link" href="../../legal/offer.html" target="_blank" rel="noopener">Публичная оферта</a>
+    </footer>
   </main>
 
   <!-- Условия заказа (оферта): открывается по ссылке из галочки и из футера. -->
@@ -78,7 +86,7 @@
     <div class="cli-modal__backdrop" data-cli-terms-close></div>
     <div class="cli-modal__box">
       <div class="cli-modal__head">
-        <h3>Условия оказания услуг</h3>
+        <h3 data-cli-terms-title>Публичная оферта</h3>
         <button class="cli-modal__x" type="button" data-cli-terms-close>✕</button>
       </div>
       <div class="cli-modal__body cli-terms" data-cli-terms-body></div>
@@ -110,7 +118,8 @@
   </div>
 
   <script src="../../js/supabase-client.js?v=20260528a"></script>
-  <script src="./client-app.js?v=20260628i"></script>
+  <script src="./legal-content.js?v=20260713a"></script>
+  <script src="./client-app.js?v=20260713a"></script>
   <script>
   (async () => {
     const ok = await window.ClientApp.requireLogin();

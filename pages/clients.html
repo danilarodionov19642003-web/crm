@@ -367,9 +367,9 @@
         <div id="tariffList" style="display:flex;flex-direction:column;gap:8px"></div>
         <button class="btn btn--ghost" id="tariffAdd" style="margin-top:12px;width:100%">+ Добавить тариф</button>
 
-        <label style="font-weight:600;font-size:13px;display:block;margin:16px 0 4px">Оферта (условия оказания услуг)</label>
-        <div style="font-size:11px;color:var(--text-mute);margin-bottom:8px">Клиент в кабинете увидит этот текст и обязан поставить галочку согласия перед оплатой (галочка обязательна всегда; если оставить <b>пусто</b> — покажется встроенный черновик). Каждый пункт с новой строки. При заказе текст условий сохраняется в заявку как доказательство согласия.</div>
-        <textarea id="reqOffer" class="input" rows="10" placeholder="Например:&#10;1. Оплата за отзывы возврату не подлежит.&#10;2. Если анкету заблокировали — переносим оставшиеся отзывы на другую анкету.&#10;3. ..." style="width:100%;min-height:200px;font-size:13px;line-height:1.55;resize:vertical;box-sizing:border-box"></textarea>
+        <label style="font-weight:600;font-size:13px;display:block;margin:16px 0 4px">Дополнительные условия заказа</label>
+        <div style="font-size:11px;color:var(--text-mute);margin-bottom:8px">Необязательное дополнение к единой Публичной оферте Mentori. Оно не заменяет оферту и сохраняется вместе с ней в заявке. Не добавляйте сюда безусловный запрет возврата.</div>
+        <textarea id="reqOffer" class="input" rows="6" placeholder="Например: особый срок или согласованный порядок выполнения для текущих заказов" style="width:100%;min-height:130px;font-size:13px;line-height:1.55;resize:vertical;box-sizing:border-box"></textarea>
       </div>
       <div class="modal__footer">
         <button class="btn btn--ghost" data-close>Отмена</button>
@@ -1353,14 +1353,16 @@
       wrap.querySelectorAll('[data-act="del-tariff"]').forEach(btn =>
         btn.addEventListener('click', e => e.target.closest('[data-tariff-row]').remove()));
     }
-    // Черновик оферты — подставляется при первом открытии (offerText ещё не задан).
-    const OFFER_DRAFT = [
-      '1. Оплата за размещение отзывов возврату не подлежит.',
-      '2. Если анкета (аккаунт) будет заблокирована площадкой, оставшиеся отзывы переносятся на другую анкету или другой период — без возврата средств.'
-    ].join('\n');
+    // Единая оферта находится в /legal/offer.html. Здесь хранится только
+    // необязательное дополнение для конкретных заказов.
+    const OFFER_DRAFT = '';
+    function safeAdditionalTerms(text) {
+      const value = String(text || '').trim();
+      return /оплата за размещение отзывов возврату не подлежит|без возврата средств/i.test(value) ? '' : value;
+    }
     document.getElementById('btnPayConfig').addEventListener('click', () => {
       const ps = Store.state.paymentSettings || {};
-      document.getElementById('reqOffer').value = ps.offerText != null ? ps.offerText : OFFER_DRAFT;
+      document.getElementById('reqOffer').value = ps.offerText != null ? safeAdditionalTerms(ps.offerText) : OFFER_DRAFT;
       // requisites теперь объект; legacy-строку кладём в «примечание»
       const r = ps.requisites;
       const req = (r && typeof r === 'object') ? r : { sbpPhone: '', bank: '', card: '', recipient: '', note: (typeof r === 'string' ? r : '') };
@@ -1400,9 +1402,8 @@
           note:      document.getElementById('reqNote').value.trim()
         },
         tariffs,
-        // пустое поле НЕ затирает существующую оферту (защита от случайной потери)
-        offerText: document.getElementById('reqOffer').value.trim()
-          || (Store.state.paymentSettings && Store.state.paymentSettings.offerText) || '',
+        // Храним только безопасное необязательное дополнение к единой оферте.
+        offerText: safeAdditionalTerms(document.getElementById('reqOffer').value),
         updatedAt: new Date().toISOString()
       };
       Store.save();  // → push в crm_state → пересборка client_snapshots с payment
@@ -1583,7 +1584,7 @@
               ? `<div style="font-size:13px;margin-top:4px">💰 <b>Доплата остатка</b> · анкеты: ${escapeHtml(o.anketa_name || '—')} · итого <b>${sum}</b></div>`
                 + ((o.items && o.items.length) ? `<div style="font-size:12px;color:var(--text-mute);margin-top:3px">${o.items.map(it => escapeHtml(it.code || '') + ': ' + (Number(it.amount) || 0).toLocaleString('ru-RU') + ' ₽').join(' · ')}</div>` : '')
               : `<div style="font-size:13px;margin-top:4px">Анкета: ${anketa} · Тариф: ${escapeHtml(o.tariff_name || '—')}${o.qty ? ' · ' + o.qty + ' отз.' : ''} · сумма <b>${sum}</b></div><div style="font-size:12px;margin-top:3px">${payLine}</div>`}
-            <div style="font-size:12px;color:var(--text-mute);margin-top:3px">${fmtDate(o.created_at)}${o.offer_agreed ? ' · ✅ оферта принята' : ''}${links ? ' · ' + links : ''}${o.comment ? ' · 💬 ' + escapeHtml(o.comment) : ''}</div>
+            <div style="font-size:12px;color:var(--text-mute);margin-top:3px">${fmtDate(o.created_at)}${o.offer_agreed ? ' · ✅ оферта' + (o.offer_version ? ' ' + escapeHtml(o.offer_version) : '') : ''}${o.personal_data_agreed ? ' · ✅ согласие ПД' : ''}${links ? ' · ' + links : ''}${o.comment ? ' · 💬 ' + escapeHtml(o.comment) : ''}</div>
             ${actions}
           </div>`;
       }).join('');

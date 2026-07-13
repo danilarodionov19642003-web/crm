@@ -66,6 +66,15 @@
 }
 .cli-header__logout:hover { border-color: var(--cli-red); color: var(--cli-red); }
 
+.cli-login__legal {
+  margin: 12px 0 0;
+  text-align: center;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-mute, #888);
+}
+.cli-login__legal a { color: inherit; text-decoration: underline; }
+
 /* ---------- main ---------- */
 .cli-main { padding: 20px 16px 40px; max-width: 1080px; margin: 0 auto; }
 
@@ -735,7 +744,7 @@ body.cli-modal-open { overflow: hidden; }
   border: 1px solid var(--border); background: rgba(127,127,127,0.05);
 }
 .cli-ord-offer__text { font-size: 12.5px; line-height: 1.55; color: var(--text); max-height: 160px; overflow-y: auto; }
-.cli-ord-offer__check { display: flex; align-items: flex-start; gap: 8px; margin-top: 10px; font-size: 13px; cursor: pointer; }
+.cli-ord-offer__check { display: flex; align-items: flex-start; gap: 8px; margin-top: 10px; font-size: 13px; line-height: 1.45; cursor: pointer; }
 .cli-ord-offer__check input { margin-top: 2px; flex: none; width: 18px; height: 18px; accent-color: var(--cli-accent); }
 
 /* Мои заказы (история заявок клиента) */
@@ -769,8 +778,8 @@ body.cli-modal-open { overflow: hidden; }
 body:has(.cli-modal:not([hidden])) { overflow: hidden; }
 /* Ссылка «условия заказа» (в галочке и в футере) */
 .cli-ord-offer__check a, .cli-foot__link { color: var(--cli-accent); text-decoration: underline; cursor: pointer; }
-.cli-foot { margin: 28px 0 16px; text-align: center; }
-.cli-foot__link { background: none; border: none; font: inherit; font-size: 13px; padding: 4px; }
+.cli-foot { display: flex; justify-content: center; flex-wrap: wrap; gap: 4px 8px; margin: 28px 0 16px; text-align: center; color: var(--text-mute, #888); }
+.cli-foot__link { background: none; border: none; font: inherit; font-size: 12px; padding: 4px; }
 .cli-terms { font-size: 13.5px; line-height: 1.6; }
 
 /* Оплата в карточке заказа + сумма в форме */
