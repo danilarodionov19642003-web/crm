@@ -1455,6 +1455,7 @@
         // дни на календаре и понимает когда ждать следующих отзывов.
         schedule:    client && Array.isArray(client.schedule) ? client.schedule : [],
         weeklyPace:  client ? Number(client.weeklyPace) || 0 : 0,
+        packageExtras: client && Array.isArray(client.packageExtras) ? client.packageExtras : [],
         payments,
         statuses,
         reviews

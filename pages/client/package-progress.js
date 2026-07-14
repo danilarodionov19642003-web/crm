@@ -18,7 +18,7 @@
   function build(orders, anketa, activeCount) {
     const card = anketa || {};
     const code = normCode(card.code);
-    const confirmed = (Array.isArray(orders) ? orders : [])
+    const orderPackages = (Array.isArray(orders) ? orders : [])
       .filter(order => order
         && order.order_type !== 'remainder'
         && order.status === 'confirmed'
@@ -30,11 +30,30 @@
         name: String(order.tariff_name || 'Пакет'),
         qty: Math.max(0, Number(order.qty) || 0),
         date: order.confirmed_at || order.created_at || '',
-        transferred: /TRANSFER[-_:]?A28|FROM[-_:]?A28/i.test(String(order.comment || ''))
+        transferred: /TRANSFER[-_:]?A28|FROM[-_:]?A28/i.test(String(order.comment || '')),
+        bonus: false,
+        countsTowardOrdered: true
       }));
 
+    const extraPackages = (Array.isArray(card.packageExtras) ? card.packageExtras : [])
+      .filter(item => item && Number(item.qty) > 0)
+      .map(item => ({
+        id: String(item.id || ''),
+        name: String(item.name || 'Бонус'),
+        qty: Math.max(0, Number(item.qty) || 0),
+        date: item.date || '',
+        transferred: false,
+        bonus: true,
+        countsTowardOrdered: item.countsTowardOrdered !== false
+      }));
+
+    const confirmed = orderPackages.concat(extraPackages)
+      .sort((a, b) => orderTime({ confirmed_at: a.date }) - orderTime({ confirmed_at: b.date })
+        || Number(a.id || 0) - Number(b.id || 0));
+
     const ordered = Math.max(0, Number(card.ordered) || 0);
-    const knownQty = confirmed.reduce((sum, item) => sum + item.qty, 0);
+    const knownQty = confirmed.reduce((sum, item) =>
+      sum + (item.countsTowardOrdered ? item.qty : 0), 0);
     const legacyQty = Math.max(0, ordered - knownQty);
     if (legacyQty > 0) {
       confirmed.unshift({
@@ -42,7 +61,9 @@
         name: confirmed.length ? 'Ранее заказано' : String(card.tariff || 'Ранее заказано'),
         qty: legacyQty,
         date: '',
-        transferred: false
+        transferred: false,
+        bonus: false,
+        countsTowardOrdered: true
       });
     }
 

@@ -518,7 +518,7 @@
                   <span class="cli-package__state cli-package__state--${state[1]}">${state[0]}</span>
                 </div>
                 <div class="cli-package__counts">
-                  <span>Заказано <b>${item.qty}</b></span>
+                  <span>${item.bonus ? 'Бонус' : 'Заказано'} <b>${item.qty}</b></span>
                   <span>Выполнено <b>${item.done}</b></span>
                   <span>В работе <b>${item.active}</b></span>
                 </div>
