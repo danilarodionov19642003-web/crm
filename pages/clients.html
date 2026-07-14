@@ -403,6 +403,7 @@
   <script src="../js/accounts-sync.js"></script>
   <script src="../js/reviews-sync.js"></script>
   <script src="../js/schedule-apply.js?v=20260522b"></script>
+  <script src="../js/client-order-income-policy.js?v=20260714a"></script>
   <script src="../components/sidebar.js"></script>
   <script src="../components/header.js"></script>
   <script src="../components/table.js"></script>
@@ -1528,7 +1529,7 @@
     function reconcileConfirmedOrderIncome(orders) {
       let fixed = 0;
       (orders || []).forEach(o => {
-        if (o.status !== 'confirmed') return;
+        if (!window.ClientOrderIncomePolicy.shouldAutoReconcile(o)) return;
         const res = addIncomeForOrder(o);
         if (res.ok && !res.skipped) fixed++;
       });
