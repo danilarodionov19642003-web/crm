@@ -328,6 +328,58 @@
 .cli-detail-title { font-size: 24px; font-weight: 800; margin: 0 0 6px; }
 .cli-detail-sub   { color: var(--text-mute); font-size: 13px; margin-bottom: 20px; }
 
+/* ---------- пакеты по анкете ---------- */
+.cli-packages { margin: 24px 0; }
+.cli-packages__list { display: grid; gap: 10px; }
+.cli-package {
+  padding: 14px 16px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.cli-package__head,
+.cli-package__counts {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.cli-package__name { color: var(--text); font-size: 14px; font-weight: 750; }
+.cli-package__note { color: var(--text-mute); font-size: 11px; margin-top: 2px; }
+.cli-package__state {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-mute);
+  font-size: 10px;
+  font-weight: 700;
+}
+.cli-package__state--closed { color: var(--cli-green); border-color: rgba(34,197,94,.35); }
+.cli-package__state--active { color: #fa8c16; border-color: rgba(250,140,22,.35); }
+.cli-package__counts {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  color: var(--text-mute);
+  font-size: 11px;
+}
+.cli-package__counts b { color: var(--text); }
+.cli-package__bar {
+  display: flex;
+  height: 5px;
+  margin-top: 10px;
+  overflow: hidden;
+  background: var(--border);
+  border-radius: 999px;
+}
+.cli-package__bar-done { background: var(--cli-green); }
+.cli-package__bar-active { background: #fa8c16; }
+@media (max-width: 480px) {
+  .cli-package__head { align-items: flex-start; }
+  .cli-package__counts { gap: 6px 12px; }
+}
+
 .cli-table {
   width: 100%; border-collapse: collapse;
   background: var(--bg-2); border: 1px solid var(--border);

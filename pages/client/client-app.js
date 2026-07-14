@@ -178,8 +178,8 @@
   function _donutSvg(active, done, ordered) {
     const CIRC = 2 * Math.PI * 40;  // = 251.33
     const total = ordered || 0;
-    const aFrac = total > 0 ? Math.min(1, active / total) : 0;
     const dFrac = total > 0 ? Math.min(1, done   / total) : 0;
+    const aFrac = total > 0 ? Math.min(Math.max(0, 1 - dFrac), active / total) : 0;
     const aLen  = CIRC * aFrac;
     const dLen  = CIRC * dFrac;
     // segments: done сначала (0..dLen), потом active сразу за ним.
@@ -206,7 +206,10 @@
     el.innerHTML = anketas.map(a => {
       const br = _statusBreakdown(a.statuses);
       const ordered = a.ordered || 0;
-      const pct = ordered > 0 ? Math.round(((br.active + br.done) / ordered) * 100) : 0;
+      const effectiveDone = Math.max(Number(a.done) || 0, br.done);
+      const pct = ordered > 0
+        ? Math.min(100, Math.round(((br.active + effectiveDone) / ordered) * 100))
+        : 0;
       return `
         <a class="cli-card" href="./profile.html?id=${encodeURIComponent(a.mentorId)}">
           <div class="cli-card__top">
@@ -215,7 +218,7 @@
           </div>
           <div class="cli-card__body">
             <div class="cli-donut" title="Прогресс заказа: сделано и в работе">
-              ${_donutSvg(br.active, br.done, ordered)}
+              ${_donutSvg(br.active, effectiveDone, ordered)}
               <div class="cli-donut__center">
                 <div class="cli-donut__pct">${pct}%</div>
                 <div class="cli-donut__sub">прогресс</div>
@@ -485,7 +488,51 @@
   }
 
   /* --- Profile detail rendering --- */
-  function renderProfileDetail(payload, mentorId) {
+  function _packageHistoryHtml(anketa, orders, activeCount) {
+    const calculator = window.MentoriPackages;
+    if (!calculator || typeof calculator.build !== 'function') return '';
+    const packages = calculator.build(orders, anketa, activeCount);
+    if (!packages.length) return '';
+    const stateLabel = {
+      closed: ['Закрыт', 'closed'],
+      active: ['В работе', 'active'],
+      queued: ['Ожидает', 'queued']
+    };
+    return `
+      <section class="cli-packages">
+        <h3 class="cli-section-title">Пакеты по анкете</h3>
+        <div class="cli-packages__list">
+          ${packages.map(item => {
+            const state = stateLabel[item.state] || stateLabel.queued;
+            const donePct = item.qty ? Math.min(100, item.done / item.qty * 100) : 0;
+            const activePct = item.qty
+              ? Math.min(100 - donePct, item.active / item.qty * 100)
+              : 0;
+            return `
+              <article class="cli-package">
+                <div class="cli-package__head">
+                  <div>
+                    <div class="cli-package__name">${escapeHtml(item.name)}</div>
+                    ${item.transferred ? '<div class="cli-package__note">Перенос с A-28</div>' : ''}
+                  </div>
+                  <span class="cli-package__state cli-package__state--${state[1]}">${state[0]}</span>
+                </div>
+                <div class="cli-package__counts">
+                  <span>Заказано <b>${item.qty}</b></span>
+                  <span>Выполнено <b>${item.done}</b></span>
+                  <span>В работе <b>${item.active}</b></span>
+                </div>
+                <div class="cli-package__bar" aria-label="Выполнено ${item.done} из ${item.qty}">
+                  ${donePct ? `<span class="cli-package__bar-done" style="width:${donePct}%"></span>` : ''}
+                  ${activePct ? `<span class="cli-package__bar-active" style="width:${activePct}%"></span>` : ''}
+                </div>
+              </article>`;
+          }).join('')}
+        </div>
+      </section>`;
+  }
+
+  function renderProfileDetail(payload, mentorId, orders) {
     const a = (payload.anketas || []).find(x => x.mentorId === mentorId);
     const root = document.querySelector('[data-cli-profile]');
     if (!root) return;
@@ -493,11 +540,13 @@
       root.innerHTML = '<div class="cli-empty">Анкета не найдена. Возможно, доступ к ней был отозван.</div>';
       return;
     }
-    const pct = progressPct(a.done, a.ordered);
     const br = _statusBreakdown(a.statuses);
     const ordered = a.ordered || 0;
-    const wActive = ordered ? Math.min(100, (br.active / ordered) * 100) : 0;
-    const wDone   = ordered ? Math.min(100, (br.done   / ordered) * 100) : 0;
+    const effectiveDone = Math.max(Number(a.done) || 0, br.done);
+    const pct = progressPct(effectiveDone + br.active, ordered);
+    const wDone = ordered ? Math.min(100, (effectiveDone / ordered) * 100) : 0;
+    const wActive = ordered ? Math.min(100 - wDone, (br.active / ordered) * 100) : 0;
+    const packagesHtml = _packageHistoryHtml(a, orders || [], br.active);
     const totalsHtml = `
       <div class="cli-kpis" style="margin-bottom:16px">
         <div class="cli-kpi">
@@ -589,6 +638,7 @@
       <div class="cli-detail-sub">${escapeHtml(a.platform || '')}${a.tariff ? ' · ' + escapeHtml(a.tariff) : ''}${a.deadline ? ' · дедлайн ' + fmtDate(a.deadline) : ''}</div>
       ${totalsHtml}
       ${moneyHtml}
+      ${packagesHtml}
       ${statusesHtml}
       ${paymentsHtml}
       ${reviewsHtml}
@@ -1081,8 +1131,8 @@
     try {
       const url = `${_url()}/rest/v1/client_orders`
         + `?client_email=eq.${encodeURIComponent(email)}`
-        + `&select=id,anketa_code,anketa_name,is_new_anketa,tariff_name,qty,amount,status,created_at,confirmed_at,receipt_url,offer_agreed,offer_text,offer_version,personal_data_agreed,personal_data_consent_text,personal_data_consent_version,pay_full,prepay_amount,remainder_status,order_type,items`
-        + `&order=created_at.desc&limit=40`;
+        + `&select=id,anketa_code,anketa_name,is_new_anketa,tariff_name,qty,amount,status,created_at,confirmed_at,receipt_url,offer_agreed,offer_text,offer_version,personal_data_agreed,personal_data_consent_text,personal_data_consent_version,pay_full,prepay_amount,remainder_status,order_type,items,comment`
+        + `&order=created_at.desc&limit=200`;
       const res = await fetch(url, { headers: { 'apikey': _key(), 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' } });
       if (!res.ok) { console.warn('[client-app] loadMyOrders failed', res.status); return []; }
       return await res.json();
