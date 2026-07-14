@@ -1,0 +1,23 @@
+services:
+  payments:
+    build: .
+    container_name: mentori-payments
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:8010:8000"
+    networks:
+      - supnet
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+
+networks:
+  supnet:
+    external: true
+    name: supabase_supnet

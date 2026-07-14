@@ -1559,10 +1559,20 @@
           o.profile_url ? `<a href="${escapeHtml(o.profile_url)}" target="_blank" rel="noopener">🔗 профиль</a>` : '',
           o.receipt_url ? `<a href="${escapeHtml(o.receipt_url)}" target="_blank" rel="noopener">🧾 чек</a>` : ''
         ].filter(Boolean).join(' · ');
+        const onlinePayment = o.payment_provider === 'rollypay';
+        const onlinePaid = o.payment_status === 'paid';
+        const onlineActive = onlinePayment && ['initiating', 'created', 'processing'].includes(o.payment_status);
+        const canConfirm = o.status === 'new' && (!onlinePayment || onlinePaid);
+        const canReject = o.status === 'new' && !onlineActive && !onlinePaid;
+        const canDelete = !onlinePayment;
+        const paymentState = onlinePayment
+          ? `<div style="font-size:12px;margin-top:4px;color:${onlinePaid ? 'var(--green)' : 'var(--text-mute)'}">${onlinePaid ? '✅ Онлайн-оплата получена' : '⏳ Ожидает онлайн-оплату'}</div>`
+          : '';
         const actions = `<div style="display:flex;gap:8px;margin-top:10px">
-            ${o.status === 'new' ? `<button class="btn btn--primary btn--sm" data-confirm="${o.id}">✓ Подтвердить</button>
+            ${canConfirm ? `<button class="btn btn--primary btn--sm" data-confirm="${o.id}">✓ Подтвердить</button>` : ''}
+            ${canReject ? `
             <button class="btn btn--ghost btn--sm" data-reject="${o.id}" style="color:var(--red)">Отклонить</button>` : ''}
-            <button class="btn btn--ghost btn--sm" data-del="${o.id}" style="color:var(--text-mute);margin-left:auto" title="${o.status === 'confirmed' ? 'Отменить заказ и все начисления' : 'Удалить заявку'}">🗑</button>
+            ${canDelete ? `<button class="btn btn--ghost btn--sm" data-del="${o.id}" style="color:var(--text-mute);margin-left:auto" title="${o.status === 'confirmed' ? 'Отменить заказ и все начисления' : 'Удалить заявку'}">🗑</button>` : ''}
           </div>`;
         return `
           <div style="border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:10px;background:var(--bg-elev-2)">
@@ -1574,6 +1584,7 @@
               ? `<div style="font-size:13px;margin-top:4px">💰 <b>Доплата остатка</b> · анкеты: ${escapeHtml(o.anketa_name || '—')} · итого <b>${sum}</b></div>`
                 + ((o.items && o.items.length) ? `<div style="font-size:12px;color:var(--text-mute);margin-top:3px">${o.items.map(it => escapeHtml(it.code || '') + ': ' + (Number(it.amount) || 0).toLocaleString('ru-RU') + ' ₽').join(' · ')}</div>` : '')
               : `<div style="font-size:13px;margin-top:4px">Анкета: ${anketa} · Тариф: ${escapeHtml(o.tariff_name || '—')}${o.qty ? ' · ' + o.qty + ' отз.' : ''} · сумма <b>${sum}</b></div><div style="font-size:12px;margin-top:3px">${payLine}</div>`}
+            ${paymentState}
             <div style="font-size:12px;color:var(--text-mute);margin-top:3px">${fmtDate(o.created_at)}${o.offer_agreed ? ' · ✅ оферта' + (o.offer_version ? ' ' + escapeHtml(o.offer_version) : '') : ''}${o.personal_data_agreed ? ' · ✅ согласие ПД' : ''}${links ? ' · ' + links : ''}${o.comment ? ' · 💬 ' + escapeHtml(o.comment) : ''}</div>
             ${actions}
           </div>`;

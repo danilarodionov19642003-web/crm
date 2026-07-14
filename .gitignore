@@ -4,6 +4,7 @@ node_modules/
 .vscode/
 .idea/
 backups/
+payments/.env
 
 # Claude Code локальные настройки (не коммитим)
 .claude/

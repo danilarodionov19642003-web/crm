@@ -735,11 +735,13 @@
   /* ====================================================================
      Заказ отзывов (самообслуживание оплаты).
      Клиент выбирает анкету (существующую/новую) + тариф и жмёт
-     «Я оплатил» → INSERT в client_orders (RLS: только свой email).
+     «Перейти к оплате» → INSERT в client_orders (RLS: только свой email),
+     затем backend создаёт платёж RollyPay и возвращает pay_url.
      Триггер в БД пингует владельца в Telegram. Тарифы приходят в
      snapshot.payload.payment (владелец задаёт их в CRM).
      ==================================================================== */
   let _orderPayload = null;   // последний snap.payload (anketas + payment)
+  const PAYMENTS_API = 'https://mentori.tech/api/payments';
 
   // Оферта одна: кабинет читает её из /legal/offer.html и сохраняет точный
   // текст в заказе. При недоступности документа заказ не отправляется.
@@ -847,12 +849,8 @@
         <input type="url" class="cli-ord-input" id="ordProfileUrl" placeholder="ссылка на твою анкету/профиль"/>
       </div>
       <div class="cli-ord-field">
-        <div class="cli-ord-label">Чек об оплате (PDF или фото, необязательно)</div>
-        <input type="file" class="cli-ord-file" id="ordReceipt" accept=".pdf,image/*"/>
-      </div>
-      <div class="cli-ord-field">
         <div class="cli-ord-label">Комментарий (необязательно)</div>
-        <textarea class="cli-ord-input" id="ordComment" rows="2" placeholder="например: оплатил по СБП в 14:30"></textarea>
+        <textarea class="cli-ord-input" id="ordComment" rows="2" placeholder="пожелания или важная информация по заказу"></textarea>
       </div>
       <div class="cli-ord-offer">
         <label class="cli-ord-offer__check">
@@ -865,7 +863,7 @@
         </label>
       </div>
       <div class="cli-ord-result" id="ordResult"></div>
-      <button type="button" class="cli-ord-submit" id="ordSubmit">Я оплатил</button>
+      <button type="button" class="cli-ord-submit" id="ordSubmit">Перейти к оплате</button>
     `;
     // переключение существующая/новая → активируем нужное поле
     body.querySelectorAll('input[name="ordTarget"]').forEach(r => r.addEventListener('change', () => {
@@ -1015,27 +1013,9 @@
     const personal_data_agreed = true;
 
     btn.disabled = true;
-    // чек (если приложен) — грузим в Storage ДО создания заявки
-    const fileInp = document.getElementById('ordReceipt');
-    const file = fileInp && fileInp.files && fileInp.files[0];
-    let receipt_url = null;
-    if (file) {
-      if (file.size > 50 * 1024 * 1024) {
-        btn.disabled = false; result.className = 'cli-ord-result is-err';
-        result.textContent = 'Файл больше 50 МБ — выбери поменьше.'; return;
-      }
-      btn.textContent = 'Загружаю чек…';
-      receipt_url = await uploadReceipt(file);
-      if (!receipt_url) {
-        btn.disabled = false; result.className = 'cli-ord-result is-err';
-        result.textContent = 'Не получилось загрузить чек. Попробуй ещё раз или убери файл и отправь без него.';
-        return;
-      }
-    }
-
-    btn.textContent = 'Отправляю…';
+    btn.textContent = 'Создаю платёж…';
     const email = (Auth.email() || '').toLowerCase();
-    const ok = await submitOrder({
+    const order = await submitOrder({
       client_email: email,
       client_name: Auth.name() || email,
       anketa_code, anketa_name, is_new_anketa,
@@ -1046,7 +1026,7 @@
       pay_full: pay_full,
       prepay_amount: prepay_amount,
       profile_url: profileUrl || null,
-      receipt_url: receipt_url || null,
+      receipt_url: null,
       offer_agreed: offer_agreed,
       offer_text: offerText,
       offer_version: OFFER_VERSION,
@@ -1057,22 +1037,13 @@
       comment: comment || null
     });
 
-    if (ok) {
-      const box = document.querySelector('[data-cli-order-body]');
-      box.innerHTML = `
-        <div class="cli-ord-success">
-          <div style="font-size:36px">✅</div>
-          <div style="font-weight:700;margin:10px 0 4px">Заявка отправлена!</div>
-          <div style="color:var(--cli-muted,#888);font-size:13px">Проверим оплату и свяжемся. Спасибо!</div>
-          <button type="button" class="cli-ord-submit" id="ordDone" style="margin-top:18px">Закрыть</button>
-        </div>`;
-      document.getElementById('ordDone').addEventListener('click', closeOrderModal);
-      // обновим список «Мои заказы» под модалкой — новый заказ сразу виден
-      loadMyOrders().then(renderMyOrders);
+    if (order && order.id) {
+      const opened = await startPayment(order.id, btn, result);
+      if (!opened) loadMyOrders().then(renderMyOrders);
     } else {
-      btn.disabled = false; btn.textContent = 'Я оплатил';
+      btn.disabled = false; btn.textContent = 'Перейти к оплате';
       result.className = 'cli-ord-result is-err';
-      result.textContent = 'Не получилось отправить. Попробуй ещё раз или напиши менеджеру.';
+      result.textContent = 'Не получилось создать заказ. Попробуй ещё раз или напиши менеджеру.';
     }
   }
 
@@ -1084,43 +1055,45 @@
           'apikey': _key(),
           'Authorization': `Bearer ${accessToken()}`,
           'Content-Type': 'application/json',
-          'Prefer': 'return=minimal'
+          'Prefer': 'return=representation'
         },
         body: JSON.stringify(payload)
       });
       if (!res.ok && res.status !== 201 && res.status !== 204) {
         console.warn('[client-app] order insert failed', res.status, await res.text().catch(() => ''));
-        return false;
-      }
-      return true;
-    } catch (e) { console.warn('[client-app] submitOrder failed', e); return false; }
-  }
-
-  /** Загружает чек в Storage (bucket receipts, публичный). Возвращает публичную
-   *  ссылку или null. Имя — UUID, чтобы ссылку нельзя было угадать. */
-  async function uploadReceipt(file) {
-    try {
-      const rawExt = (file.name.split('.').pop() || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 8);
-      const ext = rawExt || (file.type === 'application/pdf' ? 'pdf' : 'bin');
-      const id = (window.crypto && crypto.randomUUID) ? crypto.randomUUID()
-               : (Date.now() + '-' + Math.random().toString(36).slice(2, 10));
-      const path = `receipts/${id}.${ext}`;
-      const res = await fetch(`${_url()}/storage/v1/object/${path}`, {
-        method: 'POST',
-        headers: {
-          'apikey': _key(),
-          'Authorization': `Bearer ${accessToken()}`,
-          'Content-Type': file.type || 'application/octet-stream',
-          'x-upsert': 'false'
-        },
-        body: file
-      });
-      if (!res.ok) {
-        console.warn('[client-app] receipt upload failed', res.status, await res.text().catch(() => ''));
         return null;
       }
-      return `${_url()}/storage/v1/object/public/${path}`;
-    } catch (e) { console.warn('[client-app] uploadReceipt error', e); return null; }
+      const rows = await res.json().catch(() => []);
+      return Array.isArray(rows) ? (rows[0] || null) : rows;
+    } catch (e) { console.warn('[client-app] submitOrder failed', e); return null; }
+  }
+
+  async function startPayment(orderId, button, result) {
+    if (!orderId) return false;
+    if (button) { button.disabled = true; button.textContent = 'Открываю оплату…'; }
+    if (result) { result.className = 'cli-ord-result'; result.textContent = ''; }
+    try {
+      const response = await fetch(`${PAYMENTS_API}/create`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken()}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ client_order_id: Number(orderId) })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.pay_url) throw new Error(data.detail || `payment ${response.status}`);
+      window.location.assign(data.pay_url);
+      return true;
+    } catch (error) {
+      console.warn('[client-app] payment create failed', error);
+      if (button) { button.disabled = false; button.textContent = 'Перейти к оплате'; }
+      if (result) {
+        result.className = 'cli-ord-result is-err';
+        result.textContent = 'Заказ сохранён, но платёжная страница сейчас не открылась. Закрой окно и нажми «Перейти к оплате» в истории заказа.';
+      }
+      return false;
+    }
   }
 
   /* ---- Мои заказы (история заявок клиента со статусом) ---- */
@@ -1131,7 +1104,7 @@
     try {
       const url = `${_url()}/rest/v1/client_orders`
         + `?client_email=eq.${encodeURIComponent(email)}`
-        + `&select=id,anketa_code,anketa_name,is_new_anketa,tariff_name,qty,amount,status,created_at,confirmed_at,receipt_url,offer_agreed,offer_text,offer_version,personal_data_agreed,personal_data_consent_text,personal_data_consent_version,pay_full,prepay_amount,remainder_status,order_type,items,comment`
+        + `&select=id,anketa_code,anketa_name,is_new_anketa,tariff_name,qty,amount,status,created_at,confirmed_at,receipt_url,offer_agreed,offer_text,offer_version,personal_data_agreed,personal_data_consent_text,personal_data_consent_version,pay_full,prepay_amount,remainder_status,order_type,items,comment,payment_provider,payment_id,payment_status,payment_url,payment_environment,payment_created_at,payment_paid_at`
         + `&order=created_at.desc&limit=200`;
       const res = await fetch(url, { headers: { 'apikey': _key(), 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' } });
       if (!res.ok) { console.warn('[client-app] loadMyOrders failed', res.status); return []; }
@@ -1142,6 +1115,7 @@
   const ORDER_STATUS = {
     new:       { label: 'На проверке',       cls: 'wait' },
     confirmed: { label: 'Платёж подтверждён', cls: 'ok' },
+    paid_review: { label: 'Оплата получена', cls: 'wait' },
     rejected:  { label: 'Отклонён',           cls: 'err' }
   };
   function _fmtDateTime(iso) {
@@ -1152,14 +1126,17 @@
     return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
   }
   function _orderCardHtml(o) {
-    const st = ORDER_STATUS[o.status] || { label: o.status || '—', cls: '' };
+    const paymentReceived = o.payment_status === 'paid';
+    const st = paymentReceived && o.status !== 'confirmed'
+      ? ORDER_STATUS.paid_review
+      : (ORDER_STATUS[o.status] || { label: o.status || '—', cls: '' });
     const isRem = o.order_type === 'remainder';
     const amt = Number(o.amount) || 0;
     let title, sub, payLine = '';
     if (isRem) {
       title = 'Доплата остатка';
       sub = `${escapeHtml(o.anketa_name || '—')} · ${_fmtDateTime(o.created_at)}`;
-      payLine = `<div class="cli-order__pay">💳 ${o.status === 'confirmed' ? 'Оплачено' : 'К оплате'}: ${fmtMoney(amt)}</div>`;
+      payLine = `<div class="cli-order__pay">💳 ${o.status === 'confirmed' || paymentReceived ? 'Оплачено' : 'К оплате'}: ${fmtMoney(amt)}</div>`;
     } else {
       const anketa = o.is_new_anketa
         ? `новая «${escapeHtml(o.anketa_name || '—')}»`
@@ -1168,7 +1145,7 @@
       sub = `${anketa} · ${_fmtDateTime(o.created_at)}`;
       const prepay = o.prepay_amount != null ? Number(o.prepay_amount) : amt;
       const rest = Math.max(0, amt - prepay);
-      if (o.status === 'confirmed') {
+      if (o.status === 'confirmed' || paymentReceived) {
         payLine = (o.pay_full || rest <= 0)
           ? `<div class="cli-order__pay">💳 Оплачено полностью: ${fmtMoney(amt)}</div>`
           : o.remainder_status === 'pending'
@@ -1184,6 +1161,11 @@
     const receipt = o.receipt_url
       ? `<a class="cli-order__receipt" href="${escapeAttr(o.receipt_url)}" target="_blank" rel="noopener">Открыть чек</a>`
       : '';
+    const paymentAction = o.status !== 'confirmed' && !paymentReceived
+      ? `<button type="button" class="cli-order__pay-btn" data-pay-order="${o.id}">Перейти к оплате</button>`
+      : paymentReceived && o.status !== 'confirmed'
+        ? `<div class="cli-order__payment-note">Оплата получена. Заказ обрабатывается.</div>`
+        : '';
     return `
       <div class="cli-order">
         <div class="cli-order__row">
@@ -1194,6 +1176,7 @@
           <span class="cli-order__status cli-order__status--${st.cls}">${st.label}</span>
         </div>
         ${payLine}
+        ${paymentAction}
         ${receipt}
         ${consent}
       </div>`;
@@ -1227,6 +1210,44 @@
       const o = _myOrders.find(x => String(x.id) === b.dataset.viewConsent);
       if (o) openDataConsent(o.personal_data_consent_text);
     }));
+    el.querySelectorAll('[data-pay-order]').forEach(button => {
+      button.addEventListener('click', () => startPayment(button.dataset.payOrder, button, null));
+    });
+  }
+
+  async function handlePaymentReturn() {
+    const params = new URLSearchParams(window.location.search);
+    const result = params.get('payment');
+    const orderId = Number(params.get('order')) || 0;
+    if (!result || !orderId) return;
+    const box = document.querySelector('[data-cli-payment-result]');
+    if (box) {
+      box.hidden = false;
+      box.className = `cli-payment-result ${result === 'success' ? 'is-ok' : 'is-err'}`;
+      box.textContent = result === 'success'
+        ? 'Проверяем оплату… Обычно это занимает несколько секунд.'
+        : 'Оплата не завершена. Её можно повторить в разделе «Мои заказы».';
+    }
+    if (result === 'success') {
+      for (let attempt = 0; attempt < 6; attempt++) {
+        try {
+          const response = await fetch(`${PAYMENTS_API}/orders/${orderId}`, {
+            headers: { 'Authorization': `Bearer ${accessToken()}` }
+          });
+          const data = await response.json().catch(() => ({}));
+          if (response.ok && data.status === 'paid') {
+            if (box) box.textContent = data.requires_manual_review
+              ? 'Оплата получена. Менеджер завершит обработку заказа.'
+              : 'Оплата подтверждена. Данные заказа обновлены.';
+            break;
+          }
+        } catch (error) {
+          console.warn('[client-app] payment status failed', error);
+        }
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+    }
+    history.replaceState({}, '', window.location.pathname);
   }
 
   /* ---- Оплатить остаток (по конкретным заказам) ---- */
@@ -1282,10 +1303,6 @@
           </label>`).join('')}
       </div>
       <div class="cli-ord-amount" id="remainTotal"></div>
-      <div class="cli-ord-field">
-        <div class="cli-ord-label">Чек об оплате (PDF или фото, необязательно)</div>
-        <input type="file" class="cli-ord-file" id="remainReceipt" accept=".pdf,image/*"/>
-      </div>
       <div class="cli-ord-offer">
         <label class="cli-ord-offer__check">
           <input type="checkbox" id="remainOffer"/>
@@ -1297,7 +1314,7 @@
         </label>
       </div>
       <div class="cli-ord-result" id="remainResult"></div>
-      <button type="button" class="cli-ord-submit" id="remainSubmit">Я оплатил остаток</button>
+      <button type="button" class="cli-ord-submit" id="remainSubmit">Перейти к оплате</button>
     `;
     const recalc = () => {
       const total = [...body.querySelectorAll('.cli-remain-chk:checked')].reduce((s, c) => s + (Number(c.dataset.amount) || 0), 0);
@@ -1340,25 +1357,16 @@
     }
 
     btn.disabled = true;
-    const fileInp = document.getElementById('remainReceipt');
-    const file = fileInp && fileInp.files && fileInp.files[0];
-    let receipt_url = null;
-    if (file) {
-      if (file.size > 50 * 1024 * 1024) { btn.disabled = false; result.className = 'cli-ord-result is-err'; result.textContent = 'Файл больше 50 МБ.'; return; }
-      btn.textContent = 'Загружаю чек…';
-      receipt_url = await uploadReceipt(file);
-      if (!receipt_url) { btn.disabled = false; result.className = 'cli-ord-result is-err'; result.textContent = 'Не получилось загрузить чек. Попробуй ещё или убери файл.'; return; }
-    }
-    btn.textContent = 'Отправляю…';
+    btn.textContent = 'Создаю платёж…';
     const email = (Auth.email() || '').toLowerCase();
-    const ok = await submitOrder({
+    const order = await submitOrder({
       client_email: email,
       client_name: Auth.name() || email,
       order_type: 'remainder',
       anketa_name: items.map(i => i.label || i.code).join(', '),
       items: items,
       amount: total,
-      receipt_url: receipt_url || null,
+      receipt_url: null,
       offer_agreed: true,
       offer_text: offerText,
       offer_version: OFFER_VERSION,
@@ -1367,20 +1375,13 @@
       personal_data_consent_version: CONSENT_VERSION,
       consent_user_agent: String(navigator.userAgent || '').slice(0, 1000)
     });
-    if (ok) {
-      body.innerHTML = `
-        <div class="cli-ord-success">
-          <div style="font-size:36px">✅</div>
-          <div style="font-weight:700;margin:10px 0 4px">Доплата отправлена!</div>
-          <div style="color:var(--cli-muted,#888);font-size:13px">Проверим оплату и подтвердим. Спасибо!</div>
-          <button type="button" class="cli-ord-submit" id="remainDone" style="margin-top:18px">Закрыть</button>
-        </div>`;
-      document.getElementById('remainDone').addEventListener('click', closeRemainModal);
-      loadMyOrders().then(o => { renderMyOrders(o); renderRemainder(_orderPayload, o); });
+    if (order && order.id) {
+      const opened = await startPayment(order.id, btn, result);
+      if (!opened) loadMyOrders().then(o => { renderMyOrders(o); renderRemainder(_orderPayload, o); });
     } else {
-      btn.disabled = false; btn.textContent = 'Я оплатил остаток';
+      btn.disabled = false; btn.textContent = 'Перейти к оплате';
       result.className = 'cli-ord-result is-err';
-      result.textContent = 'Не получилось отправить. Попробуй ещё раз или напиши менеджеру.';
+      result.textContent = 'Не получилось создать доплату. Попробуй ещё раз или напиши менеджеру.';
     }
   }
 
@@ -1401,6 +1402,7 @@
     closeRemainModal,
     loadMyOrders,
     renderMyOrders,
+    handlePaymentReturn,
     openTerms,
     openDataConsent,
     closeTerms,

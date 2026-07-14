@@ -2,7 +2,7 @@
 -- client_orders — заявки клиентов на оплату/заказ отзывов из личного кабинета.
 --
 -- Клиент в кабинете жмёт «Заказать отзывы» → выбирает тариф и анкету
--- (существующую или новую) → видит реквизиты → жмёт «Я оплатил».
+-- (существующую или новую) → переходит на защищённую страницу оплаты.
 -- Кабинет (под JWT клиента) вставляет строку сюда. RLS пускает клиента
 -- вставлять/читать ТОЛЬКО свои заявки (по email из JWT).
 --
@@ -68,6 +68,13 @@ alter table public.client_orders add column if not exists prepay_amount numeric;
 alter table public.client_orders add column if not exists remainder_status text;
 alter table public.client_orders add column if not exists order_type text default 'order';
 alter table public.client_orders add column if not exists items jsonb;
+alter table public.client_orders add column if not exists payment_provider text;
+alter table public.client_orders add column if not exists payment_id text;
+alter table public.client_orders add column if not exists payment_status text;
+alter table public.client_orders add column if not exists payment_url text;
+alter table public.client_orders add column if not exists payment_environment text;
+alter table public.client_orders add column if not exists payment_created_at timestamptz;
+alter table public.client_orders add column if not exists payment_paid_at timestamptz;
 
 create index if not exists client_orders_status_idx
   on public.client_orders (status, created_at);
@@ -127,49 +134,26 @@ security definer
 set search_path = public
 as $$
 declare
-  owner_chat bigint := 6876234451;   -- bot_owner_chat_id (@MentoriTG_bot)
-  anketa_lbl text;
-  tariff_lbl text;
-  pay_lbl text;
+  owner_chat bigint := 6876234451;
+  target_label text;
   msg text;
 begin
-  if NEW.order_type = 'remainder' then
-    -- доплата остатка по анкетам (anketa_name = сводка кодов, items = разбивка)
-    msg := '💰 Доплата остатка!' || E'\n'
-        || '👤 ' || coalesce(NEW.client_name, NEW.client_email, 'клиент') || E'\n'
-        || 'Анкеты: ' || coalesce(NEW.anketa_name, '—') || E'\n'
-        || 'Итого: ' || trim(to_char(coalesce(NEW.amount, 0), 'FM999999990')) || ' ₽'
-        || case when coalesce(NEW.receipt_url, '') <> '' then E'\n🧾 чек: ' || NEW.receipt_url else '' end
-        || case when coalesce(NEW.comment, '') <> '' then E'\n💬 ' || NEW.comment else '' end;
-  else
-    anketa_lbl := case
-      when NEW.is_new_anketa
-        then 'новая «' || coalesce(NEW.anketa_name, '—') || '»'
-      else coalesce(NEW.anketa_code, '') ||
-           case when coalesce(NEW.anketa_name, '') <> ''
-                then ' (' || NEW.anketa_name || ')' else '' end
-    end;
-    tariff_lbl := coalesce(NEW.tariff_name, '—')
-      || case when NEW.qty is not null then ' · ' || NEW.qty || ' шт' else '' end
-      || case when NEW.amount is not null
-              then ' · ' || trim(to_char(NEW.amount, 'FM999999990')) || ' ₽' else '' end;
-    pay_lbl := (case when NEW.pay_full then 'оплачено полностью' else 'предоплата 50%' end)
-      || case when NEW.prepay_amount is not null
-              then ': ' || trim(to_char(NEW.prepay_amount, 'FM999999990')) || ' ₽' else '' end;
-    msg := '💰 Новая оплата!' || E'\n'
-        || '👤 ' || coalesce(NEW.client_name, NEW.client_email, 'клиент') || E'\n'
-        || 'Анкета: ' || anketa_lbl || E'\n'
-        || 'Тариф: ' || tariff_lbl || E'\n'
-        || '💳 ' || pay_lbl
-        || case when coalesce(NEW.profile_url, '') <> '' then E'\n🔗 ' || NEW.profile_url else '' end
-        || case when coalesce(NEW.receipt_url, '') <> '' then E'\n🧾 чек: ' || NEW.receipt_url else '' end
-        || case when coalesce(NEW.comment, '') <> '' then E'\n💬 ' || NEW.comment else '' end;
-  end if;
-
-  -- mentor_id переиспользуем под order_id — notifier берёт его для callback-кнопок.
+  target_label := case
+    when NEW.order_type = 'remainder' then coalesce(NEW.anketa_name, '—')
+    when NEW.is_new_anketa then 'новая «' || coalesce(NEW.anketa_name, '—') || '»'
+    else coalesce(NEW.anketa_code, NEW.anketa_name, '—')
+  end;
+  msg := '🧾 Новый заказ · ожидает онлайн-оплату' || E'\n'
+      || '👤 ' || coalesce(NEW.client_name, NEW.client_email, 'клиент') || E'\n'
+      || 'Анкета: ' || target_label || E'\n'
+      || 'К оплате: ' || trim(to_char(
+           case when NEW.order_type = 'remainder'
+                then coalesce(NEW.amount, 0)
+                else coalesce(NEW.prepay_amount, NEW.amount, 0) end,
+           'FM999999990')) || ' ₽';
   insert into public.notification_outbox
-    (telegram_chat_id, kind, message, status, mentor_id)
-  values (owner_chat, 'client_order', msg, 'pending', NEW.id::text);
+    (telegram_chat_id, kind, message, status, mentor_id, client_email)
+  values (owner_chat, 'client_order_pending_payment', msg, 'pending', NEW.id::text, NEW.client_email);
   return NEW;
 end;
 $$;

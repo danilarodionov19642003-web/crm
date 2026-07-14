@@ -9,12 +9,13 @@
   <meta http-equiv="Expires" content="0"/>
   <title>Личный кабинет — Mentori</title>
   <link rel="stylesheet" href="../../css/styles.css?v=20260628a"/>
-  <link rel="stylesheet" href="client.css?v=20260714a"/>
+  <link rel="stylesheet" href="client.css?v=20260714c"/>
 </head>
 <body class="cli-body">
   <div data-cli-header></div>
 
   <main class="cli-main">
+    <div class="cli-payment-result" data-cli-payment-result hidden></div>
     <!-- Сводка (во всю ширину) -->
     <h2 class="cli-section-title">Сводка</h2>
     <div class="cli-kpis" data-cli-totals></div>
@@ -120,7 +121,7 @@
   <script src="../../js/supabase-client.js?v=20260528a"></script>
   <script src="./legal-content.js?v=20260713d"></script>
   <script src="./remainder-calculator.js?v=20260713a"></script>
-  <script src="./client-app.js?v=20260714c"></script>
+  <script src="./client-app.js?v=20260714d"></script>
   <script>
   (async () => {
     const ok = await window.ClientApp.requireLogin();
@@ -147,6 +148,7 @@
     window.ClientApp.renderRemainder(snap && snap.payload, myOrders);
     document.querySelectorAll('[data-cli-remain-close]').forEach(el => el.addEventListener('click', () => window.ClientApp.closeRemainModal()));
     window.ClientApp.renderMyOrders(myOrders);
+    await window.ClientApp.handlePaymentReturn();
     // Прокси — независимо от snapshot, доступны всем залогиненным клиентам.
     window.ClientApp.renderProxies();
     // Условия заказа — открытие модалки по ссылке (футер + ссылка в галочке) и закрытие
