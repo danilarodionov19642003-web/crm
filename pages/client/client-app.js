@@ -877,6 +877,15 @@
     const qtyInp = document.getElementById('ordQty');
     const amountEl = document.getElementById('ordAmount');
     const curTariff = () => tariffs[Number(tariffSel.value) || 0] || {};
+    const halfPay = body.querySelector('input[name="ordPay"][value="half"]');
+    const fullPay = body.querySelector('input[name="ordPay"][value="full"]');
+    function syncPaymentMode() {
+      const wasForced = halfPay.disabled;
+      const fullOnly = curTariff().fullOnly === true;
+      halfPay.disabled = fullOnly;
+      if (fullOnly) fullPay.checked = true;
+      else if (wasForced) halfPay.checked = true;
+    }
     // полная сумма заказа по выбранному тарифу/количеству
     function orderFull() {
       const t = curTariff();
@@ -903,10 +912,12 @@
     tariffSel.addEventListener('change', () => {
       const t = curTariff();
       if (t.unit === 'per') qtyInp.value = Math.max(1, Number(t.qty) || 1);
+      syncPaymentMode();
       recalcAmount();
     });
     body.querySelectorAll('input[name="ordPay"]').forEach(r => r.addEventListener('change', recalcAmount));
     qtyInp.addEventListener('input', recalcAmount);
+    syncPaymentMode();
     recalcAmount();
     // копирование каждого реквизита своей кнопкой
     body.querySelectorAll('.cli-req-row__copy').forEach(b => b.addEventListener('click', () => {

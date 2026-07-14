@@ -245,6 +245,18 @@ def canonicalize_order(
         )
         if not selected:
             raise HTTPException(status_code=409, detail="This tariff is not available")
+        if selected.get("singleUse"):
+            already_used = conn.execute(
+                """
+                select 1 from public.client_orders
+                where lower(client_email)=lower(%s) and id<>%s
+                  and lower(tariff_name)=lower(%s) and status<>'rejected'
+                limit 1
+                """,
+                (email, order["id"], selected.get("name")),
+            ).fetchone()
+            if already_used:
+                raise HTTPException(status_code=409, detail="This one-time tariff has already been used")
         price = money(selected.get("price"))
         if selected.get("unit") == "per":
             minimum = max(1, int(selected.get("qty") or 1))
@@ -271,7 +283,7 @@ def canonicalize_order(
             if normalized_code(order.get("anketa_code")) not in allowed_codes:
                 raise HTTPException(status_code=409, detail="This card is not available")
 
-        pay_full = bool(order.get("pay_full"))
+        pay_full = True if selected.get("fullOnly") else bool(order.get("pay_full"))
         prepay = amount if pay_full else (amount / 2).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
         order.update({
             "tariff_name": selected.get("name"),

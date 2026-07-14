@@ -1509,6 +1509,9 @@
         ));
       const paymentTariffs = ((this.state.paymentSettings && this.state.paymentSettings.tariffs) || [])
         .filter(t => t && (t.id !== 'regular' || regularAllowed));
+      const privateTariffs = Array.isArray(portal.paymentTariffs)
+        ? portal.paymentTariffs.filter(t => t && t.name && Number(t.price) > 0)
+        : [];
       return {
         email: portal.email,
         name: portal.name || '',
@@ -1519,7 +1522,7 @@
         // только в админской настройке и клиентам не передаются.
         // Каноническую оферту кабинет загружает напрямую из /legal/offer.html.
         payment: {
-          tariffs: paymentTariffs
+          tariffs: paymentTariffs.concat(privateTariffs)
         },
         generatedAt: new Date().toISOString()
       };
