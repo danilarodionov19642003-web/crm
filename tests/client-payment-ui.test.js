@@ -22,7 +22,7 @@ assert.match(clientApp, /Prefer': 'return=representation'/);
 assert.match(clientApp, /data-pay-order/);
 assert.match(clientApp, /const fullOnly = curTariff\(\)\.fullOnly === true/);
 assert.match(clientApp, /halfPay\.disabled = fullOnly/);
-assert.match(crmApp, /paymentTariffs\.concat\(privateTariffs\)/);
+assert.match(crmApp, /privateTariffs\.concat\(paymentTariffs\)/);
 assert.doesNotMatch(clientApp, /id="ordReceipt"|id="remainReceipt"/);
 assert.doesNotMatch(clientApp, /id="ordSubmit">Я оплатил|id="remainSubmit">Я оплатил/);
 assert.match(crmClients, /const canConfirm = o\.status === 'new' && \(!onlinePayment \|\| onlinePaid\)/);

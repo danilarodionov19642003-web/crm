@@ -1522,7 +1522,7 @@
         // только в админской настройке и клиентам не передаются.
         // Каноническую оферту кабинет загружает напрямую из /legal/offer.html.
         payment: {
-          tariffs: paymentTariffs.concat(privateTariffs)
+          tariffs: privateTariffs.concat(paymentTariffs)
         },
         generatedAt: new Date().toISOString()
       };
