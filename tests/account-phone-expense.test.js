@@ -37,14 +37,30 @@ vm.runInContext(source, context);
 
 const Store = context.window.App.Store;
 Store.state = {
-  accountRegs: [], phones: [], expenses: [],
-  profiles: [{ id: 'profile-1', code: '2-1' }, { id: 'profile-2', code: '2-2' }],
+  accountRegs: [
+    { id: 'reg-source-1', profileId: 'source-1', cloudPassword: 'shared-cloud-password' },
+    { id: 'reg-source-2', profileId: 'source-2', cloudPassword: 'shared-cloud-password' },
+    { id: 'reg-source-3', profileId: 'source-3', cloudPassword: 'other-password' }
+  ], phones: [], expenses: [],
+  profiles: [
+    { id: 'profile-1', code: '2-1' }, { id: 'profile-2', code: '2-2' },
+    { id: 'source-1', code: '1-1' }, { id: 'source-2', code: '1-2' }, { id: 'source-3', code: '1-3' }
+  ],
   archivedProfiles: []
 };
 Store.save = noop;
 
+assert.equal(Store.getDefaultCloudPassword(), 'shared-cloud-password',
+  'без 18-2 должен использоваться самый частый облачный пароль');
+
+const newProfile = Store.addProfile({ code: '2-3' });
+assert.equal(Store.getAccountReg(newProfile.id).cloudPassword, 'shared-cloud-password',
+  'новый аккаунт должен сразу получить общий облачный пароль');
+
 let result = Store.upsertAccountReg('profile-1', { phone: '+7 999 111-22-33' });
 assert.ok(result.phoneExpense, 'первый номер должен создать расход');
+assert.equal(result.registration.cloudPassword, 'shared-cloud-password',
+  'при первом сохранении регистрации общий пароль должен закрепиться');
 assert.equal(Store.state.expenses.length, 1);
 assert.deepEqual(
   JSON.parse(JSON.stringify(Store.state.expenses[0])),
@@ -98,5 +114,12 @@ for (const field of ['ownerName', 'phone', 'profiEmail', 'cloudPassword', 'recov
 for (const field of ['city', 'tg', 'yandexLogin', 'yandexPassword', 'avitoPhone', 'avitoEmail', 'avitoPassword', 'twoGis', 'lat', 'lon', 'notes']) {
   assert.doesNotMatch(layout, new RegExp(`\\['${field}'`), `${field} нужно скрыть из карточки`);
 }
+assert.match(statusesSource, /cloudPassword: Store\.getDefaultCloudPassword\(\)/,
+  'новая карточка должна показывать общий пароль до первого сохранения');
+
+Store.state.profiles.push({ id: 'source-18-2', code: '18-2' });
+Store.state.accountRegs.push({ id: 'reg-18-2', profileId: 'source-18-2', cloudPassword: 'preferred-18-2-password' });
+assert.equal(Store.getDefaultCloudPassword(), 'preferred-18-2-password',
+  'пароль аккаунта 18-2 должен иметь приоритет над самым частым');
 
 console.log('account phone expense: OK');

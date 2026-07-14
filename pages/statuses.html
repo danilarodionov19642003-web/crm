@@ -477,7 +477,7 @@
   </style>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260714d"></script>
+  <script src="../js/app.js?v=20260714e"></script>
   <script src="../js/supabase-client.js?v=20260528a"></script>
   <script src="../js/auth-gate.js"></script>
   <script src="../js/cloud-sync.js?v=20260710b"></script>
@@ -1284,7 +1284,9 @@
       regEditing = false;
       const p = profileById(profileId);
       if (!p) return;
-      const reg = Store.getAccountReg(profileId) || {};
+      const reg = Store.getAccountReg(profileId) || {
+        cloudPassword: Store.getDefaultCloudPassword()
+      };
       document.getElementById('regTitle').textContent = `🔐 Аккаунт ${p.code} · ${p.city || ''}`;
       document.getElementById('regUpdated').textContent = reg.updatedAt ? `обновлено ${fmtDate(reg.updatedAt)}` : '';
       renderRegView(reg);

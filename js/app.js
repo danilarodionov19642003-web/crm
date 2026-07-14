@@ -801,6 +801,10 @@
       item.code = String(item.code || '').trim();
       if (!item.city) item.city = cityFromCode(item.code);
       this.state.profiles.push(item);
+      const defaultCloudPassword = this.getDefaultCloudPassword();
+      if (defaultCloudPassword) {
+        this.state.accountRegs.push(this._buildAccountReg(item.id, { cloudPassword: defaultCloudPassword }));
+      }
       this.save();
       return item;
     },
@@ -1667,6 +1671,49 @@
     getAccountReg(profileId) {
       return (this.state.accountRegs || []).find(r => r.profileId === profileId) || null;
     },
+    /** Общий облачный пароль: сначала аккаунт 18-2, затем самое частое
+     *  непустое значение среди регистраций. Сам пароль в коде не хранится. */
+    getDefaultCloudPassword() {
+      const regs = this.state.accountRegs || [];
+      const profiles = (this.state.profiles || []).concat(this.state.archivedProfiles || []);
+      const sourceProfile = profiles.find(p => String(p.code || '').trim().toLowerCase() === '18-2');
+      if (sourceProfile) {
+        const sourceReg = regs.find(r => r.profileId === sourceProfile.id);
+        const direct = String((sourceReg && sourceReg.cloudPassword) || '').trim();
+        if (direct) return direct;
+      }
+
+      const counts = new Map();
+      let best = '';
+      let bestCount = 0;
+      regs.forEach(reg => {
+        const password = String((reg && reg.cloudPassword) || '').trim();
+        if (!password) return;
+        const count = (counts.get(password) || 0) + 1;
+        counts.set(password, count);
+        if (count > bestCount) {
+          best = password;
+          bestCount = count;
+        }
+      });
+      return best;
+    },
+    _buildAccountReg(profileId, patch) {
+      const defaultCloudPassword = this.getDefaultCloudPassword();
+      const rec = Object.assign({
+        id: uid(), profileId,
+        ownerName: '', phone: '', tg: '', city: '',
+        yandexLogin: '', yandexPassword: '',
+        profiEmail: '', cloudPassword: defaultCloudPassword, recoveryEmail: '',
+        avitoPhone: '', avitoEmail: '', avitoPassword: '',
+        twoGis: '', lat: '', lon: '', notes: '',
+        createdAt: todayISO(), updatedAt: todayISO()
+      }, patch);
+      if (!String(rec.cloudPassword || '').trim()) rec.cloudPassword = defaultCloudPassword;
+      rec.phone = this._normalizePhone(rec.phone);
+      rec.avitoPhone = this._normalizePhone(rec.avitoPhone);
+      return rec;
+    },
     /** Создать или обновить регистрацию по profileId.
      *  Побочный эффект: номера телефонов (phone и avitoPhone) автоматически
      *  заводятся в общую базу state.phones и привязываются к этому profileId,
@@ -1681,18 +1728,7 @@
         if (patch && typeof patch.avitoPhone === 'string') patch.avitoPhone = this._normalizePhone(patch.avitoPhone);
         list[i] = Object.assign({}, list[i], patch, { updatedAt: todayISO() });
       } else {
-        const rec = Object.assign({
-          id: uid(), profileId,
-          ownerName: '', phone: '', tg: '', city: '',
-          yandexLogin: '', yandexPassword: '',
-          profiEmail: '', cloudPassword: '', recoveryEmail: '',
-          avitoPhone: '', avitoEmail: '', avitoPassword: '',
-          twoGis: '', lat: '', lon: '', notes: '',
-          createdAt: todayISO(), updatedAt: todayISO()
-        }, patch);
-        rec.phone = this._normalizePhone(rec.phone);
-        rec.avitoPhone = this._normalizePhone(rec.avitoPhone);
-        list.push(rec);
+        list.push(this._buildAccountReg(profileId, patch));
       }
       // Авто-привязка номеров к разделу «Номера»
       const finalReg = (this.state.accountRegs || []).find(r => r.profileId === profileId);
