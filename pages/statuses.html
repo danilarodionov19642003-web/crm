@@ -522,7 +522,10 @@
     };
 
     function mentorById(id) { return Store.state.mentors.find(m => m.id === id); }
-    function profileById(id) { return Store.state.profiles.find(p => p.id === id); }
+    function profileById(id) {
+      const found = Store.getProfileOrArchived(id);
+      return found ? found.profile : null;
+    }
     function mentorLabel(m) { return m ? `${m.code || '?'}` : '?'; }
     function mentorFull(m) { return m ? `${m.code || '?'} · ${m.name || ''}` : '?'; }
     /** Короткая дата «5 апр» / «12 мар» — для компактных бейджей в чипе */

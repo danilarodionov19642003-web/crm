@@ -104,6 +104,18 @@ result = Store.upsertAccountReg('profile-1', { phone: '12345' });
 assert.equal(result.phoneExpense, null, 'неполный номер не должен создавать расход');
 assert.equal(Store.state.expenses.length, 1);
 
+Store.state.archivedProfiles.push({ id: 'archived-profile', code: '9-9', archived: true });
+Store.state.accountRegs.push({
+  id: 'archived-reg',
+  profileId: 'archived-profile',
+  phone: '89994445566'
+});
+assert.deepEqual(
+  Array.from(Store.profilesUsingPhone('+7 (999) 444-55-66')),
+  ['archived-profile'],
+  'общая проверка номера должна находить регистрацию архивного аккаунта'
+);
+
 const statusesSource = fs.readFileSync(path.join(__dirname, '../pages/statuses.html'), 'utf8');
 const layoutMatch = statusesSource.match(/const REG_FIELDS_LAYOUT = \[([\s\S]*?)\n    \];/);
 assert.ok(layoutMatch, 'список полей карточки должен существовать');
@@ -116,6 +128,8 @@ for (const field of ['city', 'tg', 'yandexLogin', 'yandexPassword', 'avitoPhone'
 }
 assert.match(statusesSource, /cloudPassword: Store\.getDefaultCloudPassword\(\)/,
   'новая карточка должна показывать общий пароль до первого сохранения');
+assert.match(statusesSource, /function profileById\(id\) \{[\s\S]*?Store\.getProfileOrArchived\(id\)/,
+  'предупреждение о дубликате должно уметь показать код архивного аккаунта');
 
 Store.state.profiles.push({ id: 'source-17-2', code: '17-2' });
 Store.state.accountRegs.push({ id: 'reg-17-2', profileId: 'source-17-2', cloudPassword: 'preferred-17-2-password' });
