@@ -9,7 +9,7 @@
   <meta http-equiv="Expires" content="0"/>
   <title>Личный кабинет — Mentori</title>
   <link rel="stylesheet" href="../../css/styles.css?v=20260628a"/>
-  <link rel="stylesheet" href="client.css?v=20260714c"/>
+  <link rel="stylesheet" href="client.css?v=20260714d"/>
 </head>
 <body class="cli-body">
   <div data-cli-header></div>
@@ -24,10 +24,10 @@
     <div class="cli-cta-row">
       <div class="cli-order-cta" data-cli-order-cta hidden>
         <div class="cli-order-cta__text">
-          <div class="cli-order-cta__title">Нужны ещё отзывы?</div>
-          <div class="cli-order-cta__sub">Выбери тариф и анкету — покажем итоговую сумму заказа.</div>
+          <div class="cli-order-cta__title">Пакеты для одной или нескольких анкет</div>
+          <div class="cli-order-cta__sub">Добавь нужные тарифы и оплати их одним платежом.</div>
         </div>
-        <button class="cli-order-cta__btn" id="cliOrderBtn" type="button">💳 Заказать отзывы</button>
+        <button class="cli-order-cta__btn" id="cliOrderBtn" type="button">Купить пакеты</button>
       </div>
       <div class="cli-order-cta cli-remain-cta" data-cli-remain-cta hidden>
         <div class="cli-order-cta__text">
@@ -99,7 +99,7 @@
     <div class="cli-modal__backdrop" data-cli-order-close></div>
     <div class="cli-modal__box">
       <div class="cli-modal__head">
-        <h3>Заказать отзывы</h3>
+        <h3>Пакеты для анкет</h3>
         <button class="cli-modal__x" type="button" data-cli-order-close>✕</button>
       </div>
       <div class="cli-modal__body" data-cli-order-body></div>
@@ -121,7 +121,8 @@
   <script src="../../js/supabase-client.js?v=20260528a"></script>
   <script src="./legal-content.js?v=20260713d"></script>
   <script src="./remainder-calculator.js?v=20260713a"></script>
-  <script src="./client-app.js?v=20260714e"></script>
+  <script src="./order-cart.js?v=20260714a"></script>
+  <script src="./client-app.js?v=20260714f"></script>
   <script>
   (async () => {
     const ok = await window.ClientApp.requireLogin();

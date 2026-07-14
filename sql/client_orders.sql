@@ -33,8 +33,10 @@ create table if not exists public.client_orders (
   pay_full      boolean default false,        -- клиент выбрал оплату 100% сразу (иначе 50% предоплата)
   prepay_amount numeric,                      -- сколько внесено при заказе (50% или 100% от amount)
   remainder_status text,                      -- null|pending — есть ли у заказа неоплаченные 50%
-  order_type    text default 'order',         -- 'order' (новый заказ отзывов) | 'remainder' (доплата остатка)
-  items         jsonb,                         -- для remainder: [{code,name,amount}] по анкетам
+  order_type    text default 'order',         -- order | remainder | multi_order | package_item (внутренний)
+  items         jsonb,                         -- remainder allocations или пакеты multi_order
+  parent_order_id bigint references public.client_orders(id) on delete cascade,
+  parent_item_id text,
   comment       text,
   profile_url   text,                         -- ссылка на профиль клиента (упрощает работу владельцу)
   receipt_url   text,                         -- публичная ссылка на чек (Supabase Storage, bucket receipts)
@@ -68,6 +70,8 @@ alter table public.client_orders add column if not exists prepay_amount numeric;
 alter table public.client_orders add column if not exists remainder_status text;
 alter table public.client_orders add column if not exists order_type text default 'order';
 alter table public.client_orders add column if not exists items jsonb;
+alter table public.client_orders add column if not exists parent_order_id bigint;
+alter table public.client_orders add column if not exists parent_item_id text;
 alter table public.client_orders add column if not exists payment_provider text;
 alter table public.client_orders add column if not exists payment_id text;
 alter table public.client_orders add column if not exists payment_status text;
@@ -80,6 +84,23 @@ create index if not exists client_orders_status_idx
   on public.client_orders (status, created_at);
 create index if not exists client_orders_email_idx
   on public.client_orders (client_email);
+create unique index if not exists client_orders_parent_item_idx
+  on public.client_orders(parent_order_id, parent_item_id)
+  where parent_order_id is not null;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.client_orders'::regclass
+      and conname = 'client_orders_parent_order_id_fkey'
+  ) then
+    alter table public.client_orders
+      add constraint client_orders_parent_order_id_fkey
+      foreign key (parent_order_id) references public.client_orders(id) on delete cascade;
+  end if;
+end
+$$;
 
 alter table public.client_orders enable row level security;
 
@@ -88,7 +109,22 @@ alter table public.client_orders enable row level security;
 drop policy if exists client_orders_auth_insert on public.client_orders;
 create policy client_orders_auth_insert
   on public.client_orders for insert to authenticated
-  with check (client_email = (auth.jwt() ->> 'email'));
+  with check (
+    client_email = (auth.jwt() ->> 'email')
+    and parent_order_id is null
+    and parent_item_id is null
+    and order_type is distinct from 'package_item'
+    and status = 'new'
+    and confirmed_at is null
+    and remainder_status is null
+    and payment_provider is null
+    and payment_id is null
+    and payment_status is null
+    and payment_url is null
+    and payment_environment is null
+    and payment_created_at is null
+    and payment_paid_at is null
+  );
 
 -- Клиент видит только свои заявки.
 drop policy if exists client_orders_auth_select on public.client_orders;
@@ -138,14 +174,33 @@ declare
   target_label text;
   msg text;
 begin
-  target_label := case
-    when NEW.order_type = 'remainder' then coalesce(NEW.anketa_name, '—')
-    when NEW.is_new_anketa then 'новая «' || coalesce(NEW.anketa_name, '—') || '»'
-    else coalesce(NEW.anketa_code, NEW.anketa_name, '—')
-  end;
+  if NEW.parent_order_id is not null or NEW.order_type = 'package_item' then
+    return NEW;
+  end if;
+
+  if NEW.order_type = 'multi_order' then
+    select coalesce(string_agg(
+      case when coalesce(item->>'is_new_anketa', 'false') = 'true'
+        then 'новая «' || coalesce(item->>'anketa_name', '—') || '»'
+        else coalesce(item->>'anketa_code', item->>'anketa_name', '—')
+      end || ' — ' || coalesce(item->>'tariff_name', 'тариф'),
+      ', '
+    ), 'составной заказ')
+    into target_label
+    from jsonb_array_elements(
+      case when jsonb_typeof(NEW.items) = 'array' then NEW.items else '[]'::jsonb end
+    ) item;
+  else
+    target_label := case
+      when NEW.order_type = 'remainder' then coalesce(NEW.anketa_name, '—')
+      when NEW.is_new_anketa then 'новая «' || coalesce(NEW.anketa_name, '—') || '»'
+      else coalesce(NEW.anketa_code, NEW.anketa_name, '—')
+    end;
+  end if;
   msg := '🧾 Новый заказ · ожидает онлайн-оплату' || E'\n'
       || '👤 ' || coalesce(NEW.client_name, NEW.client_email, 'клиент') || E'\n'
-      || 'Анкета: ' || target_label || E'\n'
+      || case when NEW.order_type = 'multi_order' then 'Пакеты: ' else 'Анкета: ' end
+      || target_label || E'\n'
       || 'К оплате: ' || trim(to_char(
            case when NEW.order_type = 'remainder'
                 then coalesce(NEW.amount, 0)

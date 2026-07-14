@@ -722,6 +722,7 @@
 .cli-modal__x { border: none; background: transparent; color: var(--text-mute, #888); font-size: 18px; cursor: pointer; padding: 4px 8px; border-radius: 8px; }
 .cli-modal__x:hover { background: rgba(127,127,127,0.12); }
 .cli-modal__body { padding: 16px 18px; overflow-y: auto; }
+#cliOrderModal .cli-modal__box { max-width: 640px; }
 
 .cli-ord-field { margin-bottom: 14px; }
 .cli-ord-label { font-weight: 600; font-size: 13px; margin-bottom: 6px; }
@@ -754,8 +755,68 @@ textarea.cli-ord-input { resize: vertical; }
 .cli-ord-success { text-align: center; padding: 20px 6px; }
 .cli-ord-amount { font-weight: 700; font-size: 15px; color: var(--cli-accent); margin: -4px 0 14px; min-height: 0; }
 
+.cli-cart-intro { margin-bottom: 12px; color: var(--text-mute, #888); font-size: 13px; }
+.cli-cart-list { display: flex; flex-direction: column; gap: 10px; }
+.cli-cart-item {
+  padding: 12px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--bg-2, var(--bg));
+}
+.cli-cart-item__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.cli-cart-item__head strong { font-size: 14px; }
+.cli-cart-item__remove {
+  width: 30px; height: 30px; flex: none; border: 0; border-radius: 8px;
+  background: transparent; color: var(--text-mute, #888); cursor: pointer; font-size: 20px;
+}
+.cli-cart-item__remove:hover { background: rgba(239,68,68,.10); color: var(--cli-red); }
+.cli-cart-target {
+  display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 6px;
+  margin-top: 10px; padding: 3px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--bg);
+}
+.cli-cart-target__option { position: relative; min-width: 0; cursor: pointer; }
+.cli-cart-target__option input { position: absolute; opacity: 0; pointer-events: none; }
+.cli-cart-target__option span {
+  display: flex; min-height: 36px; align-items: center; justify-content: center;
+  padding: 6px 9px; border-radius: 7px; font-size: 12.5px; text-align: center;
+}
+.cli-cart-target__option input:checked + span {
+  background: var(--bg-2, var(--bg)); color: var(--cli-accent); font-weight: 700;
+  box-shadow: 0 1px 5px rgba(0,0,0,.12);
+}
+.cli-cart-target__option input:disabled + span { opacity: .45; cursor: default; }
+.cli-cart-grid { display: grid; grid-template-columns: minmax(0,1fr) minmax(140px,.45fr); gap: 10px; }
+.cli-cart-control { display: block; margin-top: 10px; }
+.cli-cart-control > span { display: block; font-size: 12px; color: var(--text-mute, #888); }
+.cli-cart-control small { font-size: inherit; }
+.cli-cart-item__sum { margin-top: 10px; font-size: 12px; color: var(--text-mute, #888); }
+.cli-cart-add {
+  width: 100%; margin: 10px 0 14px; padding: 11px 12px; border: 1px dashed var(--cli-accent);
+  border-radius: 8px; background: rgba(255,122,0,.05); color: var(--cli-accent);
+  font: inherit; font-size: 13px; font-weight: 700; cursor: pointer;
+}
+.cli-cart-add span { font-size: 18px; vertical-align: -1px; margin-right: 4px; }
+.cli-cart-add:disabled { opacity: .45; cursor: default; }
+.cli-cart-payment { margin-top: 4px; }
+.cli-cart-total {
+  display: flex; flex-direction: column; gap: 3px; margin: 0 0 14px;
+  padding: 12px 14px; border-left: 3px solid var(--cli-accent); background: rgba(255,122,0,.06);
+  border-radius: 8px;
+}
+.cli-cart-total span { color: var(--text); font-size: 13px; font-weight: 500; }
+.cli-cart-total b { font-size: 16px; }
+.cli-cart-total small { color: var(--text-mute, #888); font-size: 12px; font-weight: 400; }
+.cli-order__packages { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
+.cli-order__package { font-size: 12px; line-height: 1.45; color: var(--text-mute, #888); }
+
 /* Блокировка скролла фоновой страницы, пока открыта модалка заказа */
 body.cli-modal-open { overflow: hidden; }
+
+@media (max-width: 560px) {
+  .cli-cart-grid { grid-template-columns: 1fr; gap: 0; }
+  .cli-cart-target__option span { min-height: 40px; font-size: 12px; }
+  #cliOrderModal { padding: 8px; }
+  #cliOrderModal .cli-modal__box { max-height: 96vh; }
+}
 
 /* Поле выбора файла чека */
 .cli-ord-file {

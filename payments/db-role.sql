@@ -5,14 +5,15 @@ alter role mentori_payments nobypassrls;
 grant connect on database postgres to mentori_payments;
 grant usage on schema public to mentori_payments;
 grant select, update on public.crm_state, public.client_snapshots to mentori_payments;
-grant select, update on public.client_orders to mentori_payments;
-revoke insert, delete on public.client_orders from mentori_payments;
+grant select, insert, update on public.client_orders to mentori_payments;
+revoke delete on public.client_orders from mentori_payments;
 grant select, insert, update on public.payment_transactions to mentori_payments;
 grant select, insert on public.payment_webhook_events to mentori_payments;
 grant insert on public.notification_outbox to mentori_payments;
 grant usage, select on sequence public.payment_transactions_id_seq to mentori_payments;
 grant usage, select on sequence public.payment_webhook_events_id_seq to mentori_payments;
 grant usage, select on sequence public.notification_outbox_id_seq to mentori_payments;
+grant usage, select on sequence public.client_orders_id_seq to mentori_payments;
 
 drop policy if exists payments_crm_state_select on public.crm_state;
 create policy payments_crm_state_select on public.crm_state
@@ -34,6 +35,11 @@ create policy payments_orders_select on public.client_orders
 drop policy if exists payments_orders_update on public.client_orders;
 create policy payments_orders_update on public.client_orders
   for update to mentori_payments using (true) with check (true);
+drop policy if exists payments_orders_insert on public.client_orders;
+create policy payments_orders_insert on public.client_orders
+  for insert to mentori_payments with check (
+    parent_order_id is not null and order_type = 'package_item'
+  );
 
 drop policy if exists payments_transactions_select on public.payment_transactions;
 create policy payments_transactions_select on public.payment_transactions

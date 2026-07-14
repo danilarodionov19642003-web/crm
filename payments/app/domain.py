@@ -5,7 +5,9 @@ from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 import hashlib
 import hmac
+import re
 from typing import Any
+import uuid
 
 
 class PaymentApplyError(ValueError):
@@ -64,6 +66,107 @@ def _already_applied(state: dict[str, Any], order_id: Any) -> bool:
     return any(str(item.get("clientOrderId") or "") == wanted for item in state.get("income", []))
 
 
+def _next_client_number(state: dict[str, Any]) -> int:
+    highest = 0
+    for collection in (state.get("clients", []), state.get("mentors", [])):
+        for item in collection:
+            match = re.fullmatch(r"a(\d+)", normalize_code(item.get("code")))
+            if match:
+                highest = max(highest, int(match.group(1)))
+    return highest + 1
+
+
+def _stable_id(kind: str, order_id: Any, item_id: Any) -> str:
+    seed = f"mentori:{kind}:{order_id}:{item_id}"
+    return uuid.uuid5(uuid.NAMESPACE_URL, seed).hex
+
+
+def _portal_for_email(state: dict[str, Any], email: Any) -> dict[str, Any] | None:
+    wanted = str(email or "").strip().lower()
+    return next(
+        (
+            portal for portal in state.get("clientPortals", [])
+            if str(portal.get("email") or "").strip().lower() == wanted
+        ),
+        None,
+    )
+
+
+def _create_paid_client(
+    state: dict[str, Any],
+    order: dict[str, Any],
+    item: dict[str, Any],
+    code_number: int,
+    paid_date: str,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    portal = _portal_for_email(state, order.get("client_email"))
+    if not portal:
+        raise PaymentApplyError("client portal not found for new card")
+
+    item_id = item.get("item_id") or code_number
+    code = f"a{code_number}"
+    if _find_client(state, code):
+        raise PaymentApplyError(f"generated client code already exists: {code}")
+
+    name = str(item.get("anketa_name") or "").strip()
+    if not name:
+        raise PaymentApplyError("new card name is required")
+
+    client = {
+        "id": _stable_id("client", order.get("id"), item_id),
+        "platform": "",
+        "name": name,
+        "code": code,
+        "tariff": "",
+        "ordered": 0,
+        "done": 0,
+        "paid": 0,
+        "remain": 0,
+        "total": 0,
+        "allowRegularTariff": False,
+        "date": paid_date,
+        "deadline": "",
+        "overdueDays": 0,
+        "assignedEmail": str(order.get("client_email") or "").strip().lower(),
+        "avatarUrl": "",
+    }
+    mentor = {
+        "id": _stable_id("mentor", order.get("id"), item_id),
+        "code": code,
+        "name": name,
+        "notes": "",
+        "createdAt": paid_date,
+    }
+    state.setdefault("clients", []).append(client)
+    state.setdefault("mentors", []).append(mentor)
+    portal.setdefault("mentorIds", [])
+    if mentor["id"] not in portal["mentorIds"]:
+        portal["mentorIds"].append(mentor["id"])
+    portal["updatedAt"] = paid_date
+    return client, {
+        "code": code,
+        "name": name,
+        "clientId": client["id"],
+        "mentorId": mentor["id"],
+    }
+
+
+def _apply_package(client: dict[str, Any], item: dict[str, Any]) -> Decimal:
+    full_amount = money(item.get("amount"))
+    paid_amount = money(item.get("prepay_amount"))
+    qty = int(item.get("qty") or 0)
+    if full_amount <= 0 or paid_amount <= 0 or qty <= 0:
+        raise PaymentApplyError("package values must be positive")
+    client["tariff"] = str(item.get("tariff_name") or client.get("tariff") or "")
+    client["ordered"] = int(client.get("ordered") or 0) + qty
+    client["total"] = json_number(money(client.get("total")) + full_amount)
+    client["paid"] = json_number(money(client.get("paid")) + paid_amount)
+    client["remain"] = json_number(
+        max(Decimal("0"), money(client.get("remain")) + full_amount - paid_amount)
+    )
+    return paid_amount
+
+
 def apply_paid_order(
     state: dict[str, Any],
     order: dict[str, Any],
@@ -85,6 +188,8 @@ def apply_paid_order(
     paid_date = paid_at[:10]
     allocations: list[dict[str, Any]] = []
     affected_codes: list[str] = []
+    created_anketas: list[dict[str, Any]] = []
+    package_items: list[dict[str, Any]] = []
 
     if order.get("order_type") == "remainder":
         for raw_item in order.get("items") or []:
@@ -99,19 +204,63 @@ def apply_paid_order(
             allocations.append({"accountId": client.get("id"), "amount": json_number(amount)})
             affected_codes.append(str(client.get("code") or ""))
         comment = "Доплата остатка"
+    elif order.get("order_type") == "multi_order":
+        raw_items = order.get("items") or []
+        if not raw_items:
+            raise PaymentApplyError("multi order has no package items")
+        next_number = _next_client_number(state)
+        for index, raw_item in enumerate(raw_items, start=1):
+            item = dict(raw_item)
+            created = None
+            if item.get("is_new_anketa"):
+                client, created = _create_paid_client(
+                    state, order, item, next_number, paid_date
+                )
+                next_number += 1
+                item["anketa_code"] = client["code"]
+                item["anketa_name"] = client["name"]
+                created_anketas.append(created)
+            else:
+                client = _find_client(state, item.get("anketa_code"))
+                if not client:
+                    raise PaymentApplyError(
+                        f"client not found for code {item.get('anketa_code')}"
+                    )
+                item["anketa_code"] = client.get("code") or item.get("anketa_code")
+                item["anketa_name"] = client.get("name") or item.get("anketa_name") or ""
+
+            paid_amount = _apply_package(client, item)
+            allocations.append({
+                "accountId": client.get("id"),
+                "amount": json_number(paid_amount),
+            })
+            affected_codes.append(str(client.get("code") or ""))
+            package_items.append(item)
+        order["items"] = package_items
+        comment = "Оплата составного заказа"
     else:
-        client = _find_client(state, order.get("anketa_code"))
-        if not client:
-            raise PaymentApplyError(f"client not found for code {order.get('anketa_code')}")
-        full_amount = money(order.get("amount"))
-        paid_amount = expected_payment_amount(order)
-        client["tariff"] = str(order.get("tariff_name") or client.get("tariff") or "")
-        client["ordered"] = int(client.get("ordered") or 0) + int(order.get("qty") or 0)
-        client["total"] = json_number(money(client.get("total")) + full_amount)
-        client["paid"] = json_number(money(client.get("paid")) + paid_amount)
-        client["remain"] = json_number(
-            max(Decimal("0"), money(client.get("remain")) + full_amount - paid_amount)
-        )
+        item = {
+            "item_id": "single",
+            "anketa_code": order.get("anketa_code"),
+            "anketa_name": order.get("anketa_name"),
+            "is_new_anketa": bool(order.get("is_new_anketa")),
+            "tariff_name": order.get("tariff_name"),
+            "qty": order.get("qty"),
+            "amount": order.get("amount"),
+            "prepay_amount": expected_payment_amount(order),
+            "pay_full": bool(order.get("pay_full")),
+        }
+        if item["is_new_anketa"]:
+            client, created = _create_paid_client(
+                state, order, item, _next_client_number(state), paid_date
+            )
+            order["anketa_code"] = client["code"]
+            created_anketas.append(created)
+        else:
+            client = _find_client(state, item["anketa_code"])
+            if not client:
+                raise PaymentApplyError(f"client not found for code {order.get('anketa_code')}")
+        paid_amount = _apply_package(client, item)
         allocations.append({"accountId": client.get("id"), "amount": json_number(paid_amount)})
         affected_codes.append(str(client.get("code") or ""))
         comment = "Оплата заказа (100%)" if bool(order.get("pay_full")) else "Предоплата заказа (50%)"
@@ -142,6 +291,8 @@ def apply_paid_order(
     return {
         "already_applied": False,
         "affected_codes": affected_codes,
+        "created_anketas": created_anketas,
+        "package_items": package_items,
         "income": income,
     }
 
@@ -149,6 +300,42 @@ def apply_paid_order(
 def refresh_financial_snapshot(payload: dict[str, Any], state: dict[str, Any]) -> dict[str, Any]:
     """Refresh financial fields for one portal without exposing the CRM blob."""
     result = deepcopy(payload)
+    portal = _portal_for_email(state, result.get("email"))
+    if portal:
+        mentors = {str(item.get("id")): item for item in state.get("mentors", [])}
+        existing_codes = {
+            normalize_code(item.get("code")) for item in result.get("anketas", [])
+        }
+        for mentor_id in portal.get("mentorIds", []):
+            mentor = mentors.get(str(mentor_id))
+            if not mentor:
+                continue
+            code = normalize_code(mentor.get("code"))
+            client = _find_client(state, code)
+            if not client or not code or code in existing_codes:
+                continue
+            result.setdefault("anketas", []).append({
+                "mentorId": mentor.get("id"),
+                "code": client.get("code") or mentor.get("code") or "",
+                "name": client.get("name") or mentor.get("name") or "",
+                "platform": client.get("platform") or "",
+                "tariff": client.get("tariff") or "",
+                "ordered": client.get("ordered") or 0,
+                "done": client.get("manualDone") or 0,
+                "paid": client.get("paid") or 0,
+                "remain": client.get("remain") or 0,
+                "total": client.get("total") or 0,
+                "date": client.get("date") or "",
+                "deadline": client.get("deadline") or "",
+                "overdueDays": client.get("overdueDays") or 0,
+                "schedule": client.get("schedule") or [],
+                "weeklyPace": client.get("weeklyPace") or 0,
+                "packageExtras": client.get("packageExtras") or [],
+                "payments": [],
+                "statuses": [],
+                "reviews": [],
+            })
+            existing_codes.add(code)
     incomes = state.get("income", [])
     for anketa in result.get("anketas", []):
         client = _find_client(state, anketa.get("code"))

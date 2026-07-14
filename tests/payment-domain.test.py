@@ -20,7 +20,18 @@ class PaymentDomainTest(unittest.TestCase):
                  "paid": 1000, "remain": 500, "total": 1500, "tariff": ""},
                 {"id": "a22-id", "code": "a22", "name": "Юрий", "ordered": 12,
                  "paid": 7745, "remain": 7745, "total": 15490, "tariff": "Развитие"},
+                {"id": "a34-id", "code": "a34", "name": "Последняя", "ordered": 1,
+                 "paid": 300, "remain": 0, "total": 300, "tariff": "Тест"},
             ],
+            "mentors": [
+                {"id": "a21-mentor", "code": "a21", "name": "Флагман"},
+                {"id": "a22-mentor", "code": "a22", "name": "Юрий"},
+                {"id": "a34-mentor", "code": "a34", "name": "Последняя"},
+            ],
+            "clientPortals": [{
+                "email": "client@example.com",
+                "mentorIds": ["a21-mentor", "a22-mentor"],
+            }],
             "income": [],
         }
 
@@ -60,6 +71,51 @@ class PaymentDomainTest(unittest.TestCase):
             "ordered": 22, "done": 5, "paid": 8745, "remain": 8245, "total": 16990,
         })
         self.assertEqual(payload["totals"], {})
+
+    def test_multi_payment_applies_packages_and_creates_next_card_after_payment(self):
+        state = self.base_state()
+        order = {
+            "id": 103,
+            "client_email": "client@example.com",
+            "order_type": "multi_order",
+            "items": [
+                {
+                    "item_id": "103-1", "anketa_code": "a21", "anketa_name": "Флагман",
+                    "is_new_anketa": False, "tariff_name": "Поддержка", "qty": 6,
+                    "amount": 8290, "prepay_amount": 4145, "pay_full": False,
+                },
+                {
+                    "item_id": "103-2", "anketa_code": "", "anketa_name": "Иван Иванов",
+                    "is_new_anketa": True, "tariff_name": "Развитие", "qty": 12,
+                    "amount": 15490, "prepay_amount": 15490, "pay_full": True,
+                },
+            ],
+        }
+
+        result = domain.apply_paid_order(
+            state, order, "pay_multi", "2026-07-14T12:00:00+00:00"
+        )
+
+        self.assertEqual(result["affected_codes"], ["A-21", "a35"])
+        self.assertEqual(result["created_anketas"][0]["code"], "a35")
+        self.assertEqual(order["items"][1]["anketa_code"], "a35")
+        self.assertEqual(state["clients"][0]["ordered"], 16)
+        created = next(client for client in state["clients"] if client["code"] == "a35")
+        self.assertEqual(
+            (created["ordered"], created["paid"], created["remain"], created["total"]),
+            (12, 15490, 0, 15490),
+        )
+        portal = state["clientPortals"][0]
+        self.assertIn(result["created_anketas"][0]["mentorId"], portal["mentorIds"])
+        self.assertEqual(state["income"][0]["amount"], 19635)
+
+        snapshot = domain.refresh_financial_snapshot({
+            "email": "client@example.com",
+            "anketas": [{"code": "a21", "done": 0}],
+        }, state)
+        self.assertIn("a35", [item["code"] for item in snapshot["anketas"]])
+        self.assertEqual(len(state["income"]), 1)
+        self.assertTrue(domain.apply_paid_order(state, order, "pay_multi")["already_applied"])
 
     def test_webhook_signature_uses_raw_body_and_timestamp(self):
         raw = b'{"status":"paid","amount":"100.00"}'

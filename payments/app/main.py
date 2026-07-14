@@ -40,6 +40,11 @@ FRONTEND_RETURN_URL = os.getenv(
 )
 TEST_MODE = os.getenv("ROLLYPAY_TEST_MODE", "false").lower() in {"1", "true", "yes"}
 OWNER_TELEGRAM_CHAT_ID = int(os.getenv("OWNER_TELEGRAM_CHAT_ID", "0") or 0)
+MAX_MULTI_ITEMS = 10
+MAX_NEW_ANKETAS = 5
+MAX_ITEM_QTY = 500
+MAX_PAYMENT_AMOUNT = Decimal("2000000")
+MAX_ACTIVE_PAYMENTS_PER_CLIENT = 5
 
 app = FastAPI(title="Mentori Payments", docs_url=None, redoc_url=None, openapi_url=None)
 app.add_middleware(
@@ -113,6 +118,36 @@ def active_transaction(conn: psycopg.Connection, order_id: int) -> dict[str, Any
 
 def normalized_code(value: Any) -> str:
     return str(value or "").strip().lower().replace("-", "").replace(" ", "")
+
+
+def tariff_already_used(
+    conn: psycopg.Connection,
+    email: str,
+    order_id: int,
+    tariff_name: str,
+) -> bool:
+    return bool(conn.execute(
+        """
+        select 1
+        from public.client_orders orders
+        where lower(orders.client_email)=lower(%s)
+          and orders.id<>%s
+          and orders.status<>'rejected'
+          and (
+            lower(coalesce(orders.tariff_name,''))=lower(%s)
+            or exists (
+              select 1
+              from jsonb_array_elements(
+                case when jsonb_typeof(orders.items)='array'
+                     then orders.items else '[]'::jsonb end
+              ) item
+              where lower(coalesce(item->>'tariff_name',''))=lower(%s)
+            )
+          )
+        limit 1
+        """,
+        (email, order_id, tariff_name, tariff_name),
+    ).fetchone())
 
 
 def canonicalize_order(
@@ -233,6 +268,148 @@ def canonicalize_order(
             "pay_full": True,
             "anketa_name": ", ".join(str(item["label"]) for item in canonical_items),
         })
+    elif order.get("order_type") == "multi_order":
+        requested = order.get("items") or []
+        if not isinstance(requested, list) or not 1 <= len(requested) <= MAX_MULTI_ITEMS:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Choose between 1 and {MAX_MULTI_ITEMS} packages",
+            )
+        tariffs = (snapshot.get("payment") or {}).get("tariffs") or []
+        allowed_anketas = {
+            normalized_code(item.get("code")): item
+            for item in snapshot.get("anketas") or []
+            if normalized_code(item.get("code"))
+        }
+        canonical_items: list[dict[str, Any]] = []
+        seen_new_names: set[str] = set()
+        used_single_tariffs: set[str] = set()
+        new_count = 0
+        cart_pay_full = bool(order.get("pay_full"))
+
+        for index, raw_item in enumerate(requested, start=1):
+            if not isinstance(raw_item, dict):
+                raise HTTPException(status_code=409, detail="Invalid package item")
+            tariff_id = str(raw_item.get("tariff_id") or "").strip()
+            tariff_name = str(raw_item.get("tariff_name") or "").strip()
+            selected = next(
+                (
+                    tariff for tariff in tariffs
+                    if (tariff_id and str(tariff.get("id") or "") == tariff_id)
+                    or (
+                        not tariff_id
+                        and str(tariff.get("name") or "").strip().casefold()
+                        == tariff_name.casefold()
+                    )
+                ),
+                None,
+            )
+            if not selected:
+                raise HTTPException(status_code=409, detail="A tariff is no longer available")
+
+            selected_name = str(selected.get("name") or "").strip()
+            if selected.get("singleUse"):
+                single_key = selected_name.casefold()
+                if single_key in used_single_tariffs or tariff_already_used(
+                    conn, email, order["id"], selected_name
+                ):
+                    raise HTTPException(
+                        status_code=409,
+                        detail="This one-time tariff has already been used",
+                    )
+                used_single_tariffs.add(single_key)
+
+            price = money(selected.get("price"))
+            if selected.get("unit") == "per":
+                minimum = max(1, int(selected.get("qty") or 1))
+                try:
+                    qty = int(raw_item.get("qty") or 0)
+                except (TypeError, ValueError) as exc:
+                    raise HTTPException(status_code=409, detail="Invalid quantity") from exc
+                if qty < minimum or qty > MAX_ITEM_QTY:
+                    raise HTTPException(status_code=409, detail="Package quantity is outside limits")
+                amount = price * qty
+            else:
+                qty = int(selected.get("qty") or 0)
+                amount = price
+            if qty <= 0 or amount <= 0:
+                raise HTTPException(status_code=409, detail="Tariff configuration is invalid")
+
+            is_new = bool(raw_item.get("is_new_anketa"))
+            if is_new:
+                new_count += 1
+                if new_count > MAX_NEW_ANKETAS:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=f"No more than {MAX_NEW_ANKETAS} new cards per payment",
+                    )
+                anketa_name = " ".join(str(raw_item.get("anketa_name") or "").split())
+                if not 2 <= len(anketa_name) <= 120:
+                    raise HTTPException(status_code=409, detail="New card name is invalid")
+                name_key = anketa_name.casefold()
+                if name_key in seen_new_names:
+                    raise HTTPException(status_code=409, detail="Duplicate new card in one payment")
+                seen_new_names.add(name_key)
+                anketa_code = ""
+            else:
+                requested_code = normalized_code(raw_item.get("anketa_code"))
+                anketa = allowed_anketas.get(requested_code)
+                if not anketa:
+                    raise HTTPException(status_code=409, detail="A selected card is not available")
+                anketa_code = str(anketa.get("code") or "")
+                anketa_name = str(anketa.get("name") or anketa_code)
+
+            profile_url = str(raw_item.get("profile_url") or "").strip()
+            if len(profile_url) > 2000 or (
+                profile_url and not profile_url.lower().startswith(("http://", "https://"))
+            ):
+                raise HTTPException(status_code=409, detail="Profile link is invalid")
+
+            item_pay_full = cart_pay_full or bool(selected.get("fullOnly"))
+            prepay = amount if item_pay_full else (
+                amount / 2
+            ).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+            canonical_items.append({
+                "item_id": f"{order['id']}-{index}",
+                "anketa_code": anketa_code,
+                "anketa_name": anketa_name,
+                "is_new_anketa": is_new,
+                "tariff_id": selected.get("id"),
+                "tariff_name": selected_name,
+                "tariff_price": float(price),
+                "unit": selected.get("unit") or "package",
+                "qty": qty,
+                "amount": float(amount),
+                "pay_full": item_pay_full,
+                "prepay_amount": float(prepay),
+                "profile_url": profile_url or None,
+            })
+
+        total = sum((money(item["amount"]) for item in canonical_items), money(0))
+        prepay_total = sum(
+            (money(item["prepay_amount"]) for item in canonical_items), money(0)
+        )
+        if total > MAX_PAYMENT_AMOUNT or prepay_total > MAX_PAYMENT_AMOUNT:
+            raise HTTPException(status_code=409, detail="Payment total is above the limit")
+        order.update({
+            "anketa_code": canonical_items[0]["anketa_code"] if len(canonical_items) == 1 else None,
+            "anketa_name": ", ".join(
+                str(item["anketa_name"] or item["anketa_code"])
+                for item in canonical_items
+            ),
+            "is_new_anketa": len(canonical_items) == 1 and canonical_items[0]["is_new_anketa"],
+            "tariff_name": (
+                canonical_items[0]["tariff_name"]
+                if len(canonical_items) == 1
+                else f"Пакеты ({len(canonical_items)})"
+            ),
+            "tariff_price": canonical_items[0]["tariff_price"] if len(canonical_items) == 1 else None,
+            "qty": sum(int(item["qty"]) for item in canonical_items),
+            "amount": total,
+            "prepay_amount": prepay_total,
+            "pay_full": all(bool(item["pay_full"]) for item in canonical_items),
+            "items": canonical_items,
+        })
     else:
         tariffs = (snapshot.get("payment") or {}).get("tariffs") or []
         selected = next(
@@ -246,16 +423,7 @@ def canonicalize_order(
         if not selected:
             raise HTTPException(status_code=409, detail="This tariff is not available")
         if selected.get("singleUse"):
-            already_used = conn.execute(
-                """
-                select 1 from public.client_orders
-                where lower(client_email)=lower(%s) and id<>%s
-                  and lower(tariff_name)=lower(%s) and status<>'rejected'
-                limit 1
-                """,
-                (email, order["id"], selected.get("name")),
-            ).fetchone()
-            if already_used:
+            if tariff_already_used(conn, email, order["id"], selected.get("name")):
                 raise HTTPException(status_code=409, detail="This one-time tariff has already been used")
         price = money(selected.get("price"))
         if selected.get("unit") == "per":
@@ -297,12 +465,14 @@ def canonicalize_order(
     saved = conn.execute(
         """
         update public.client_orders
-        set anketa_name=%s, tariff_name=%s, tariff_price=%s, qty=%s, amount=%s,
+        set anketa_code=%s, anketa_name=%s, is_new_anketa=%s,
+            tariff_name=%s, tariff_price=%s, qty=%s, amount=%s,
             pay_full=%s, prepay_amount=%s, items=%s::jsonb
         where id=%s returning *
         """,
         (
-            order.get("anketa_name"), order.get("tariff_name"), order.get("tariff_price"),
+            order.get("anketa_code"), order.get("anketa_name"), order.get("is_new_anketa"),
+            order.get("tariff_name"), order.get("tariff_price"),
             order.get("qty"), order.get("amount"), order.get("pay_full"),
             order.get("prepay_amount"), json.dumps(order.get("items"), ensure_ascii=False),
             order["id"],
@@ -360,8 +530,8 @@ async def create_payment(body: CreatePaymentBody, user: dict[str, Any] = Depends
         ).fetchone()
         if not order or str(order.get("client_email") or "").lower() != user["email"]:
             raise HTTPException(status_code=404, detail="Order not found")
-        if order.get("status") == "confirmed":
-            raise HTTPException(status_code=409, detail="Order is already paid")
+        if order.get("status") != "new":
+            raise HTTPException(status_code=409, detail="Order is not payable")
         conn.execute(
             """
             update public.payment_transactions
@@ -373,6 +543,19 @@ async def create_payment(body: CreatePaymentBody, user: dict[str, Any] = Depends
             """,
             (body.client_order_id,),
         )
+        active_for_client = conn.execute(
+            """
+            select count(*) as count
+            from public.payment_transactions
+            where lower(client_email)=lower(%s)
+              and client_order_id<>%s
+              and status in ('initiating','created','processing')
+              and (expires_at is null or expires_at > now())
+            """,
+            (user["email"], body.client_order_id),
+        ).fetchone()
+        if int(active_for_client["count"] or 0) >= MAX_ACTIVE_PAYMENTS_PER_CLIENT:
+            raise HTTPException(status_code=429, detail="Too many active payments")
         current = active_transaction(conn, body.client_order_id)
         if current and current.get("pay_url"):
             return public_transaction(current)
@@ -472,28 +655,93 @@ def refresh_snapshot(conn: psycopg.Connection, email: str, state: dict[str, Any]
     ).fetchone()
     if not row:
         return
-    payload = refresh_financial_snapshot(row["payload"], state)
+    source_payload = dict(row["payload"] or {})
+    source_payload.setdefault("email", email)
+    payload = refresh_financial_snapshot(source_payload, state)
     conn.execute(
         "update public.client_snapshots set payload=%s::jsonb, updated_at=now() where lower(email)=lower(%s)",
         (json.dumps(payload, ensure_ascii=False), email),
     )
 
 
+def insert_package_children(
+    conn: psycopg.Connection,
+    order: dict[str, Any],
+    package_items: list[dict[str, Any]],
+    provider_payment_id: str,
+    paid_at: Any,
+) -> None:
+    for item in package_items:
+        remainder_status = None if item.get("pay_full") else "pending"
+        conn.execute(
+            """
+            insert into public.client_orders (
+              parent_order_id,parent_item_id,client_email,client_name,
+              anketa_code,anketa_name,is_new_anketa,
+              tariff_name,tariff_price,qty,amount,pay_full,prepay_amount,
+              remainder_status,order_type,comment,profile_url,
+              offer_agreed,offer_text,offer_version,
+              personal_data_agreed,personal_data_consent_text,
+              personal_data_consent_version,consent_user_agent,
+              status,confirmed_at,created_by,
+              payment_provider,payment_id,payment_status,
+              payment_environment,payment_created_at,payment_paid_at
+            ) values (
+              %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+              %s,'package_item',%s,%s,%s,%s,%s,%s,%s,%s,%s,
+              'confirmed',%s,'payments-backend',
+              'rollypay',%s,'paid',%s,%s,%s
+            )
+            on conflict (parent_order_id,parent_item_id)
+              where parent_order_id is not null do nothing
+            """,
+            (
+                order["id"], item.get("item_id"), order.get("client_email"),
+                order.get("client_name"), item.get("anketa_code"),
+                item.get("anketa_name"), bool(item.get("is_new_anketa")),
+                item.get("tariff_name"), item.get("tariff_price"), item.get("qty"),
+                item.get("amount"), bool(item.get("pay_full")), item.get("prepay_amount"),
+                remainder_status, order.get("comment"), item.get("profile_url"),
+                order.get("offer_agreed"), order.get("offer_text"), order.get("offer_version"),
+                order.get("personal_data_agreed"), order.get("personal_data_consent_text"),
+                order.get("personal_data_consent_version"), order.get("consent_user_agent"),
+                paid_at, provider_payment_id, order.get("payment_environment"), paid_at, paid_at,
+            ),
+        )
+
+
 def notify_paid_order(
     conn: psycopg.Connection,
     order: dict[str, Any],
     amount: Any,
+    applied: dict[str, Any] | None = None,
     manual_review: bool = False,
 ) -> None:
     if not OWNER_TELEGRAM_CHAT_ID:
         return
-    target = str(order.get("anketa_code") or order.get("anketa_name") or "—")
+    applied = applied or {}
+    packages = applied.get("package_items") or []
+    created = applied.get("created_anketas") or []
+    if packages:
+        target = "\n".join(
+            f"• {item.get('anketa_code') or item.get('anketa_name') or '—'} — "
+            f"{item.get('tariff_name') or 'тариф'}, {int(item.get('qty') or 0)} отз."
+            for item in packages
+        )
+    else:
+        target = str(order.get("anketa_code") or order.get("anketa_name") or "—")
+    created_line = ""
+    if created:
+        created_line = "\n🆕 Созданы анкеты: " + ", ".join(
+            f"{item.get('code')} — {item.get('name')}" for item in created
+        )
     suffix = "\n⚠ Нужна ручная привязка заказа к карточке." if manual_review else "\n✅ CRM и финансы обновлены автоматически."
     message = (
         "💳 Онлайн-оплата получена!\n"
         f"👤 {order.get('client_name') or order.get('client_email') or 'клиент'}\n"
-        f"Анкета: {target}\n"
+        f"{'Пакеты' if packages else 'Анкета'}: {target}\n"
         f"Сумма: {money(amount):.0f} ₽"
+        f"{created_line}"
         f"{suffix}"
     )
     conn.execute(
@@ -579,12 +827,13 @@ def apply_provider_status(provider: dict[str, Any]) -> dict[str, Any]:
         if not state_row:
             raise PaymentApplyError("crm state not found")
         state = state_row["data"]
+        paid_at = str(provider.get("paid_at") or datetime.now(timezone.utc).isoformat())
         try:
             applied = apply_paid_order(
                 state,
                 order,
                 payment_id or str(tx.get("provider_payment_id") or ""),
-                str(provider.get("paid_at") or datetime.now(timezone.utc).isoformat()),
+                paid_at,
             )
         except PaymentApplyError as exc:
             conn.execute(
@@ -611,6 +860,15 @@ def apply_provider_status(provider: dict[str, Any]) -> dict[str, Any]:
                     (source_ids,),
                 )
             remainder_status = None
+        elif order.get("order_type") == "multi_order":
+            insert_package_children(
+                conn,
+                order,
+                applied.get("package_items") or [],
+                payment_id or str(tx.get("provider_payment_id") or ""),
+                paid_at,
+            )
+            remainder_status = None
         else:
             full = money(order.get("amount"))
             paid = expected_payment_amount(order)
@@ -619,17 +877,23 @@ def apply_provider_status(provider: dict[str, Any]) -> dict[str, Any]:
             """
             update public.client_orders
             set status='confirmed', confirmed_at=coalesce(confirmed_at,now()), remainder_status=%s,
-                payment_status='paid', payment_paid_at=coalesce(payment_paid_at,now())
+                payment_status='paid', payment_paid_at=coalesce(payment_paid_at,now()),
+                anketa_code=%s, items=%s::jsonb
             where id=%s
             """,
-            (remainder_status, order["id"]),
+            (
+                remainder_status,
+                order.get("anketa_code"),
+                json.dumps(order.get("items"), ensure_ascii=False),
+                order["id"],
+            ),
         )
         conn.execute(
             "update public.payment_transactions set business_applied_at=now(), apply_note='applied' where id=%s",
             (tx["id"],),
         )
         refresh_snapshot(conn, str(order.get("client_email") or ""), state)
-        notify_paid_order(conn, order, tx["amount"])
+        notify_paid_order(conn, order, tx["amount"], applied=applied)
         return {"ok": True, "status": status, "applied": not applied.get("already_applied")}
 
 

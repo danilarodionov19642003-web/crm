@@ -21,4 +21,15 @@ assert.equal(shouldAutoReconcile({
   comment: '',
 }), false, 'unconfirmed orders must not affect finances');
 
+assert.equal(shouldAutoReconcile({
+  status: 'confirmed',
+  order_type: 'multi_order',
+}), false, 'multi-order parent is applied by the payment backend');
+
+assert.equal(shouldAutoReconcile({
+  status: 'confirmed',
+  order_type: 'package_item',
+  parent_order_id: 77,
+}), false, 'internal package rows must not duplicate finance income');
+
 console.log('client order income policy: OK');

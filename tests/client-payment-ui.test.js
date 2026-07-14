@@ -8,6 +8,7 @@ const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 const clientApp = read('pages/client/client-app.js');
 const clientIndex = read('pages/client/index.html');
 const clientCss = read('pages/client/client.css');
+const orderCart = read('pages/client/order-cart.js');
 const crmApp = read('js/app.js');
 const crmClients = read('pages/clients.html');
 
@@ -20,12 +21,14 @@ assert.match(clientApp, /const PAYMENTS_API = 'https:\/\/mentori\.tech\/api\/pay
 assert.match(clientApp, /startPayment\(order\.id, btn, result\)/);
 assert.match(clientApp, /Prefer': 'return=representation'/);
 assert.match(clientApp, /data-pay-order/);
-assert.match(clientApp, /const fullOnly = curTariff\(\)\.fullOnly === true/);
-assert.match(clientApp, /halfPay\.disabled = fullOnly/);
+assert.match(clientIndex, /order-cart\.js/);
+assert.match(clientApp, /order_type: 'multi_order'/);
+assert.match(clientApp, /Добавить пакет для другой анкеты/);
+assert.match(orderCart, /source\.fullOnly === true/);
 assert.match(crmApp, /privateTariffs\.concat\(paymentTariffs\)/);
 assert.doesNotMatch(clientApp, /id="ordReceipt"|id="remainReceipt"/);
 assert.doesNotMatch(clientApp, /id="ordSubmit">Я оплатил|id="remainSubmit">Я оплатил/);
-assert.match(crmClients, /const canConfirm = o\.status === 'new' && \(!onlinePayment \|\| onlinePaid\)/);
+assert.match(crmClients, /const canConfirm = o\.status === 'new' && o\.order_type !== 'multi_order'/);
 assert.match(crmClients, /const canDelete = !onlinePayment/);
 assert.match(crmClients, /const canReject = o\.status === 'new' && !onlineActive && !onlinePaid/);
 

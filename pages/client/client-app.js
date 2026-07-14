@@ -805,52 +805,80 @@
     document.body.classList.remove('cli-modal-open');  // вернуть скролл фона
   }
 
+  function _tariffOptionHtml(t, index) {
+    const label = t.unit === 'per'
+      ? `${t.name || 'Тариф'} — ${Number(t.price || 0).toLocaleString('ru-RU')} ₽/шт (от ${Number(t.qty) || 1})`
+      : `${t.name || 'Тариф'}${t.qty ? ' · ' + t.qty + ' отзывов' : ''}${t.price ? ' — ' + Number(t.price).toLocaleString('ru-RU') + ' ₽' : ''}`;
+    return `<option value="${index}">${escapeHtml(label)}</option>`;
+  }
+
+  let _orderRowSequence = 0;
+  function _orderPackageHtml(index, tariffs, anketas, suggestedIndex) {
+    const hasExisting = anketas.length > 0;
+    const targetName = `ordTarget${++_orderRowSequence}`;
+    return `
+      <section class="cli-cart-item" data-order-item>
+        <div class="cli-cart-item__head">
+          <strong data-order-item-title>Пакет ${index + 1}</strong>
+          <button type="button" class="cli-cart-item__remove" data-order-remove title="Убрать пакет" aria-label="Убрать пакет">×</button>
+        </div>
+        <div class="cli-cart-target">
+          <label class="cli-cart-target__option">
+            <input type="radio" name="${targetName}" value="existing" ${hasExisting ? 'checked' : 'disabled'}/>
+            <span>Существующая анкета</span>
+          </label>
+          <label class="cli-cart-target__option">
+            <input type="radio" name="${targetName}" value="new" ${hasExisting ? '' : 'checked'}/>
+            <span>Новая анкета</span>
+          </label>
+        </div>
+        <select class="cli-ord-input" data-order-existing ${hasExisting ? '' : 'disabled'}>
+          ${anketas.map((a, i) => `<option value="${i}" ${i === suggestedIndex ? 'selected' : ''}>${escapeHtml(a.code || '')}${a.name ? ' · ' + escapeHtml(a.name) : ''}</option>`).join('')}
+        </select>
+        <input type="text" class="cli-ord-input" data-order-new-name maxlength="120"
+          placeholder="ФИО новой анкеты" ${hasExisting ? 'disabled' : ''}/>
+        <div class="cli-cart-grid">
+          <label class="cli-cart-control">
+            <span>Тариф</span>
+            <select class="cli-ord-input" data-order-tariff>${tariffs.map(_tariffOptionHtml).join('')}</select>
+          </label>
+          <label class="cli-cart-control" data-order-qty-wrap hidden>
+            <span>Количество отзывов</span>
+            <input type="number" class="cli-ord-input" data-order-qty min="1" max="500"/>
+          </label>
+        </div>
+        <label class="cli-cart-control">
+          <span>Ссылка на профиль <small>(необязательно)</small></span>
+          <input type="url" class="cli-ord-input" data-order-profile-url placeholder="https://..."/>
+        </label>
+        <div class="cli-cart-item__sum" data-order-item-sum></div>
+      </section>`;
+  }
+
   function openOrderModal() {
     const m = document.getElementById('cliOrderModal');
     const body = document.querySelector('[data-cli-order-body]');
     if (!m || !body || !_orderPayload) return;
-    const pay = _orderPayload.payment || {};
-    const tariffs = pay.tariffs || [];
+    const tariffs = ((_orderPayload.payment || {}).tariffs || []);
     const anketas = _orderPayload.anketas || [];
-    const hasExisting = anketas.length > 0;
+    const cart = window.MentoriOrderCart;
+    if (!cart || !tariffs.length) return;
+
     body.innerHTML = `
-      <div class="cli-ord-field">
-        <div class="cli-ord-label">На какую анкету?</div>
-        <label class="cli-ord-radio"><input type="radio" name="ordTarget" value="existing" ${hasExisting ? 'checked' : 'disabled'}/> Существующая</label>
-        <select class="cli-ord-input" id="ordExisting" ${hasExisting ? '' : 'disabled'}>
-          ${anketas.map(a => `<option data-code="${escapeAttr(a.code || '')}" data-name="${escapeAttr(a.name || a.code || '')}">${escapeHtml(a.code || '')}${a.name ? ' · ' + escapeHtml(a.name) : ''}</option>`).join('')}
-        </select>
-        <label class="cli-ord-radio" style="margin-top:10px"><input type="radio" name="ordTarget" value="new" ${hasExisting ? '' : 'checked'}/> Новая анкета</label>
-        <input type="text" class="cli-ord-input" id="ordNewName" placeholder="имя новой анкеты (например: Кирилл / физика)" ${hasExisting ? 'disabled' : ''}/>
-      </div>
-      <div class="cli-ord-field">
-        <div class="cli-ord-label">Тариф</div>
-        <select class="cli-ord-input" id="ordTariff">
-          ${tariffs.map((t, i) => {
-            const lbl = t.unit === 'per'
-              ? `${escapeHtml(t.name || 'Тариф')} — ${Number(t.price || 0).toLocaleString('ru-RU')} ₽/шт (от ${Number(t.qty) || 1})`
-              : `${escapeHtml(t.name || 'Тариф')}${t.qty ? ' · ' + t.qty + ' отзывов' : ''}${t.price ? ' — ' + Number(t.price).toLocaleString('ru-RU') + ' ₽' : ''}`;
-            return `<option value="${i}">${lbl}</option>`;
-          }).join('')}
-        </select>
-      </div>
-      <div class="cli-ord-field" id="ordQtyWrap" hidden>
-        <div class="cli-ord-label">Количество отзывов</div>
-        <input type="number" class="cli-ord-input" id="ordQty"/>
-      </div>
-      <div class="cli-ord-field">
+      <div class="cli-cart-intro">Добавь тарифы для нужных анкет — оплата будет одной суммой.</div>
+      <div class="cli-cart-list" data-order-list></div>
+      <button type="button" class="cli-cart-add" data-order-add><span aria-hidden="true">+</span> Добавить пакет для другой анкеты</button>
+      <div class="cli-ord-field cli-cart-payment">
         <div class="cli-ord-label">Оплата</div>
-        <label class="cli-ord-radio"><input type="radio" name="ordPay" value="half" checked/> Предоплата 50% сейчас (остаток — после выполнения)</label>
-        <label class="cli-ord-radio" style="margin-top:6px"><input type="radio" name="ordPay" value="full"/> Оплатить 100% сейчас</label>
+        <div class="cli-cart-target">
+          <label class="cli-cart-target__option"><input type="radio" name="ordPay" value="half" checked/><span>50% сейчас</span></label>
+          <label class="cli-cart-target__option"><input type="radio" name="ordPay" value="full"/><span>100% сейчас</span></label>
+        </div>
       </div>
-      <div class="cli-ord-amount" id="ordAmount"></div>
+      <div class="cli-ord-amount cli-cart-total" id="ordAmount"></div>
       <div class="cli-ord-field">
-        <div class="cli-ord-label">Ссылка на профиль (если есть)</div>
-        <input type="url" class="cli-ord-input" id="ordProfileUrl" placeholder="ссылка на твою анкету/профиль"/>
-      </div>
-      <div class="cli-ord-field">
-        <div class="cli-ord-label">Комментарий (необязательно)</div>
-        <textarea class="cli-ord-input" id="ordComment" rows="2" placeholder="пожелания или важная информация по заказу"></textarea>
+        <div class="cli-ord-label">Комментарий <span class="muted">(необязательно)</span></div>
+        <textarea class="cli-ord-input" id="ordComment" rows="2" maxlength="1000" placeholder="Общие пожелания по заказу"></textarea>
       </div>
       <div class="cli-ord-offer">
         <label class="cli-ord-offer__check">
@@ -863,74 +891,84 @@
         </label>
       </div>
       <div class="cli-ord-result" id="ordResult"></div>
-      <button type="button" class="cli-ord-submit" id="ordSubmit">Перейти к оплате</button>
-    `;
-    // переключение существующая/новая → активируем нужное поле
-    body.querySelectorAll('input[name="ordTarget"]').forEach(r => r.addEventListener('change', () => {
-      const isEx = (body.querySelector('input[name="ordTarget"]:checked') || {}).value === 'existing';
-      const ex = document.getElementById('ordExisting'); if (ex) ex.disabled = !isEx;
-      const nn = document.getElementById('ordNewName'); if (nn) nn.disabled = isEx;
-    }));
-    // тариф/количество → пересчёт суммы. Для «за шт» показываем поле кол-ва.
-    const tariffSel = document.getElementById('ordTariff');
-    const qtyWrap = document.getElementById('ordQtyWrap');
-    const qtyInp = document.getElementById('ordQty');
-    const amountEl = document.getElementById('ordAmount');
-    const curTariff = () => tariffs[Number(tariffSel.value) || 0] || {};
-    const halfPay = body.querySelector('input[name="ordPay"][value="half"]');
-    const fullPay = body.querySelector('input[name="ordPay"][value="full"]');
-    function syncPaymentMode() {
-      const wasForced = halfPay.disabled;
-      const fullOnly = curTariff().fullOnly === true;
-      halfPay.disabled = fullOnly;
-      if (fullOnly) fullPay.checked = true;
-      else if (wasForced) halfPay.checked = true;
-    }
-    // полная сумма заказа по выбранному тарифу/количеству
-    function orderFull() {
-      const t = curTariff();
-      if (t.unit === 'per') {
-        const minQ = Math.max(1, Number(t.qty) || 1);
-        qtyInp.min = minQ;
-        let q = Number(qtyInp.value) || minQ;
-        if (q < minQ) q = minQ;
-        return (Number(t.price) || 0) * q;
-      }
-      return Number(t.price) || 0;
-    }
-    const isPayFull = () => (body.querySelector('input[name="ordPay"]:checked') || {}).value === 'full';
-    const fmtRub = n => Number(n).toLocaleString('ru-RU') + ' ₽';
-    function recalcAmount() {
-      qtyWrap.hidden = curTariff().unit !== 'per';
-      const full = orderFull();
-      if (full <= 0) { amountEl.innerHTML = ''; return; }
-      const payNow = isPayFull() ? full : Math.round(full / 2);
-      amountEl.innerHTML = `Сумма заказа: ${fmtRub(full)}<br>`
-        + `<b>К оплате сейчас: ${fmtRub(payNow)}</b>`
-        + (isPayFull() ? '' : `<br><span class="cli-ord-amount__rest">Остаток ${fmtRub(full - payNow)} — после выполнения</span>`);
-    }
-    tariffSel.addEventListener('change', () => {
-      const t = curTariff();
-      if (t.unit === 'per') qtyInp.value = Math.max(1, Number(t.qty) || 1);
-      syncPaymentMode();
-      recalcAmount();
+      <button type="button" class="cli-ord-submit" id="ordSubmit">Перейти к оплате</button>`;
+
+    const list = body.querySelector('[data-order-list]');
+    const addButton = body.querySelector('[data-order-add]');
+    const isCartFull = () => (body.querySelector('input[name="ordPay"]:checked') || {}).value === 'full';
+    const rowTariff = row => tariffs[Number(row.querySelector('[data-order-tariff]').value) || 0] || {};
+    const nextSuggestedAnketa = () => {
+      const used = new Set([...list.querySelectorAll('[data-order-item]')]
+        .filter(row => (row.querySelector('input[type="radio"]:checked') || {}).value === 'existing')
+        .map(row => Number(row.querySelector('[data-order-existing]').value)));
+      const free = anketas.findIndex((_, index) => !used.has(index));
+      return free >= 0 ? free : 0;
+    };
+    const syncRowTarget = row => {
+      const isExisting = (row.querySelector('input[type="radio"]:checked') || {}).value === 'existing';
+      row.querySelector('[data-order-existing]').disabled = !isExisting;
+      row.querySelector('[data-order-new-name]').disabled = isExisting;
+    };
+    const recalc = () => {
+      const rows = [...list.querySelectorAll('[data-order-item]')];
+      const priced = rows.map(row => ({
+        row,
+        tariff: rowTariff(row),
+        qty: Number(row.querySelector('[data-order-qty]').value) || 0
+      }));
+      const summary = cart.summarize(priced, isCartFull());
+      summary.items.forEach(entry => {
+        const qtyWrap = entry.row.querySelector('[data-order-qty-wrap]');
+        const qtyInput = entry.row.querySelector('[data-order-qty]');
+        qtyWrap.hidden = entry.tariff.unit !== 'per';
+        if (entry.tariff.unit === 'per') {
+          qtyInput.min = Math.max(1, Number(entry.tariff.qty) || 1);
+          if (!Number(qtyInput.value) || Number(qtyInput.value) < Number(qtyInput.min)) qtyInput.value = qtyInput.min;
+        }
+        entry.row.querySelector('[data-order-item-sum]').textContent =
+          `Пакет: ${fmtMoney(entry.pricing.amount)} · сейчас ${fmtMoney(entry.pricing.prepayAmount)}`
+          + (entry.pricing.remainder ? ` · остаток ${fmtMoney(entry.pricing.remainder)}` : '');
+      });
+      const amountEl = document.getElementById('ordAmount');
+      amountEl.innerHTML = `<span>Стоимость пакетов: ${fmtMoney(summary.amount)}</span>`
+        + `<b>К оплате сейчас: ${fmtMoney(summary.prepayAmount)}</b>`
+        + (summary.remainder ? `<small>Остаток после выполнения: ${fmtMoney(summary.remainder)}</small>` : '');
+      rows.forEach((row, index) => {
+        row.querySelector('[data-order-item-title]').textContent = `Пакет ${index + 1}`;
+        row.querySelector('[data-order-remove]').hidden = rows.length === 1;
+      });
+      addButton.disabled = rows.length >= cart.MAX_ITEMS;
+      addButton.title = addButton.disabled ? `Не больше ${cart.MAX_ITEMS} пакетов в одном платеже` : '';
+    };
+    const addRow = () => {
+      const count = list.querySelectorAll('[data-order-item]').length;
+      if (count >= cart.MAX_ITEMS) return;
+      list.insertAdjacentHTML('beforeend', _orderPackageHtml(count, tariffs, anketas, nextSuggestedAnketa()));
+      const row = list.lastElementChild;
+      syncRowTarget(row);
+      recalc();
+    };
+
+    list.addEventListener('change', event => {
+      const row = event.target.closest('[data-order-item]');
+      if (!row) return;
+      if (event.target.matches('input[type="radio"]')) syncRowTarget(row);
+      recalc();
     });
-    body.querySelectorAll('input[name="ordPay"]').forEach(r => r.addEventListener('change', recalcAmount));
-    qtyInp.addEventListener('input', recalcAmount);
-    syncPaymentMode();
-    recalcAmount();
-    // копирование каждого реквизита своей кнопкой
-    body.querySelectorAll('.cli-req-row__copy').forEach(b => b.addEventListener('click', () => {
-      const txt = b.getAttribute('data-copy') || '';
-      const done = () => { const o = b.textContent; b.textContent = '✓ Скопировано'; setTimeout(() => b.textContent = o, 1300); };
-      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(done, () => { b.textContent = 'Выдели вручную'; });
-      else b.textContent = 'Выдели вручную';
-    }));
-    const offerLink = document.getElementById('ordOfferLink');
-    if (offerLink) offerLink.addEventListener('click', e => { e.preventDefault(); openTerms(); });
+    list.addEventListener('input', recalc);
+    list.addEventListener('click', event => {
+      const remove = event.target.closest('[data-order-remove]');
+      if (!remove) return;
+      remove.closest('[data-order-item]').remove();
+      recalc();
+    });
+    addButton.addEventListener('click', addRow);
+    body.querySelectorAll('input[name="ordPay"]').forEach(input => input.addEventListener('change', recalc));
+    document.getElementById('ordOfferLink').addEventListener('click', event => { event.preventDefault(); openTerms(); });
     document.getElementById('ordSubmit').addEventListener('click', onOrderSubmit);
+    addRow();
     m.hidden = false;
-    document.body.classList.add('cli-modal-open');  // блок скролла фона
+    document.body.classList.add('cli-modal-open');
   }
 
   /** Окно с текстом условий заказа. Без аргумента — текущие условия;
@@ -973,39 +1011,72 @@
       result.textContent = 'Не удалось загрузить Публичную оферту. Обновите страницу и попробуйте ещё раз.';
       return;
     }
-    const pay = (_orderPayload && _orderPayload.payment) || {};
-    const tariffs = pay.tariffs || [];
-    const target = (document.querySelector('input[name="ordTarget"]:checked') || {}).value || 'new';
-    const tariff = tariffs[Number(document.getElementById('ordTariff').value) || 0] || {};
+    const tariffs = ((_orderPayload && _orderPayload.payment) || {}).tariffs || [];
+    const anketas = (_orderPayload && _orderPayload.anketas) || [];
+    const cart = window.MentoriOrderCart;
+    const rows = [...document.querySelectorAll('[data-order-list] [data-order-item]')];
     const comment = (document.getElementById('ordComment').value || '').trim();
-    const profileUrl = (document.getElementById('ordProfileUrl').value || '').trim();
-
-    // кол-во + ПОЛНАЯ сумма заказа: пакет — фиксированы из тарифа; за шт — qty×цена
-    let qty, amount;
-    if (tariff.unit === 'per') {
-      const minQ = Math.max(1, Number(tariff.qty) || 1);
-      qty = Math.max(minQ, Number((document.getElementById('ordQty') || {}).value) || minQ);
-      amount = (Number(tariff.price) || 0) * qty;
-    } else {
-      qty = Number(tariff.qty) || null;
-      amount = Number(tariff.price) || 0;
-    }
-    // выбор оплаты: 50% предоплата или 100% сразу
     const pay_full = (document.querySelector('input[name="ordPay"]:checked') || {}).value === 'full';
-    const prepay_amount = pay_full ? amount : Math.round(amount / 2);
-
-    let anketa_code = null, anketa_name = '', is_new_anketa = false;
-    if (target === 'existing') {
-      const sel = document.getElementById('ordExisting');
-      const opt = sel && sel.options[sel.selectedIndex];
-      if (!opt) { result.className = 'cli-ord-result is-err'; result.textContent = 'Выбери анкету.'; return; }
-      anketa_code = opt.dataset.code || null;
-      anketa_name = opt.dataset.name || '';
-    } else {
-      is_new_anketa = true;
-      anketa_name = (document.getElementById('ordNewName').value || '').trim();
-      if (!anketa_name) { result.className = 'cli-ord-result is-err'; result.textContent = 'Впиши имя новой анкеты.'; return; }
+    if (!cart || !rows.length || rows.length > cart.MAX_ITEMS) {
+      result.className = 'cli-ord-result is-err';
+      result.textContent = 'Добавь хотя бы один пакет.';
+      return;
     }
+
+    const items = [];
+    const newNames = new Set();
+    let newCount = 0;
+    for (const row of rows) {
+      const tariff = tariffs[Number(row.querySelector('[data-order-tariff]').value) || 0] || {};
+      if (!tariff.name) {
+        result.className = 'cli-ord-result is-err'; result.textContent = 'Выбери тариф для каждого пакета.'; return;
+      }
+      const target = (row.querySelector('input[type="radio"]:checked') || {}).value || 'new';
+      let anketa_code = '', anketa_name = '', is_new_anketa = target === 'new';
+      if (is_new_anketa) {
+        newCount++;
+        anketa_name = (row.querySelector('[data-order-new-name]').value || '').trim().replace(/\s+/g, ' ');
+        const key = anketa_name.toLowerCase();
+        if (anketa_name.length < 2) {
+          result.className = 'cli-ord-result is-err'; result.textContent = 'Впиши ФИО каждой новой анкеты.'; return;
+        }
+        if (newNames.has(key)) {
+          result.className = 'cli-ord-result is-err'; result.textContent = 'Одна новая анкета добавлена дважды.'; return;
+        }
+        newNames.add(key);
+      } else {
+        const selected = anketas[Number(row.querySelector('[data-order-existing]').value) || 0];
+        if (!selected) {
+          result.className = 'cli-ord-result is-err'; result.textContent = 'Выбери анкету для каждого пакета.'; return;
+        }
+        anketa_code = selected.code || '';
+        anketa_name = selected.name || selected.code || '';
+      }
+      if (newCount > cart.MAX_NEW_ANKETAS) {
+        result.className = 'cli-ord-result is-err';
+        result.textContent = `За один платёж можно создать не больше ${cart.MAX_NEW_ANKETAS} новых анкет.`;
+        return;
+      }
+      const pricing = cart.priceItem(tariff, Number(row.querySelector('[data-order-qty]').value) || 0, pay_full);
+      const profileUrl = (row.querySelector('[data-order-profile-url]').value || '').trim();
+      items.push({
+        anketa_code,
+        anketa_name,
+        is_new_anketa,
+        tariff_id: tariff.id || null,
+        tariff_name: tariff.name,
+        qty: pricing.qty,
+        amount: pricing.amount,
+        pay_full: pricing.payFull,
+        prepay_amount: pricing.prepayAmount,
+        profile_url: profileUrl || null
+      });
+    }
+    const summary = cart.summarize(items.map(item => ({
+      tariff: tariffs.find(t => String(t.id || '') === String(item.tariff_id || ''))
+        || tariffs.find(t => t.name === item.tariff_name),
+      qty: item.qty
+    })), pay_full);
 
     // Оферта и обработка персональных данных подтверждаются отдельно.
     const offerChk = document.getElementById('ordOffer');
@@ -1029,14 +1100,14 @@
     const order = await submitOrder({
       client_email: email,
       client_name: Auth.name() || email,
-      anketa_code, anketa_name, is_new_anketa,
-      tariff_name: tariff.name || null,
-      tariff_price: tariff.price != null ? tariff.price : null,
-      qty: qty != null ? qty : null,
-      amount: amount != null ? amount : null,
-      pay_full: pay_full,
-      prepay_amount: prepay_amount,
-      profile_url: profileUrl || null,
+      order_type: 'multi_order',
+      anketa_name: items.map(item => item.anketa_name || item.anketa_code).join(', '),
+      tariff_name: items.length === 1 ? items[0].tariff_name : `Пакеты (${items.length})`,
+      qty: items.reduce((sum, item) => sum + (Number(item.qty) || 0), 0),
+      amount: summary.amount,
+      pay_full,
+      prepay_amount: summary.prepayAmount,
+      items,
       receipt_url: null,
       offer_agreed: offer_agreed,
       offer_text: offerText,
@@ -1115,7 +1186,7 @@
     try {
       const url = `${_url()}/rest/v1/client_orders`
         + `?client_email=eq.${encodeURIComponent(email)}`
-        + `&select=id,anketa_code,anketa_name,is_new_anketa,tariff_name,qty,amount,status,created_at,confirmed_at,receipt_url,offer_agreed,offer_text,offer_version,personal_data_agreed,personal_data_consent_text,personal_data_consent_version,pay_full,prepay_amount,remainder_status,order_type,items,comment,payment_provider,payment_id,payment_status,payment_url,payment_environment,payment_created_at,payment_paid_at`
+        + `&select=id,parent_order_id,parent_item_id,anketa_code,anketa_name,is_new_anketa,tariff_name,qty,amount,status,created_at,confirmed_at,receipt_url,offer_agreed,offer_text,offer_version,personal_data_agreed,personal_data_consent_text,personal_data_consent_version,pay_full,prepay_amount,remainder_status,order_type,items,comment,payment_provider,payment_id,payment_status,payment_url,payment_environment,payment_created_at,payment_paid_at`
         + `&order=created_at.desc&limit=200`;
       const res = await fetch(url, { headers: { 'apikey': _key(), 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' } });
       if (!res.ok) { console.warn('[client-app] loadMyOrders failed', res.status); return []; }
@@ -1142,12 +1213,40 @@
       ? ORDER_STATUS.paid_review
       : (ORDER_STATUS[o.status] || { label: o.status || '—', cls: '' });
     const isRem = o.order_type === 'remainder';
+    const isMulti = o.order_type === 'multi_order';
     const amt = Number(o.amount) || 0;
     let title, sub, payLine = '';
     if (isRem) {
       title = 'Доплата остатка';
       sub = `${escapeHtml(o.anketa_name || '—')} · ${_fmtDateTime(o.created_at)}`;
       payLine = `<div class="cli-order__pay">💳 ${o.status === 'confirmed' || paymentReceived ? 'Оплачено' : 'К оплате'}: ${fmtMoney(amt)}</div>`;
+    } else if (isMulti) {
+      const items = Array.isArray(o.items) ? o.items : [];
+      const childByItem = new Map((_myOrders || [])
+        .filter(child => String(child.parent_order_id || '') === String(o.id))
+        .map(child => [String(child.parent_item_id || ''), child]));
+      title = `Пакеты для ${items.length || 1} ${items.length === 1 ? 'анкеты' : 'анкет'}`;
+      sub = _fmtDateTime(o.created_at);
+      let outstanding = 0;
+      const packageLines = items.map(item => {
+        const target = item.anketa_code
+          ? escapeHtml(item.anketa_code)
+          : `новая «${escapeHtml(item.anketa_name || '—')}»`;
+        const itemAmount = Number(item.amount) || 0;
+        const itemPrepay = item.prepay_amount != null ? Number(item.prepay_amount) : itemAmount;
+        const itemRest = Math.max(0, itemAmount - itemPrepay);
+        const child = childByItem.get(String(item.item_id || ''));
+        const itemOutstanding = itemRest > 0 && (!paymentReceived || !child || child.remainder_status === 'pending')
+          ? itemRest : 0;
+        outstanding += itemOutstanding;
+        return `<div class="cli-order__package"><b>${target}</b> · ${escapeHtml(item.tariff_name || 'Тариф')}`
+          + `${item.qty ? ' · ' + Number(item.qty) + ' отз.' : ''} · ${fmtMoney(itemAmount)}`
+          + `${itemOutstanding > 0 ? ` (сейчас ${fmtMoney(itemPrepay)}, остаток ${fmtMoney(itemOutstanding)})` : ''}</div>`;
+      }).join('');
+      const prepay = o.prepay_amount != null ? Number(o.prepay_amount) : amt;
+      payLine = `<div class="cli-order__packages">${packageLines}</div>`
+        + `<div class="cli-order__pay">💳 ${paymentReceived && outstanding <= 0 ? 'Оплачено полностью' : (o.status === 'confirmed' || paymentReceived ? 'Оплачено' : 'К оплате')}: ${fmtMoney(paymentReceived && outstanding <= 0 ? amt : prepay)}`
+        + `${outstanding > 0 ? ` · общий остаток: <b>${fmtMoney(outstanding)}</b>` : ''}</div>`;
     } else {
       const anketa = o.is_new_anketa
         ? `новая «${escapeHtml(o.anketa_name || '—')}»`
@@ -1172,7 +1271,7 @@
     const receipt = o.receipt_url
       ? `<a class="cli-order__receipt" href="${escapeAttr(o.receipt_url)}" target="_blank" rel="noopener">Открыть чек</a>`
       : '';
-    const paymentAction = o.status !== 'confirmed' && !paymentReceived
+    const paymentAction = o.status === 'new' && !paymentReceived
       ? `<button type="button" class="cli-order__pay-btn" data-pay-order="${o.id}">Перейти к оплате</button>`
       : paymentReceived && o.status !== 'confirmed'
         ? `<div class="cli-order__payment-note">Оплата получена. Заказ обрабатывается.</div>`
@@ -1197,21 +1296,22 @@
     const el = document.querySelector('[data-cli-orders]');
     if (!el) return;
     _myOrders = orders || [];
-    if (!_myOrders.length) { el.hidden = true; el.innerHTML = ''; return; }
+    const visibleOrders = _myOrders.filter(o => !o.parent_order_id && o.order_type !== 'package_item');
+    if (!visibleOrders.length) { el.hidden = true; el.innerHTML = ''; return; }
     el.hidden = false;
-    const rest = _myOrders.slice(1);  // показываем последний, остальные — по кнопке
+    const rest = visibleOrders.slice(1);  // показываем последний, остальные — по кнопке
     el.innerHTML = `
       <h2 class="cli-section-title">Мои заказы</h2>
-      <div class="cli-orders__list">${_orderCardHtml(_myOrders[0])}</div>
+      <div class="cli-orders__list">${_orderCardHtml(visibleOrders[0])}</div>
       ${rest.length ? `
         <div class="cli-orders__list cli-orders__more" data-cli-orders-more hidden>${rest.map(_orderCardHtml).join('')}</div>
-        <button type="button" class="cli-orders__toggle" data-cli-orders-toggle>▾ Показать все заказы (${_myOrders.length})</button>` : ''}`;
+        <button type="button" class="cli-orders__toggle" data-cli-orders-toggle>▾ Показать все заказы (${visibleOrders.length})</button>` : ''}`;
     const toggle = el.querySelector('[data-cli-orders-toggle]');
     const more = el.querySelector('[data-cli-orders-more]');
     if (toggle && more) toggle.addEventListener('click', () => {
       const willOpen = more.hidden;
       more.hidden = !willOpen;
-      toggle.textContent = willOpen ? '▴ Свернуть' : `▾ Показать все заказы (${_myOrders.length})`;
+      toggle.textContent = willOpen ? '▴ Свернуть' : `▾ Показать все заказы (${visibleOrders.length})`;
     });
     el.querySelectorAll('[data-view-terms]').forEach(b => b.addEventListener('click', () => {
       const o = _myOrders.find(x => String(x.id) === b.dataset.viewTerms);
@@ -1239,6 +1339,7 @@
         ? 'Проверяем оплату… Обычно это занимает несколько секунд.'
         : 'Оплата не завершена. Её можно повторить в разделе «Мои заказы».';
     }
+    let paid = false;
     if (result === 'success') {
       for (let attempt = 0; attempt < 6; attempt++) {
         try {
@@ -1247,6 +1348,7 @@
           });
           const data = await response.json().catch(() => ({}));
           if (response.ok && data.status === 'paid') {
+            paid = true;
             if (box) box.textContent = data.requires_manual_review
               ? 'Оплата получена. Менеджер завершит обработку заказа.'
               : 'Оплата подтверждена. Данные заказа обновлены.';
@@ -1259,6 +1361,7 @@
       }
     }
     history.replaceState({}, '', window.location.pathname);
+    if (paid) window.setTimeout(() => window.location.reload(), 700);
   }
 
   /* ---- Оплатить остаток (по конкретным заказам) ---- */

@@ -1427,7 +1427,7 @@
       } catch (e) { return false; }
     }
     function updateOrdersBadge() {
-      const n = _ordersCache.filter(o => o.status === 'new').length;
+      const n = _ordersCache.filter(o => o.status === 'new' && !o.parent_order_id && o.order_type !== 'package_item').length;
       const b = document.getElementById('ordersBadge');
       if (!b) return;
       if (n > 0) { b.textContent = n; b.hidden = false; } else { b.hidden = true; }
@@ -1540,7 +1540,7 @@
     }
     function renderOrdersList() {
       const wrap = document.getElementById('ordersList');
-      const orders = _ordersCache.slice().sort((a, b) =>
+      const orders = _ordersCache.filter(o => !o.parent_order_id && o.order_type !== 'package_item').sort((a, b) =>
         ((a.status === 'new' ? 0 : 1) - (b.status === 'new' ? 0 : 1)) ||
         (b.created_at || '').localeCompare(a.created_at || ''));
       if (!orders.length) { wrap.innerHTML = '<div class="muted" style="padding:18px;text-align:center">Заявок пока нет.</div>'; return; }
@@ -1562,7 +1562,7 @@
         const onlinePayment = o.payment_provider === 'rollypay';
         const onlinePaid = o.payment_status === 'paid';
         const onlineActive = onlinePayment && ['initiating', 'created', 'processing'].includes(o.payment_status);
-        const canConfirm = o.status === 'new' && (!onlinePayment || onlinePaid);
+        const canConfirm = o.status === 'new' && o.order_type !== 'multi_order' && (!onlinePayment || onlinePaid);
         const canReject = o.status === 'new' && !onlineActive && !onlinePaid;
         const canDelete = !onlinePayment;
         const paymentState = onlinePayment
@@ -1583,6 +1583,15 @@
             ${o.order_type === 'remainder'
               ? `<div style="font-size:13px;margin-top:4px">💰 <b>Доплата остатка</b> · анкеты: ${escapeHtml(o.anketa_name || '—')} · итого <b>${sum}</b></div>`
                 + ((o.items && o.items.length) ? `<div style="font-size:12px;color:var(--text-mute);margin-top:3px">${o.items.map(it => escapeHtml(it.code || '') + ': ' + (Number(it.amount) || 0).toLocaleString('ru-RU') + ' ₽').join(' · ')}</div>` : '')
+              : o.order_type === 'multi_order'
+                ? `<div style="font-size:13px;margin-top:4px"><b>Составной заказ · ${(o.items || []).length} пак.</b> · сумма <b>${sum}</b></div>`
+                  + `<div style="font-size:12px;color:var(--text-mute);margin-top:4px">${(o.items || []).map(it => {
+                    const target = it.anketa_code || (it.is_new_anketa ? `новая «${it.anketa_name || '—'}»` : it.anketa_name || '—');
+                    const itemAmount = Number(it.amount) || 0;
+                    const itemPrepay = it.prepay_amount != null ? Number(it.prepay_amount) : itemAmount;
+                    return `${escapeHtml(target)}: ${escapeHtml(it.tariff_name || 'тариф')}, ${Number(it.qty) || 0} отз. · ${itemAmount.toLocaleString('ru-RU')} ₽ (сейчас ${itemPrepay.toLocaleString('ru-RU')} ₽)`;
+                  }).join('<br>')}</div>`
+                  + `<div style="font-size:12px;margin-top:3px">К оплате одним платежом: <b>${_prepay.toLocaleString('ru-RU')} ₽</b></div>`
               : `<div style="font-size:13px;margin-top:4px">Анкета: ${anketa} · Тариф: ${escapeHtml(o.tariff_name || '—')}${o.qty ? ' · ' + o.qty + ' отз.' : ''} · сумма <b>${sum}</b></div><div style="font-size:12px;margin-top:3px">${payLine}</div>`}
             ${paymentState}
             <div style="font-size:12px;color:var(--text-mute);margin-top:3px">${fmtDate(o.created_at)}${o.offer_agreed ? ' · ✅ оферта' + (o.offer_version ? ' ' + escapeHtml(o.offer_version) : '') : ''}${o.personal_data_agreed ? ' · ✅ согласие ПД' : ''}${links ? ' · ' + links : ''}${o.comment ? ' · 💬 ' + escapeHtml(o.comment) : ''}</div>
