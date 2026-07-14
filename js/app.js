@@ -1709,30 +1709,46 @@
       return { registration: finalReg, phoneExpense };
     },
 
-    /** Один новый основной номер = один бизнес-расход 99 ₽.
-     *  Детерминированный id защищает от повторного сохранения и слияния вкладок. */
+    /** Одна карточка аккаунта = максимум один бизнес-расход 99 ₽.
+     *  При замене телефона обновляем существующую операцию, а не добавляем новую. */
     _addPhoneExpenseForChange(profileId, previousRaw, nextRaw) {
       const previous = this._normalizePhone(previousRaw);
       const number = this._normalizePhone(nextRaw);
       if (!/^\d{11}$/.test(number) || number === previous) return null;
 
       const expenses = this.state.expenses || (this.state.expenses = []);
-      const id = `phone-cost-${number}`;
-      const exists = expenses.some(item => item && (
-        item.id === id ||
-        (item.source === 'account_phone_auto' && this._normalizePhone(item.phoneNumber) === number)
-      ));
-      if (exists) return null;
-
       const profile = (this.state.profiles || []).find(p => p.id === profileId)
         || (this.state.archivedProfiles || []).find(p => p.id === profileId);
       const profileCode = profile && profile.code ? String(profile.code).trim() : '';
+      const comment = `Номер ${number}${profileCode ? ` · аккаунт ${profileCode}` : ''}`;
+      const accountExpenses = expenses.filter(item => item
+        && item.source === 'account_phone_auto'
+        && item.profileId === profileId);
+
+      if (accountExpenses.length) {
+        const existing = accountExpenses[0];
+        existing.phoneNumber = number;
+        existing.comment = comment;
+        existing.updatedAt = new Date().toISOString();
+        if (accountExpenses.length > 1) {
+          const duplicateItems = new Set(accountExpenses.slice(1));
+          this.state.expenses = expenses.filter(item => !duplicateItems.has(item));
+        }
+        return null;
+      }
+
+      const numberAlreadyCharged = expenses.some(item => item
+        && item.source === 'account_phone_auto'
+        && this._normalizePhone(item.phoneNumber) === number);
+      if (numberAlreadyCharged) return null;
+
+      const safeProfileId = String(profileId || '').replace(/[^a-zA-Z0-9_-]/g, '');
       const item = {
-        id,
+        id: `phone-cost-account-${safeProfileId || uid()}`,
         date: todayISO(),
         category: 'Реклама - Номера',
         amount: PHONE_EXPENSE_AMOUNT,
-        comment: `Номер ${number}${profileCode ? ` · аккаунт ${profileCode}` : ''}`,
+        comment,
         personal: false,
         source: 'account_phone_auto',
         phoneNumber: number,

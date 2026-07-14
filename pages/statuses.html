@@ -477,7 +477,7 @@
   </style>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260714c"></script>
+  <script src="../js/app.js?v=20260714d"></script>
   <script src="../js/supabase-client.js?v=20260528a"></script>
   <script src="../js/auth-gate.js"></script>
   <script src="../js/cloud-sync.js?v=20260710b"></script>
@@ -1271,20 +1271,9 @@
     const REG_FIELDS_LAYOUT = [
       ['ownerName',     '👤 Имя владельца'],
       ['phone',         '📱 Телефон'],
-      ['city',          '🏙 Город'],
-      ['tg',            '✈️ Telegram'],
       ['profiEmail',    '📧 Профи / mail'],
       ['cloudPassword', '☁️ Облачный пароль'],
-      ['recoveryEmail', '🛟 Почта восстановления'],
-      ['yandexLogin',   '🔵 Яндекс логин'],
-      ['yandexPassword','🔵 Яндекс пароль'],
-      ['avitoPhone',    '🟢 Авито — номер'],
-      ['avitoEmail',    '🟢 Авито — почта'],
-      ['avitoPassword', '🟢 Авито — пароль'],
-      ['twoGis',        '🗺 2ГИС'],
-      ['lat',           '📍 Широта'],
-      ['lon',           '📍 Долгота'],
-      ['notes',         '📝 Заметки']
+      ['recoveryEmail', '🛟 Почта восстановления']
     ];
 
     function openReg(profileId) {
