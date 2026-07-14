@@ -51,7 +51,7 @@ Store.state = {
 Store.save = noop;
 
 assert.equal(Store.getDefaultCloudPassword(), 'shared-cloud-password',
-  'без 18-2 должен использоваться самый частый облачный пароль');
+  'без 17-2 должен использоваться самый частый облачный пароль');
 
 const newProfile = Store.addProfile({ code: '2-3' });
 assert.equal(Store.getAccountReg(newProfile.id).cloudPassword, 'shared-cloud-password',
@@ -117,9 +117,9 @@ for (const field of ['city', 'tg', 'yandexLogin', 'yandexPassword', 'avitoPhone'
 assert.match(statusesSource, /cloudPassword: Store\.getDefaultCloudPassword\(\)/,
   'новая карточка должна показывать общий пароль до первого сохранения');
 
-Store.state.profiles.push({ id: 'source-18-2', code: '18-2' });
-Store.state.accountRegs.push({ id: 'reg-18-2', profileId: 'source-18-2', cloudPassword: 'preferred-18-2-password' });
-assert.equal(Store.getDefaultCloudPassword(), 'preferred-18-2-password',
-  'пароль аккаунта 18-2 должен иметь приоритет над самым частым');
+Store.state.profiles.push({ id: 'source-17-2', code: '17-2' });
+Store.state.accountRegs.push({ id: 'reg-17-2', profileId: 'source-17-2', cloudPassword: 'preferred-17-2-password' });
+assert.equal(Store.getDefaultCloudPassword(), 'preferred-17-2-password',
+  'пароль аккаунта 17-2 должен иметь приоритет над самым частым');
 
 console.log('account phone expense: OK');

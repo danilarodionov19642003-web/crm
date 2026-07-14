@@ -1671,12 +1671,12 @@
     getAccountReg(profileId) {
       return (this.state.accountRegs || []).find(r => r.profileId === profileId) || null;
     },
-    /** Общий облачный пароль: сначала аккаунт 18-2, затем самое частое
+    /** Общий облачный пароль: сначала аккаунт 17-2, затем самое частое
      *  непустое значение среди регистраций. Сам пароль в коде не хранится. */
     getDefaultCloudPassword() {
       const regs = this.state.accountRegs || [];
       const profiles = (this.state.profiles || []).concat(this.state.archivedProfiles || []);
-      const sourceProfile = profiles.find(p => String(p.code || '').trim().toLowerCase() === '18-2');
+      const sourceProfile = profiles.find(p => String(p.code || '').trim().toLowerCase() === '17-2');
       if (sourceProfile) {
         const sourceReg = regs.find(r => r.profileId === sourceProfile.id);
         const direct = String((sourceReg && sourceReg.cloudPassword) || '').trim();
