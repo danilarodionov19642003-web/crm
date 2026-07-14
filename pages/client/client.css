@@ -786,6 +786,7 @@ textarea.cli-ord-input { resize: vertical; }
 .cli-cart-target__option input:disabled + span { opacity: .45; cursor: default; }
 .cli-cart-grid { display: grid; grid-template-columns: minmax(0,1fr) minmax(140px,.45fr); gap: 10px; }
 .cli-cart-control { display: block; margin-top: 10px; }
+.cli-cart-control[hidden] { display: none; }
 .cli-cart-control > span { display: block; font-size: 12px; color: var(--text-mute, #888); }
 .cli-cart-control small { font-size: inherit; }
 .cli-cart-item__sum { margin-top: 10px; font-size: 12px; color: var(--text-mute, #888); }
