@@ -396,7 +396,7 @@
   </div>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260713b"></script>
+  <script src="../js/app.js?v=20260714a"></script>
   <script src="../js/supabase-client.js?v=20260528a"></script>
   <script src="../js/auth-gate.js"></script>
   <script src="../js/cloud-sync.js?v=20260710b"></script>
@@ -439,9 +439,10 @@
       const statuses = Store.state.profileStatuses || [];
       // Считаем только те отзывы, у которых пара (mentorId, profileId)
       // имеет статус «Готов» в текущем списке аккаунтов.
-      return reviews.filter(r => statuses.some(
+      const realDone = reviews.filter(r => statuses.some(
         s => s.mentorId === r.mentorId && s.profileId === r.profileId && s.status === DONE_STATUS
       )).length;
+      return Math.max(realDone, Number(client.manualDone) || 0);
     }
     // Обновляем клиенты при синхронизации облака и при изменении модерации отзывов
     window.addEventListener('cloudstate:updated', () => { Store.load(); render(); });

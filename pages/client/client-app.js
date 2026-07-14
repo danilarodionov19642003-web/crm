@@ -1081,7 +1081,7 @@
     try {
       const url = `${_url()}/rest/v1/client_orders`
         + `?client_email=eq.${encodeURIComponent(email)}`
-        + `&select=id,anketa_code,anketa_name,is_new_anketa,tariff_name,qty,amount,status,created_at,confirmed_at,offer_agreed,offer_text,offer_version,personal_data_agreed,personal_data_consent_text,personal_data_consent_version,pay_full,prepay_amount,remainder_status,order_type,items`
+        + `&select=id,anketa_code,anketa_name,is_new_anketa,tariff_name,qty,amount,status,created_at,confirmed_at,receipt_url,offer_agreed,offer_text,offer_version,personal_data_agreed,personal_data_consent_text,personal_data_consent_version,pay_full,prepay_amount,remainder_status,order_type,items`
         + `&order=created_at.desc&limit=40`;
       const res = await fetch(url, { headers: { 'apikey': _key(), 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' } });
       if (!res.ok) { console.warn('[client-app] loadMyOrders failed', res.status); return []; }
@@ -1131,6 +1131,9 @@
     const consent = o.offer_agreed
       ? `<div class="cli-order__consent">✅ Оферта${o.offer_version ? ' ' + escapeHtml(o.offer_version) : ''} принята${o.personal_data_agreed ? ' · согласие на обработку данных дано' : ''} · ${_fmtDateTime(o.created_at)}${o.offer_text ? ` · <button type="button" class="cli-order__terms" data-view-terms="${o.id}">оферта</button>` : ''}${o.personal_data_consent_text ? ` · <button type="button" class="cli-order__terms" data-view-consent="${o.id}">согласие</button>` : ''}</div>`
       : '';
+    const receipt = o.receipt_url
+      ? `<a class="cli-order__receipt" href="${escapeAttr(o.receipt_url)}" target="_blank" rel="noopener">Открыть чек</a>`
+      : '';
     return `
       <div class="cli-order">
         <div class="cli-order__row">
@@ -1141,6 +1144,7 @@
           <span class="cli-order__status cli-order__status--${st.cls}">${st.label}</span>
         </div>
         ${payLine}
+        ${receipt}
         ${consent}
       </div>`;
   }

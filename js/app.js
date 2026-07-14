@@ -1433,6 +1433,9 @@
           .map(s => s.profileId)
       );
       const realDone = reviewsRaw.filter(r => doneProfileIds.has(r.profileId)).length;
+      // Для исключительных случаев (например, профиль утрачен после частично
+      // выполненного пакета) владелец может зафиксировать неснижаемый минимум.
+      const effectiveDone = Math.max(realDone, Number(client && client.manualDone) || 0);
       return {
         mentorId,
         code: mentor.code || '',
@@ -1440,7 +1443,7 @@
         platform: client ? (client.platform || '') : '',
         tariff: client ? (client.tariff || '') : '',
         ordered: client ? Number(client.ordered) || 0 : 0,
-        done: realDone,
+        done: effectiveDone,
         paid: client ? Number(client.paid) || 0 : 0,
         remain: client ? Number(client.remain) || 0 : 0,
         total: client ? Number(client.total) || 0 : 0,
