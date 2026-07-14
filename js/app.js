@@ -33,6 +33,7 @@
     'Софт',
     'Прочее'
   ];
+  const PHONE_EXPENSE_AMOUNT = 99;
 
   // Категории ЛИЧНЫХ трат (expense.personal === true). Бот/ассистент
   // использует этот же список чтобы классифицировать траты владельца.
@@ -1674,6 +1675,7 @@
     upsertAccountReg(profileId, patch) {
       const list = this.state.accountRegs;
       const i = list.findIndex(r => r.profileId === profileId);
+      const previousPhone = i >= 0 ? this._normalizePhone(list[i].phone) : '';
       if (i >= 0) {
         if (patch && typeof patch.phone === 'string') patch.phone = this._normalizePhone(patch.phone);
         if (patch && typeof patch.avitoPhone === 'string') patch.avitoPhone = this._normalizePhone(patch.avitoPhone);
@@ -1698,7 +1700,47 @@
         this._ensurePhoneRecord(finalReg.phone,      profileId, { ownerName: finalReg.ownerName, city: finalReg.city, section: 'phone' });
         this._ensurePhoneRecord(finalReg.avitoPhone, profileId, { ownerName: finalReg.ownerName, city: finalReg.city, section: '🟢 Авито' });
       }
+      const phoneExpense = this._addPhoneExpenseForChange(
+        profileId,
+        previousPhone,
+        finalReg ? finalReg.phone : ''
+      );
       this.save();
+      return { registration: finalReg, phoneExpense };
+    },
+
+    /** Один новый основной номер = один бизнес-расход 99 ₽.
+     *  Детерминированный id защищает от повторного сохранения и слияния вкладок. */
+    _addPhoneExpenseForChange(profileId, previousRaw, nextRaw) {
+      const previous = this._normalizePhone(previousRaw);
+      const number = this._normalizePhone(nextRaw);
+      if (!/^\d{11}$/.test(number) || number === previous) return null;
+
+      const expenses = this.state.expenses || (this.state.expenses = []);
+      const id = `phone-cost-${number}`;
+      const exists = expenses.some(item => item && (
+        item.id === id ||
+        (item.source === 'account_phone_auto' && this._normalizePhone(item.phoneNumber) === number)
+      ));
+      if (exists) return null;
+
+      const profile = (this.state.profiles || []).find(p => p.id === profileId)
+        || (this.state.archivedProfiles || []).find(p => p.id === profileId);
+      const profileCode = profile && profile.code ? String(profile.code).trim() : '';
+      const item = {
+        id,
+        date: todayISO(),
+        category: 'Реклама - Номера',
+        amount: PHONE_EXPENSE_AMOUNT,
+        comment: `Номер ${number}${profileCode ? ` · аккаунт ${profileCode}` : ''}`,
+        personal: false,
+        source: 'account_phone_auto',
+        phoneNumber: number,
+        profileId,
+        createdAt: new Date().toISOString()
+      };
+      expenses.push(item);
+      return item;
     },
 
     /** Создать запись в state.phones, если для пары (number, profileId) её ещё нет.
@@ -1910,7 +1952,7 @@
     Store, Modal, Counter, toast,
     fmtMoney, fmtDate, monthKey, monthLabel,
     uid, todayISO, tomorrowISO,
-    SERVICES, EXPENSE_CATEGORIES, PERSONAL_CATEGORIES, TARIFFS, TARIFF_NAMES,
+    SERVICES, EXPENSE_CATEGORIES, PERSONAL_CATEGORIES, PHONE_EXPENSE_AMOUNT, TARIFFS, TARIFF_NAMES,
     PROFILE_STATUSES, PERFORMERS, CITIES, cityFromCode
   };
 
