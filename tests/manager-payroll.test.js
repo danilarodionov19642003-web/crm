@@ -39,7 +39,8 @@ Store.state = {
     ...Array.from({ length: 24 }, (_, i) => ({ id: `i-${i}`, performer: 'Илья' })),
     ...Array.from({ length: 64 }, (_, i) => ({ id: `d-${i}`, performer: 'Данил' })),
     { id: 'none-1', performer: '' }
-  ]
+  ],
+  expenses: []
 };
 
 Store._migrateManagerPayroll();
@@ -59,6 +60,31 @@ assert.equal(ilya.paid, 0, 'старые выплаты Насти не пере
 ilya.ratePerReview = 450;
 Store._syncEmployeeWorkCounts();
 assert.equal(ilya.ratePerReview, 450, 'автоподсчёт не должен затирать ручную ставку');
+
+const payment = Store.addPayment(ilya.id, {
+  id: 'ilya-pay-1', date: '2026-07-10', amount: 1234, note: 'частичная выплата'
+});
+assert.equal(payment.amount, 1234, 'можно внести произвольную сумму выплаты');
+assert.equal(ilya.paid, 1234, 'выплата должна увеличивать выплаченную сумму');
+assert.deepEqual(
+  JSON.parse(JSON.stringify(Store.state.expenses[0])),
+  {
+    id: 'employee-payment-ilya-pay-1',
+    date: '2026-07-10',
+    category: 'Зарплаты',
+    amount: 1234,
+    comment: 'ЗП сотруднику Илья · частичная выплата',
+    personal: false,
+    source: 'employee_payment',
+    employeeId: ilya.id,
+    employeePaymentId: 'ilya-pay-1',
+    createdAt: Store.state.expenses[0].createdAt
+  },
+  'выплата задним числом должна стать рабочим расходом на ту же дату'
+);
+assert.equal(Store.deletePayment(ilya.id, 'ilya-pay-1'), true);
+assert.equal(ilya.paid, 0, 'удаление выплаты должно откатить выплаченную сумму');
+assert.equal(Store.state.expenses.length, 0, 'связанный расход должен удалиться вместе с выплатой');
 
 const clientsHtml = fs.readFileSync(path.join(root, 'pages/clients.html'), 'utf8');
 const tasksHtml = fs.readFileSync(path.join(root, 'pages/tasks.html'), 'utf8');

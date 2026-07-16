@@ -125,7 +125,7 @@
             </div>
             <div class="field">
               <label for="pAmount">Сумма, ₽</label>
-              <input type="number" id="pAmount" class="input" value="0" min="0" step="500"/>
+              <input type="number" id="pAmount" class="input" value="0" min="0" step="1"/>
             </div>
           </div>
           <div class="field" style="margin-top:12px">
@@ -232,7 +232,7 @@
           <td class="num" data-field="ratePerReview" data-type="number">${rate}</td>
           <td class="num" title="Считается автоматически по отметкам «Кто делал · для ЗП» в аккаунтах"><strong>${reviews}</strong></td>
           <td class="num"><strong>${fmtMoney(earned)}</strong></td>
-          <td class="num pos" data-field="paid" data-type="number">${paid}</td>
+          <td class="num pos" title="Меняется только через добавление или удаление выплаты">${paid}</td>
           <td class="num ${debt>0?'neg':''}">${fmtMoney(debt)}</td>
           <td><input type="date" class="input" style="padding:4px 6px;background:transparent;border:1px solid transparent" data-field="hired" value="${r.hired || ''}"/></td>
           <td>
@@ -362,10 +362,7 @@
         btn.addEventListener('click', () => {
           const pid = btn.closest('tr').dataset.pid;
           const emp = Store.state.employees.find(x => x.id === currentEmpId);
-          const pay = emp.payments.find(p => p.id === pid);
-          emp.payments = emp.payments.filter(p => p.id !== pid);
-          emp.paid = Math.max(0, (emp.paid || 0) - (pay ? Number(pay.amount) : 0));
-          Store.save();
+          Store.deletePayment(currentEmpId, pid);
           renderPayments(emp);
           render();
           toast('Выплата удалена');

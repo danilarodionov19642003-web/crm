@@ -776,10 +776,41 @@
       if (!e) return;
       e.payments = e.payments || [];
       const p = Object.assign({ id: uid(), date: todayISO(), amount: 0, note: '' }, payment);
+      p.amount = Math.max(0, Number(p.amount) || 0);
+      if (p.amount <= 0) return null;
       e.payments.push(p);
-      e.paid = (e.paid || 0) + Number(p.amount || 0);
+      e.paid = (e.paid || 0) + p.amount;
+      this.state.expenses ??= [];
+      const expenseId = `employee-payment-${p.id}`;
+      if (!this.state.expenses.some(x => x.id === expenseId)) {
+        this.state.expenses.push({
+          id: expenseId,
+          date: p.date || todayISO(),
+          category: 'Зарплаты',
+          amount: p.amount,
+          comment: `ЗП сотруднику ${e.name || '—'}${p.note ? ` · ${p.note}` : ''}`,
+          personal: false,
+          source: 'employee_payment',
+          employeeId: e.id,
+          employeePaymentId: p.id,
+          createdAt: new Date().toISOString()
+        });
+      }
       this.save();
       return p;
+    },
+    deletePayment(employeeId, paymentId) {
+      const e = this.state.employees.find(x => x.id === employeeId);
+      if (!e) return false;
+      const payment = (e.payments || []).find(p => p.id === paymentId);
+      if (!payment) return false;
+      e.payments = (e.payments || []).filter(p => p.id !== paymentId);
+      e.paid = Math.max(0, (Number(e.paid) || 0) - (Number(payment.amount) || 0));
+      this.state.expenses = (this.state.expenses || []).filter(x =>
+        x.id !== `employee-payment-${paymentId}` && x.employeePaymentId !== paymentId
+      );
+      this.save();
+      return true;
     },
 
     /* ---------- Subscriptions ---------- */
