@@ -21,7 +21,7 @@
 
       <div class="field">
         <label for="email">Email</label>
-        <input id="email" type="email" class="input" autocomplete="username" placeholder="nastya@mentori.local"/>
+        <input id="email" type="email" class="input" autocomplete="username" placeholder="employee@mentori.local"/>
       </div>
       <div class="field">
         <label for="password">Пароль</label>
@@ -44,7 +44,7 @@
     const { Auth } = window.Supabase;
 
     // Куда редиректить после успешного входа: владельцу — главная CRM,
-    // сотруднику (Настя) — страница аккаунтов. Для обратной совместимости
+    // сотруднику — страница аккаунтов. Для обратной совместимости
     // можно указать ?next=... (напр. если auth-gate заслал сюда).
     function landing() {
       const params = new URLSearchParams(location.search);

@@ -44,6 +44,7 @@
     }
     .task-pill--client { background: rgba(249,115,22,0.15); color: var(--orange); }
     .task-pill--acc    { background: rgba(99,102,241,0.15); color: #a5b4fc; }
+    .task-pill--manager{ background: rgba(34,197,94,0.14); color: #4ade80; }
     .task-pill--date   { background: rgba(255,255,255,0.04); color: var(--text-mute); }
     .task-pill--overdue{ background: rgba(239,68,68,0.15); color: var(--red); }
     .task-pill--today  { background: rgba(34,197,94,0.18); color: #4ade80; }
@@ -263,6 +264,12 @@
             <option value="done">Выполненные</option>
             <option value="all">Все</option>
           </select>
+          <select id="fManager" class="select">
+            <option value="">Все менеджеры</option>
+            <option value="Илья">Илья</option>
+            <option value="Данил">Данил</option>
+            <option value="__none__">Не назначен</option>
+          </select>
           <select id="fMentor" class="select">
             <option value="">Все клиенты</option>
           </select>
@@ -312,11 +319,11 @@
   </div>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260714b"></script>
+  <script src="../js/app.js?v=20260717a"></script>
   <script src="../js/supabase-client.js?v=20260528a"></script>
   <script src="../js/auth-gate.js"></script>
   <script src="../js/cloud-sync.js?v=20260710b"></script>
-  <script src="../js/reviews-sync.js"></script>
+  <script src="../js/reviews-sync.js?v=20260717a"></script>
   <script src="../js/schedule-apply.js?v=20260522b"></script>
   <script src="../components/sidebar.js"></script>
   <script src="../components/header.js"></script>
@@ -331,7 +338,7 @@
     const isOwner = (window.AuthGate && window.AuthGate.isOwner && window.AuthGate.isOwner()) || false;
     if (isOwner) document.querySelectorAll('[data-owner-only]').forEach(el => el.style.display = '');
 
-    const filters = { scope: 'today', mentorId: '', q: '' };
+    const filters = { scope: 'today', manager: '', mentorId: '', q: '' };
     let editingId = null;
 
     function escapeHtml(s) {
@@ -339,6 +346,20 @@
     }
 
     function mentorById(id) { return (Store.state.mentors || []).find(m => m.id === id) || null; }
+    function clientByMentorId(id) {
+      const mentor = mentorById(id);
+      const code = String(mentor && mentor.code || '').toLowerCase().trim();
+      if (!code) return null;
+      return (Store.state.clients || []).find(c => String(c.code || '').toLowerCase().trim() === code) || null;
+    }
+    function managerForMentor(id) {
+      const client = clientByMentorId(id);
+      return client ? String(client.manager || '').trim() : '';
+    }
+    function matchesManager(manager) {
+      if (!filters.manager) return true;
+      return filters.manager === '__none__' ? !manager : manager === filters.manager;
+    }
     function profileById(id) {
       const live = (Store.state.profiles || []).find(p => p.id === id);
       if (live) return live;
@@ -377,6 +398,7 @@
 
     function applyFilters(tasks) {
       return tasks.filter(t => {
+        if (!matchesManager(managerForMentor(t.mentorId))) return false;
         if (filters.mentorId && t.mentorId !== filters.mentorId) return false;
         if (filters.q) {
           const m = mentorById(t.mentorId);
@@ -400,18 +422,19 @@
       const all = (Store.state.dailyTasks || []).slice()
         .sort((a,b) => (a.date||'').localeCompare(b.date||'') || (a.createdAt||'').localeCompare(b.createdAt||''));
       const filtered = applyFilters(all);
+      const managerScoped = all.filter(t => matchesManager(managerForMentor(t.mentorId)));
 
       // KPI
       const today = todayISO();
-      const todayTasks = all.filter(t => t.date === today);
+      const todayTasks = managerScoped.filter(t => t.date === today);
       const todayDone = todayTasks.filter(t => t.done).length;
-      const overdue = all.filter(t => !t.done && isPast(t.date)).length;
-      const upcoming = all.filter(t => !t.done && isFuture(t.date)).length;
+      const overdue = managerScoped.filter(t => !t.done && isPast(t.date)).length;
+      const upcoming = managerScoped.filter(t => !t.done && isFuture(t.date)).length;
       document.getElementById('taskKpis').innerHTML = `
         <div class="card"><div class="card__label">На сегодня</div><div class="card__value">${todayDone}/${todayTasks.length}</div></div>
         <div class="card"><div class="card__label">Просрочено</div><div class="card__value" style="color:var(--red)">${overdue}</div></div>
         <div class="card"><div class="card__label">Предстоит</div><div class="card__value">${upcoming}</div></div>
-        <div class="card"><div class="card__label">Всего задач</div><div class="card__value">${all.length}</div></div>
+        <div class="card"><div class="card__label">Всего задач</div><div class="card__value">${managerScoped.length}</div></div>
       `;
 
       const list = document.getElementById('taskList');
@@ -465,6 +488,7 @@
     function taskHtml(t) {
       const m = mentorById(t.mentorId);
       const p = profileById(t.profileId);
+      const manager = managerForMentor(t.mentorId);
       const datePill = t.date === todayISO() ? 'task-pill--today'
         : (isPast(t.date) && !t.done) ? 'task-pill--overdue'
         : 'task-pill--date';
@@ -478,6 +502,7 @@
             <div class="task-row1">
               <span class="task-pill ${datePill}">📅 ${escapeHtml(fmtDate(t.date) || t.date || '—')}</span>
               <span class="task-pill task-pill--client">👤 ${escapeHtml(mentorLabel(m))}</span>
+              <span class="task-pill task-pill--manager">${escapeHtml(manager || 'не назначен')}</span>
               ${accBlock}
             </div>
             <div class="task-note">${escapeHtml(t.note || '— без описания —')}</div>
@@ -542,14 +567,21 @@
 
     /* ---------- фильтры ---------- */
     document.getElementById('fScope').addEventListener('change', e => { filters.scope = e.target.value; render(); });
+    document.getElementById('fManager').addEventListener('change', e => {
+      filters.manager = e.target.value;
+      render();
+      renderSched();
+    });
     document.getElementById('fMentor').addEventListener('change', e => { filters.mentorId = e.target.value; render(); });
     document.getElementById('fSearch').addEventListener('input', e => { filters.q = e.target.value.trim().toLowerCase(); render(); });
     document.getElementById('btnReset').addEventListener('click', () => {
-      filters.scope = 'today'; filters.mentorId = ''; filters.q = '';
+      filters.scope = 'today'; filters.manager = ''; filters.mentorId = ''; filters.q = '';
       document.getElementById('fScope').value = 'today';
+      document.getElementById('fManager').value = '';
       document.getElementById('fMentor').value = '';
       document.getElementById('fSearch').value = '';
       render();
+      renderSched();
     });
     window.onGlobalSearch = q => { filters.q = q; document.getElementById('fSearch').value = q; render(); };
 
@@ -630,7 +662,9 @@
     /** Собирает {date → [{client, count, color}]} из всех client.schedule */
     function collectScheduleByDate() {
       const map = new Map();
-      const clients = (Store.state.clients || []).filter(c => !c.closed && Array.isArray(c.schedule) && c.schedule.length);
+      const clients = (Store.state.clients || []).filter(c =>
+        !c.closed && Array.isArray(c.schedule) && c.schedule.length && matchesManager(String(c.manager || '').trim())
+      );
       // Раскрашиваем стабильно — по индексу в отсортированном списке
       const sorted = [...clients].sort((a,b) => (a.code||'').localeCompare(b.code||'','ru',{numeric:true}));
       sorted.forEach((c, idx) => {
@@ -645,7 +679,7 @@
           if (!s.date || !s.count) return;
           if (!map.has(s.date)) map.set(s.date, []);
           map.get(s.date).push({
-            clientId: c.id, code: c.code, name: c.name,
+            clientId: c.id, code: c.code, name: c.name, manager: c.manager || '',
             mentorId,                                       // ← добавлено для match с schedule_responses.mentor_id
             tariff: c.tariff || '', ordered: +c.ordered || 0,
             done: deriveDoneLocal(c), count: +s.count || 0, color
@@ -828,7 +862,7 @@
                 <div class="sched-row__name">
                   <strong>${escapeHtml(r.code || '')}</strong>
                   ${r.name ? ` · ${escapeHtml(r.name)}` : ''}
-                  <span class="sched-row__progress">${r.tariff ? r.tariff + ' · ' : ''}${r.done}/${r.ordered} (${left} осталось)</span>
+                  <span class="sched-row__progress">${r.manager ? escapeHtml(r.manager) + ' · ' : ''}${r.tariff ? r.tariff + ' · ' : ''}${r.done}/${r.ordered} (${left} осталось)</span>
                 </div>
                 ${workBadge}
                 ${respBadge}

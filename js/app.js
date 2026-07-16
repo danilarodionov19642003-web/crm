@@ -192,6 +192,11 @@
       };
       this._normalizePaymentSettings();
       this.state.clients.forEach(c => { c.tariff = mapTariff(c.tariff); });
+      this.state.clients.forEach(c => {
+        if (!PERFORMERS.includes(c.manager)) c.manager = '';
+      });
+      this._migrateManagerPayroll();
+      this._syncEmployeeWorkCounts();
       // Справочник ниш и пауз «Выбран → Опубликован» в днях.
       // Используется ботом для напоминаний публиковать отзыв (см. A3).
       // ⭐ ключ — это код категории, который проставляется у клиента (clients[].niche).
@@ -203,7 +208,7 @@
         legal:     { label: 'Юридические услуги', daysToPublish: 7  },
         other:     { label: 'Другое',  daysToPublish: 5  },
       };
-      // Сид: первая пара ссылок на смену IP, чтобы Настя могла начать сразу
+      // Сид: первая пара ссылок на смену IP для рабочего раздела аккаунтов
       // (владелец потом редактирует/добавляет в модалке «Управлять прокси»).
       if (!this.state._proxySeeded) {
         const seedLinks = [
@@ -315,6 +320,7 @@
     },
 
     save() {
+      this._syncEmployeeWorkCounts();
       localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state));
       // Облачная синхронизация (если подключена)
       if (window.CloudSync && window.CloudSync.isConfigured()) {
@@ -378,13 +384,25 @@
         nextDate: s.nextDate || ''
       }));
 
-      // Сотрудник — только Настя, начало работы = завтра
+      // Менеджеры откликов. Данил — владелец, поэтому его ставка по умолчанию
+      // нулевая; при необходимости она редактируется на странице сотрудников.
       const employees = [
         {
           id: uid(),
-          name: 'Настя',
-          role: 'Ревьюер',
+          name: 'Илья',
+          role: 'Менеджер',
           ratePerReview: 300,
+          reviewsDone: 0,
+          paid: 0,
+          status: 'active',
+          hired: tomorrowISO(),
+          payments: []
+        },
+        {
+          id: uid(),
+          name: 'Данил',
+          role: 'Менеджер',
+          ratePerReview: 0,
           reviewsDone: 0,
           paid: 0,
           status: 'active',
@@ -583,7 +601,7 @@
         paid: 0, remain: 0, total: 0,
         allowRegularTariff: false,
         date: todayISO(), deadline: '', overdueDays: 0,
-        assignedEmail: '', avatarUrl: ''
+        assignedEmail: '', manager: '', avatarUrl: ''
       }, rec);
       // нормализация email
       if (item.assignedEmail) item.assignedEmail = String(item.assignedEmail).toLowerCase().trim();
@@ -680,6 +698,49 @@
     },
 
     /* ---------- Employees ---------- */
+    _migrateManagerPayroll() {
+      if (this.state._managerPayrollV1) return;
+      const employees = this.state.employees || [];
+      const legacy = employees.find(e => String(e.name || '').trim().toLowerCase() === 'настя');
+      const kept = employees.filter(e => String(e.name || '').trim().toLowerCase() !== 'настя');
+      const has = name => kept.some(e => String(e.name || '').trim().toLowerCase() === name.toLowerCase());
+      if (!has('Илья')) {
+        kept.push({
+          id: uid(), name: 'Илья', role: 'Менеджер',
+          ratePerReview: Number(legacy && legacy.ratePerReview) || 300,
+          reviewsDone: 0, paid: 0, status: 'active',
+          hired: todayISO(), payments: []
+        });
+      }
+      if (!has('Данил')) {
+        kept.push({
+          id: uid(), name: 'Данил', role: 'Менеджер',
+          ratePerReview: 0, reviewsDone: 0, paid: 0,
+          status: 'active', hired: todayISO(), payments: []
+        });
+      }
+      this.state.employees = kept;
+      this.state._managerPayrollV1 = true;
+    },
+    _syncEmployeeWorkCounts() {
+      if (!this.state) return false;
+      const counts = new Map(PERFORMERS.map(name => [name, 0]));
+      (this.state.profileStatuses || []).forEach(rec => {
+        const performer = String(rec.performer || '').trim();
+        if (counts.has(performer)) counts.set(performer, counts.get(performer) + 1);
+      });
+      let changed = false;
+      (this.state.employees || []).forEach(emp => {
+        const name = String(emp.name || '').trim();
+        if (!counts.has(name)) return;
+        const next = counts.get(name);
+        if (Number(emp.reviewsDone || 0) !== next) {
+          emp.reviewsDone = next;
+          changed = true;
+        }
+      });
+      return changed;
+    },
     addEmployee(rec) {
       const item = Object.assign({
         id: uid(),
@@ -1162,7 +1223,7 @@
     },
 
     /* ---------- Reviews (модерация опубликованных отзывов) ----------
-       Когда сотрудник (Настя) выставляет статус «🎯 Готов», он обязан
+       Когда менеджер выставляет статус «🎯 Готов», он обязан
        вставить текст опубликованного отзыва. Отзыв попадает сюда со
        статусом 'pending', владелец на странице reviews.html нажимает
        «Проверен» → moderation='approved' → засчитывается зарплата
@@ -1211,7 +1272,7 @@
     /* ---------- Proxy links (смена IP — LTE-center и пр.) ----------
        Список ссылок-«пинков», которые при GET-запросе перезагружают модем
        и выдают новый IP. Кнопка «Сменить IP» вызывает все ссылки разом.
-       Управляет владелец, использует Настя. */
+       Управляет владелец, используют менеджеры. */
     addProxyLink(rec) {
       const item = Object.assign({
         id: uid(),
@@ -1240,10 +1301,10 @@
       this.save();
     },
 
-    /* ---------- Daily tasks (задачи Насте на день) ----------
-       Владелец (Данила) ставит задачу: дата, клиент (mentorId), аккаунт
-       (profileId, опционально), заметка. Настя видит сегодняшние задачи и
-       отмечает их как выполненные. */
+    /* ---------- Daily tasks ----------
+       Задача привязана к клиенту; ответственный определяется из client.manager,
+       поэтому при смене менеджера уже созданные задачи автоматически переходят
+       в его фильтр. */
     addDailyTask(rec) {
       const item = Object.assign({
         id: uid(),

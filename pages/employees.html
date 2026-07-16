@@ -18,7 +18,7 @@
         <div class="page-title">
           <div>
             <h1>Команда</h1>
-            <p>Зарплата = выполнено отзывов × ставка. Счётчик «Выполнено» обновляется автоматически после того, как вы одобрите отзыв во вкладке <a href="reviews.html" style="color:var(--accent)">Отзывы</a>.</p>
+            <p>Зарплата = отклики в разделе «Аккаунты» × ставка менеджера. Отклик засчитывается тому, кто указан в поле «Кто делал · для ЗП».</p>
           </div>
           <button class="btn btn--primary" id="btnAdd">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -43,11 +43,10 @@
               <thead>
                 <tr>
                   <th>Имя</th>
-                  <th>Email (Supabase Auth)</th>
                   <th>Роль</th>
-                  <th class="num">Ставка / отзыв</th>
-                  <th class="num">Выполнено отзывов</th>
-                  <th class="num">К выплате</th>
+                  <th class="num">Ставка / отклик</th>
+                  <th class="num">Откликов</th>
+                  <th class="num">Заработано</th>
                   <th class="num">Выплачено</th>
                   <th class="num">Долг</th>
                   <th>Дата начала</th>
@@ -76,15 +75,15 @@
       <div class="modal__body">
         <div class="field">
           <label for="mName">Имя</label>
-          <input type="text" id="mName" class="input" placeholder="Напр. Настя"/>
+          <input type="text" id="mName" class="input" placeholder="Напр. Илья"/>
         </div>
         <div class="field">
           <label for="mRole">Роль</label>
-          <input type="text" id="mRole" class="input" value="Ревьюер" placeholder="Ревьюер / Менеджер..."/>
+          <input type="text" id="mRole" class="input" value="Менеджер" placeholder="Менеджер"/>
         </div>
         <div class="field-row">
           <div class="field">
-            <label for="mRate">Ставка за отзыв, ₽</label>
+            <label for="mRate">Ставка за отклик, ₽</label>
             <input type="number" id="mRate" class="input" value="300" min="0" step="50"/>
           </div>
           <div class="field">
@@ -143,19 +142,19 @@
   </div>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260714b"></script>
+  <script src="../js/app.js?v=20260717a"></script>
   <script src="../js/supabase-client.js?v=20260528a"></script>
   <script src="../js/auth-gate.js"></script>
   <script src="../js/cloud-sync.js?v=20260710b"></script>
   <script src="../js/accounts-sync.js"></script>
-  <script src="../js/reviews-sync.js"></script>
+  <script src="../js/reviews-sync.js?v=20260717a"></script>
   <script src="../components/sidebar.js"></script>
   <script src="../components/header.js"></script>
   <script src="../components/table.js"></script>
 
   <script>
   /* ========================================================================
-     Сотрудники: счётчик +/− для отзывов, авто-расчёт зарплаты
+     Сотрудники: отклики по исполнителю, ставка и история выплат
      ======================================================================== */
   document.addEventListener('DOMContentLoaded', () => {
     const { Store, Modal, Counter, toast, fmtMoney, fmtDate, todayISO, tomorrowISO, monthLabel } = window.App;
@@ -175,7 +174,7 @@
       const debt = Math.max(0, earned - paidTotal);
       document.getElementById('empKpis').innerHTML = `
         <div class="card"><div class="card__label">Активных</div><div class="card__value">${active}</div></div>
-        <div class="card"><div class="card__label">Отзывов сделано</div><div class="card__value">${reviews}</div></div>
+        <div class="card"><div class="card__label">Откликов сделано</div><div class="card__value">${reviews}</div></div>
         <div class="card"><div class="card__label">Заработано</div><div class="card__value">${fmtMoney(earned)}</div></div>
         <div class="card"><div class="card__label">Выплачено</div><div class="card__value pos">${fmtMoney(paidTotal)}</div></div>
         <div class="card"><div class="card__label">К выплате</div><div class="card__value ${debt>0?'neg':''}">${fmtMoney(debt)}</div></div>
@@ -199,7 +198,7 @@
       const tbody = document.getElementById('empRows');
       const tfoot = document.getElementById('empFoot');
       if (rows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="11" class="empty">Нет сотрудников. Нажмите «Добавить сотрудника».</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="10" class="empty">Нет сотрудников. Нажмите «Добавить сотрудника».</td></tr>`;
         tfoot.innerHTML = '';
       } else {
         tbody.innerHTML = rows.map(r => rowHtml(r)).join('');
@@ -208,7 +207,7 @@
         const paid = rows.reduce((s, r) => s + (+r.paid || 0), 0);
         tfoot.innerHTML = `
           <tr>
-            <td colspan="4">ИТОГО</td>
+            <td colspan="3">ИТОГО</td>
             <td class="num">${reviews}</td>
             <td class="num">${fmtMoney(earned)}</td>
             <td class="num pos">${fmtMoney(paid)}</td>
@@ -226,16 +225,12 @@
       const earned = reviews * rate;
       const paid = +r.paid || 0;
       const debt = Math.max(0, earned - paid);
-      const emailCell = r.email
-        ? `<span style="font-size:12px;color:var(--text-mute)" title="Двойной клик чтобы изменить">${escapeHtml(r.email)}</span>`
-        : `<button class="btn btn--ghost btn--sm" data-act="link-email" title="Привязать сотрудника к его аккаунту в Supabase Auth — без этого не будет считаться зарплата">🔗 Привязать email</button>`;
       return `
         <tr data-id="${r.id}">
           <td data-field="name"><strong>${escapeHtml(r.name || '—')}</strong></td>
-          <td data-field="email" data-type="email">${emailCell}</td>
           <td data-field="role">${escapeHtml(r.role || '—')}</td>
           <td class="num" data-field="ratePerReview" data-type="number">${rate}</td>
-          <td class="num" title="Считается автоматически по проверенным отзывам"><strong>${reviews}</strong></td>
+          <td class="num" title="Считается автоматически по отметкам «Кто делал · для ЗП» в аккаунтах"><strong>${reviews}</strong></td>
           <td class="num"><strong>${fmtMoney(earned)}</strong></td>
           <td class="num pos" data-field="paid" data-type="number">${paid}</td>
           <td class="num ${debt>0?'neg':''}">${fmtMoney(debt)}</td>
@@ -271,18 +266,11 @@
         tr.querySelectorAll('td[data-field]').forEach(cell => {
           if (cell.querySelector('input,select,button')) return;
           const field = cell.dataset.field;
-          const inputType = cell.dataset.type === 'number' ? 'number'
-                          : cell.dataset.type === 'email'  ? 'email'
-                          : 'text';
-          // Для email-ячейки берём текущее значение из state, а не из DOM
-          // (там может быть HTML "— не привязан —")
-          const initial = field === 'email'
-            ? (Store.state.employees.find(e => e.id === id)?.email || '')
-            : undefined;
+          const inputType = cell.dataset.type === 'number' ? 'number' : 'text';
           makeEditable(cell, val => {
             Store.updateEmployee(id, { [field]: val });
             render();
-          }, { type: inputType, initial });
+          }, { type: inputType });
         });
 
         // status
@@ -309,32 +297,6 @@
         });
         // payments
         tr.querySelector('[data-act="history"]').addEventListener('click', () => openPayments(id));
-
-        // привязать email (кнопка в ячейке email когда её ещё нет)
-        const linkEmailBtn = tr.querySelector('[data-act="link-email"]');
-        if (linkEmailBtn) {
-          linkEmailBtn.addEventListener('click', () => {
-            const emp = Store.state.employees.find(x => x.id === id);
-            if (!emp) return;
-            const suggestion = (emp.name || '').toLowerCase().includes('наст') ? 'dmina-2007@bk.ru' : '';
-            const val = window.prompt(
-              `Введи email, который ты указал в Supabase Auth для «${emp.name}».\n` +
-              `Именно под этим email сотрудник заходит в свой кабинет.`,
-              suggestion
-            );
-            if (val === null) return; // отмена
-            const email = val.trim().toLowerCase();
-            if (!email || !email.includes('@')) {
-              toast('Неверный email', 'error');
-              return;
-            }
-            Store.updateEmployee(id, { email });
-            toast(`Email привязан: ${email}`);
-            render();
-            // подтолкнём пересчёт зарплаты из Supabase
-            if (window.ReviewsSync) window.ReviewsSync.pull();
-          });
-        }
 
         // быстрая выплата всего долга
         const payoutBtn = tr.querySelector('[data-act="payout"]');
@@ -436,7 +398,7 @@
     /* ---- Модалка добавления ---- */
     document.getElementById('btnAdd').addEventListener('click', () => {
       document.getElementById('mName').value = '';
-      document.getElementById('mRole').value = 'Ревьюер';
+      document.getElementById('mRole').value = 'Менеджер';
       document.getElementById('mRate').value = '300';
       document.getElementById('mHired').value = tomorrowISO();
       document.getElementById('mStatus').value = 'active';
@@ -448,7 +410,7 @@
       if (!name) { toast('Укажите имя', 'error'); return; }
       Store.addEmployee({
         name,
-        role:          document.getElementById('mRole').value.trim() || 'Ревьюер',
+        role:          document.getElementById('mRole').value.trim() || 'Менеджер',
         ratePerReview: Number(document.getElementById('mRate').value) || 0,
         reviewsDone:   0,
         paid:          0,
@@ -463,7 +425,7 @@
 
     render();
 
-    // авто-обновление зарплаты после одобрения отзыва
+    // авто-обновление зарплаты после изменения отметок в аккаунтах
     window.addEventListener('reviews:updated', render);
     // и после прихода свежего state из облака
     window.addEventListener('cloudstate:updated', render);

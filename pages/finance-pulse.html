@@ -210,7 +210,7 @@
             <div class="spacer"></div>
             <div class="toggle-row" id="scenarioToggle">
               <button data-scenario="self" class="is-on">Сам (100 ₽/отз)</button>
-              <button data-scenario="nastya">Настя (400 ₽/отз)</button>
+              <button data-scenario="nastya">Илья</button>
             </div>
           </div>
           <div class="pulse-panel__body">
@@ -360,10 +360,10 @@
           </div>
         </div>
 
-        <!-- ─────────── Калькулятор Настя vs Сам ─────────── -->
+        <!-- ─────────── Калькулятор Илья vs Сам ─────────── -->
         <div class="pulse-panel">
           <div class="pulse-panel__head">
-            <h3>🤔 Сам vs Настя — стоимость передачи</h3>
+            <h3>Сам vs Илья — стоимость передачи</h3>
           </div>
           <div class="pulse-panel__body" id="nastyaCalc"></div>
         </div>
@@ -383,12 +383,12 @@
   </div>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260714b"></script>
+  <script src="../js/app.js?v=20260717a"></script>
   <script src="../js/supabase-client.js?v=20260528a"></script>
   <script src="../js/auth-gate.js"></script>
   <script src="../js/cloud-sync.js?v=20260710b"></script>
   <script src="../js/accounts-sync.js"></script>
-  <script src="../js/reviews-sync.js"></script>
+  <script src="../js/reviews-sync.js?v=20260717a"></script>
   <script src="../components/sidebar.js"></script>
   <script src="../components/header.js"></script>
   <script src="../components/table.js"></script>
@@ -399,7 +399,7 @@
        - Свободный кэш (балас счёта − себест.остатка − фикс/мес)
        - Что закроет деньги (по клиенту)
        - Календарь нагрузки на 8 недель (по weeklyPace)
-       - Сам vs Настя
+       - Сам vs Илья
        - Фикс расходы (3×прокси + антидетект)
      Хранилище:
        state.finance = {
@@ -1166,7 +1166,7 @@
       `).join('');
     }
 
-    // ── Render: Настя vs Сам ──────────────────────────────────────
+    // ── Render: Илья vs Сам ───────────────────────────────────────
     function renderNastyaCalc() {
       const f = fin();
       const clients = activeClients();
@@ -1186,7 +1186,7 @@
             <div class="muted" style="font-size:11px">${totalLeft} × 100 ₽ (только номера)</div>
           </div>
           <div>
-            <div class="muted" style="font-size:11px;margin-bottom:6px">Делает Настя</div>
+            <div class="muted" style="font-size:11px;margin-bottom:6px">Делает Илья</div>
             <div class="num-mono" style="font-size:20px;font-weight:700">${fmtMoney(costNastya)}</div>
             <div class="muted" style="font-size:11px">${totalLeft} × (100 + 300) ₽</div>
           </div>

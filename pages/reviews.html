@@ -58,11 +58,11 @@
   </div>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260714b"></script>
+  <script src="../js/app.js?v=20260717a"></script>
   <script src="../js/supabase-client.js?v=20260528a"></script>
   <script src="../js/auth-gate.js"></script>
   <script src="../js/cloud-sync.js?v=20260710b"></script>
-  <script src="../js/reviews-sync.js"></script>
+  <script src="../js/reviews-sync.js?v=20260717a"></script>
   <script src="../components/sidebar.js"></script>
   <script src="../components/header.js"></script>
 
@@ -114,7 +114,7 @@
       const start = periodStart(filters.period);
       let arr = (Store.state.reviews || []).slice();
       if (!isOwner) {
-        // Настя видит только свои отзывы
+        // Сотрудник видит только свои отзывы
         arr = arr.filter(r => (r.authorEmail || '').toLowerCase() === myEmail);
       } else if (filters.author) {
         arr = arr.filter(r => (r.authorEmail || '').toLowerCase() === filters.author);

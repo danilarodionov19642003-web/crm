@@ -1,8 +1,8 @@
 /* ==========================================================================
-   Reviews Sync — авто-подсчёт одобренных отзывов для зарплаты сотрудников.
+   Reviews Sync — авто-подсчёт откликов для зарплаты менеджеров.
    --------------------------------------------------------------------------
-   Считает Store.state.reviews, где moderation==='approved' и authorEmail
-   совпадает с emp.email. Обновляет emp.reviewsDone и шлёт событие
+   Считает Store.state.profileStatuses по полю performer (Данил / Илья).
+   Обновляет emp.reviewsDone и шлёт событие
    'reviews:updated' — страницы employees.html / dashboard.html слушают и
    перерисовывают KPI.
 
@@ -19,49 +19,10 @@
 
   const STORAGE_KEY = 'mentori-crm-v2';
 
-  const DONE_STATUS = '🎯 Готов';
-
-  /** Пересчитать reviewsDone у каждого сотрудника.
-   *  Правило начисления (с 27.04.2026):
-   *    1. Отзыв одобрен (moderation='approved').
-   *    2. У пары (mentorId, profileId) сейчас стоит статус «🎯 Готов».
-   *    3. Зарплата идёт АВТОРУ ОТЗЫВА — review.authorEmail. Это тот, кто
-   *       нажал «Готов» и вставил текст отзыва на модерацию.
-   *       Раньше зарплата шла «менеджеру клиента» (client.assignedEmail),
-   *       но это было плохо: одного клиента могут вести двое (Настя +
-   *       владелец), а смена менеджера задним числом перебрасывала ВСЕ
-   *       отзывы новому менеджеру. Теперь — атрибуция по факту: кто
-   *       опубликовал, тому и оплачивается. */
+  /** Пересчитать reviewsDone по фактической отметке исполнителя в аккаунтах. */
   function recompute() {
     if (!Store || !Store.state) return;
-    const reviews = Store.state.reviews || [];
-    const statuses = Store.state.profileStatuses || [];
-
-    // быстрый поиск: есть ли «Готов» для пары
-    const doneSet = new Set();
-    statuses.forEach(s => {
-      if (s.status === DONE_STATUS) doneSet.add(s.mentorId + '::' + s.profileId);
-    });
-    // counts по автору отзыва
-    const counts = new Map();
-    reviews.forEach(r => {
-      if (r.moderation !== 'approved') return;
-      if (!doneSet.has(r.mentorId + '::' + r.profileId)) return;
-      const e = String(r.authorEmail || '').toLowerCase().trim();
-      if (!e) return;
-      counts.set(e, (counts.get(e) || 0) + 1);
-    });
-
-    let changed = false;
-    (Store.state.employees || []).forEach(emp => {
-      const email = String(emp.email || '').toLowerCase().trim();
-      if (!email) return;
-      const cnt = counts.get(email) || 0;
-      if (Number(emp.reviewsDone || 0) !== cnt) {
-        emp.reviewsDone = cnt;
-        changed = true;
-      }
-    });
+    const changed = Store._syncEmployeeWorkCounts();
 
     if (changed) {
       // тихо пишем в localStorage без push в облако (Store.save() уже отрабатывал
