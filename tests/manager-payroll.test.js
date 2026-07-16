@@ -88,6 +88,13 @@ assert.equal(Store.state.expenses.length, 0, 'связанный расход д
 
 const clientsHtml = fs.readFileSync(path.join(root, 'pages/clients.html'), 'utf8');
 const tasksHtml = fs.readFileSync(path.join(root, 'pages/tasks.html'), 'utf8');
+const employeesHtml = fs.readFileSync(path.join(root, 'pages/employees.html'), 'utf8');
+assert.match(employeesHtml, /data-act="payout" title="Внести выплату"/,
+  'главная кнопка должна предлагать ввод выплаты, а не оплату всего долга');
+assert.match(employeesHtml, /payoutBtn\.addEventListener\('click', \(\) => openPayments\(id\)\)/,
+  'кнопка выплаты должна открывать форму с редактируемой суммой и датой');
+assert.doesNotMatch(employeesHtml, /обнулить долг/,
+  'быстрая выплата всего долга не должна обходить форму частичной выплаты');
 assert.match(clientsHtml, /data-field="manager"/, 'в карточке клиента нужен селектор менеджера');
 assert.match(clientsHtml, /id="mManager"/, 'менеджер должен назначаться при создании клиента');
 assert.match(tasksHtml, /id="fManager"/, 'в задачах нужен фильтр по менеджеру');
