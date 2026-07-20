@@ -742,6 +742,57 @@
      ==================================================================== */
   let _orderPayload = null;   // последний snap.payload (anketas + payment)
   const PAYMENTS_API = 'https://mentori.tech/api/payments';
+  const RECEIPT_EXTENSIONS = {
+    'application/pdf': 'pdf',
+    'image/jpeg': 'jpg',
+    'image/jpg': 'jpg',
+    'image/png': 'png',
+    'image/webp': 'webp',
+    'image/heic': 'heic',
+    'image/heif': 'heif'
+  };
+  const RECEIPT_MIME_TYPES = {
+    pdf: 'application/pdf',
+    jpg: 'image/jpeg',
+    png: 'image/png',
+    webp: 'image/webp',
+    heic: 'image/heic',
+    heif: 'image/heif'
+  };
+
+  function receiptExtension(file) {
+    const mime = String((file && file.type) || '').trim().toLowerCase();
+    if (RECEIPT_EXTENSIONS[mime]) return RECEIPT_EXTENSIONS[mime];
+    const match = String((file && file.name) || '').toLowerCase().match(/\.([a-z0-9]+)$/);
+    const ext = match ? match[1] : '';
+    if (ext === 'jpeg') return 'jpg';
+    return ['pdf', 'jpg', 'png', 'webp', 'heic', 'heif'].includes(ext) ? ext : '';
+  }
+
+  async function uploadReceipt(file) {
+    const ext = receiptExtension(file);
+    if (!ext) throw new Error('Unsupported receipt format');
+    const uuid = window.crypto && typeof window.crypto.randomUUID === 'function'
+      ? window.crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const fileName = `${uuid}.${ext}`;
+    const mime = RECEIPT_MIME_TYPES[ext];
+    const response = await fetch(`${_url()}/storage/v1/object/receipts/${encodeURIComponent(fileName)}`, {
+      method: 'POST',
+      headers: {
+        'apikey': _key(),
+        'Authorization': `Bearer ${accessToken()}`,
+        'Content-Type': mime,
+        'x-upsert': 'false'
+      },
+      body: file
+    });
+    if (!response.ok) {
+      const details = await response.text().catch(() => '');
+      throw new Error(`Receipt upload failed (${response.status}): ${details.slice(0, 300)}`);
+    }
+    return `${_url()}/storage/v1/object/public/receipts/${encodeURIComponent(fileName)}`;
+  }
 
   // Оферта одна: кабинет читает её из /legal/offer.html и сохраняет точный
   // текст в заказе. При недоступности документа заказ не отправляется.
@@ -1029,7 +1080,21 @@
       });
     });
     document.getElementById('ordOfferLink').addEventListener('click', event => { event.preventDefault(); openTerms(); });
-    document.getElementById('ordSubmit').addEventListener('click', onOrderSubmit);
+    document.getElementById('ordSubmit').addEventListener('click', () => {
+      onOrderSubmit().catch(error => {
+        console.error('[client-app] unexpected order submit error', error);
+        const submit = document.getElementById('ordSubmit');
+        const result = document.getElementById('ordResult');
+        if (submit) {
+          submit.disabled = false;
+          submit.textContent = isManualTransfer() ? 'Отправить чек на проверку' : 'Перейти к оплате';
+        }
+        if (result) {
+          result.className = 'cli-ord-result is-err';
+          result.textContent = 'Не получилось отправить заказ. Обнови страницу и попробуй ещё раз.';
+        }
+      });
+    });
     addRow();
     m.hidden = false;
     document.body.classList.add('cli-modal-open');
@@ -1185,12 +1250,16 @@
       }
       btn.disabled = true;
       btn.textContent = 'Загружаю чек…';
-      receipt_url = await uploadReceipt(file);
-      if (!receipt_url) {
+      try {
+        receipt_url = await uploadReceipt(file);
+      } catch (error) {
+        console.warn('[client-app] receipt upload failed', error);
         btn.disabled = false;
         btn.textContent = 'Отправить чек на проверку';
         result.className = 'cli-ord-result is-err';
-        result.textContent = 'Не получилось загрузить чек. Попробуй ещё раз.';
+        result.textContent = /Unsupported receipt format/.test(String(error && error.message))
+          ? 'Поддерживаются PDF, JPG, PNG, WEBP, HEIC и HEIF.'
+          : 'Не получилось загрузить чек. Проверь интернет и попробуй ещё раз.';
         return;
       }
     }
