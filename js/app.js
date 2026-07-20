@@ -178,7 +178,7 @@
       this.state.dailyTasks ??= [];     // ежедневные задачи Насте: с какого аккаунта работать с каким клиентом
       this.state.clientPortals ??= [];  // доступы клиентов (Флагман и т.п.) к личному кабинету: см. addClientPortal
       // Реквизиты для оплаты + тарифы владелец редактирует в CRM. Клиентские
-      // снимки получают только тарифы; реквизиты остаются внутри админской CRM.
+      // снимки получают их для альтернативной оплаты переводом с чеком.
       // tariffs: {id, name, price, qty, unit}. unit='package' — фикс-пакет
       // (price=итог, qty=число отзывов); unit='per' — за штуку (price=цена/шт,
       // qty=минимум, клиент сам выбирает количество, сумма=price×qty).
@@ -574,16 +574,36 @@
         'премиум': 'develop'
       };
       const seen = new Set();
+      const seenNames = new Set();
       const normalized = [];
       ps.tariffs.forEach(t => {
         const legacyId = legacyByName[String(t.name || '').trim().toLowerCase()];
         const id = byId[t.id] ? t.id : legacyId;
-        if (!id || seen.has(id)) return;
-        seen.add(id);
-        normalized.push({ ...byId[id] });
+        if (id) {
+          if (seen.has(id)) return;
+          seen.add(id);
+          seenNames.add(String(byId[id].name || '').trim().toLowerCase());
+          normalized.push({ ...byId[id] });
+          return;
+        }
+        const name = String(t.name || '').trim();
+        const nameKey = name.toLowerCase();
+        const price = Math.max(0, Number(t.price) || 0);
+        const unit = t.unit === 'per' ? 'per' : 'package';
+        const qty = Math.max(unit === 'per' ? 1 : 0, Number(t.qty) || 0);
+        if (!name || !price || !qty || seenNames.has(nameKey)) return;
+        let customId = String(t.id || '').trim();
+        if (!customId || seen.has(customId)) customId = `custom-${uid()}`;
+        seen.add(customId);
+        seenNames.add(nameKey);
+        normalized.push({ id: customId, name, price, qty, unit });
       });
       DEFAULT_PAYMENT_TARIFFS.forEach(t => {
-        if (!seen.has(t.id)) normalized.push({ ...t });
+        if (!seen.has(t.id)) {
+          normalized.push({ ...t });
+          seen.add(t.id);
+          seenNames.add(String(t.name || '').trim().toLowerCase());
+        }
       });
       ps.tariffs = normalized;
       // Оферта хранится только в /legal/offer.html. Удаляем устаревшую копию
@@ -1604,17 +1624,19 @@
       const privateTariffs = Array.isArray(portal.paymentTariffs)
         ? portal.paymentTariffs.filter(t => t && t.name && Number(t.price) > 0)
         : [];
+      const requisites = (this.state.paymentSettings && this.state.paymentSettings.requisites) || {};
       return {
         email: portal.email,
         name: portal.name || '',
         anketas,
         totals,
         feed: feed.slice(0, 50),
-        // Тарифы для самостоятельного заказа из кабинета. Реквизиты остаются
-        // только в админской настройке и клиентам не передаются.
+        // Тарифы и реквизиты для двух способов оплаты в кабинете.
         // Каноническую оферту кабинет загружает напрямую из /legal/offer.html.
         payment: {
-          tariffs: privateTariffs.concat(paymentTariffs)
+          tariffs: privateTariffs.concat(paymentTariffs),
+          requisites: (requisites && typeof requisites === 'object') ? { ...requisites } : {},
+          manualTransferDiscount: 300
         },
         generatedAt: new Date().toISOString()
       };

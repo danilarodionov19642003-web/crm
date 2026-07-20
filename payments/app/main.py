@@ -18,6 +18,7 @@ from psycopg.rows import dict_row
 
 from .domain import (
     PaymentApplyError,
+    apply_flat_discount,
     apply_paid_order,
     expected_payment_amount,
     money,
@@ -45,6 +46,7 @@ MAX_NEW_ANKETAS = 5
 MAX_ITEM_QTY = 500
 MAX_PAYMENT_AMOUNT = Decimal("2000000")
 MAX_ACTIVE_PAYMENTS_PER_CLIENT = 5
+MANUAL_TRANSFER_DISCOUNT = Decimal("300")
 
 app = FastAPI(title="Mentori Payments", docs_url=None, redoc_url=None, openapi_url=None)
 app.add_middleware(
@@ -57,6 +59,10 @@ app.add_middleware(
 
 
 class CreatePaymentBody(BaseModel):
+    client_order_id: int = Field(gt=0)
+
+
+class ManualConfirmBody(BaseModel):
     client_order_id: int = Field(gt=0)
 
 
@@ -80,6 +86,15 @@ async def current_user(authorization: str | None = Header(default=None)) -> dict
         raise HTTPException(status_code=401, detail="Session has no email")
     user["email"] = email
     return user
+
+
+def is_owner(user: dict[str, Any]) -> bool:
+    role = str(
+        (user.get("user_metadata") or {}).get("role")
+        or (user.get("app_metadata") or {}).get("role")
+        or ""
+    ).strip().lower()
+    return role == "owner"
 
 
 def provider_headers() -> dict[str, str]:
@@ -385,6 +400,9 @@ def canonicalize_order(
                 "profile_url": profile_url or None,
             })
 
+        discount = money(0)
+        if order.get("payment_method") == "card_transfer":
+            discount = apply_flat_discount(canonical_items, MANUAL_TRANSFER_DISCOUNT)
         total = sum((money(item["amount"]) for item in canonical_items), money(0))
         prepay_total = sum(
             (money(item["prepay_amount"]) for item in canonical_items), money(0)
@@ -408,6 +426,7 @@ def canonicalize_order(
             "amount": total,
             "prepay_amount": prepay_total,
             "pay_full": all(bool(item["pay_full"]) for item in canonical_items),
+            "discount_amount": discount,
             "items": canonical_items,
         })
     else:
@@ -532,6 +551,8 @@ async def create_payment(body: CreatePaymentBody, user: dict[str, Any] = Depends
             raise HTTPException(status_code=404, detail="Order not found")
         if order.get("status") != "new":
             raise HTTPException(status_code=409, detail="Order is not payable")
+        if order.get("payment_method") not in (None, "online"):
+            raise HTTPException(status_code=409, detail="This order uses manual transfer")
         conn.execute(
             """
             update public.payment_transactions
@@ -648,6 +669,111 @@ async def create_payment(body: CreatePaymentBody, user: dict[str, Any] = Depends
         return public_transaction(saved)
 
 
+@app.post("/manual-confirm")
+async def confirm_manual_transfer(
+    body: ManualConfirmBody,
+    user: dict[str, Any] = Depends(current_user),
+):
+    if not is_owner(user):
+        raise HTTPException(status_code=403, detail="Owner access required")
+
+    with db() as conn:
+        order = conn.execute(
+            "select * from public.client_orders where id=%s for update",
+            (body.client_order_id,),
+        ).fetchone()
+        if not order:
+            raise HTTPException(status_code=404, detail="Order not found")
+        if order.get("status") == "confirmed":
+            return {"ok": True, "already_confirmed": True}
+        if order.get("status") != "new":
+            raise HTTPException(status_code=409, detail="Order cannot be confirmed")
+        if order.get("order_type") != "multi_order":
+            raise HTTPException(status_code=409, detail="Manual transfer is available for package orders")
+        if order.get("payment_method") != "card_transfer":
+            raise HTTPException(status_code=409, detail="Order is not a card transfer")
+        if order.get("payment_provider"):
+            raise HTTPException(status_code=409, detail="Online payment already exists")
+        if not str(order.get("receipt_url") or "").strip():
+            raise HTTPException(status_code=409, detail="Receipt is required")
+
+        order = canonicalize_order(conn, order, str(order.get("client_email") or ""))
+        state_row = conn.execute(
+            "select data from public.crm_state where id='main' for update"
+        ).fetchone()
+        if not state_row:
+            raise HTTPException(status_code=409, detail="CRM state not found")
+
+        state = state_row["data"]
+        paid_at = datetime.now(timezone.utc).isoformat()
+        payment_reference = f"manual-{order['id']}"
+        try:
+            applied = apply_paid_order(
+                state,
+                order,
+                payment_reference,
+                paid_at,
+            )
+        except PaymentApplyError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+        conn.execute(
+            "update public.crm_state set data=%s::jsonb, updated_at=now() where id='main'",
+            (json.dumps(state, ensure_ascii=False),),
+        )
+        insert_package_children(
+            conn,
+            order,
+            applied.get("package_items") or [],
+            payment_reference,
+            paid_at,
+            payment_provider="manual_transfer",
+            created_by="manual-transfer-backend",
+        )
+        conn.execute(
+            """
+            update public.client_orders
+            set status='confirmed', confirmed_at=coalesce(confirmed_at,now()),
+                remainder_status=null, payment_method='card_transfer',
+                discount_amount=%s, payment_provider='manual_transfer',
+                payment_id=%s, payment_status='paid', payment_paid_at=now(),
+                anketa_code=%s, anketa_name=%s, is_new_anketa=%s,
+                tariff_name=%s, tariff_price=%s, qty=%s,
+                amount=%s, prepay_amount=%s, pay_full=%s, items=%s::jsonb
+            where id=%s
+            """,
+            (
+                order.get("discount_amount") or 0,
+                payment_reference,
+                order.get("anketa_code"),
+                order.get("anketa_name"),
+                bool(order.get("is_new_anketa")),
+                order.get("tariff_name"),
+                order.get("tariff_price"),
+                order.get("qty"),
+                order.get("amount"),
+                order.get("prepay_amount"),
+                bool(order.get("pay_full")),
+                json.dumps(order.get("items"), ensure_ascii=False),
+                order["id"],
+            ),
+        )
+        refresh_snapshot(conn, str(order.get("client_email") or ""), state)
+        notify_paid_order(
+            conn,
+            order,
+            expected_payment_amount(order),
+            applied=applied,
+            manual_transfer=True,
+        )
+        return {
+            "ok": True,
+            "applied": not applied.get("already_applied"),
+            "amount": float(expected_payment_amount(order)),
+            "discount": float(money(order.get("discount_amount"))),
+        }
+
+
 def refresh_snapshot(conn: psycopg.Connection, email: str, state: dict[str, Any]) -> None:
     row = conn.execute(
         "select payload from public.client_snapshots where lower(email)=lower(%s) for update",
@@ -670,6 +796,8 @@ def insert_package_children(
     package_items: list[dict[str, Any]],
     provider_payment_id: str,
     paid_at: Any,
+    payment_provider: str = "rollypay",
+    created_by: str = "payments-backend",
 ) -> None:
     for item in package_items:
         remainder_status = None if item.get("pay_full") else "pending"
@@ -683,14 +811,14 @@ def insert_package_children(
               offer_agreed,offer_text,offer_version,
               personal_data_agreed,personal_data_consent_text,
               personal_data_consent_version,consent_user_agent,
-              status,confirmed_at,created_by,
+              status,confirmed_at,created_by,payment_method,discount_amount,
               payment_provider,payment_id,payment_status,
               payment_environment,payment_created_at,payment_paid_at
             ) values (
               %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
               %s,'package_item',%s,%s,%s,%s,%s,%s,%s,%s,%s,
-              'confirmed',%s,'payments-backend',
-              'rollypay',%s,'paid',%s,%s,%s
+              'confirmed',%s,%s,%s,%s,
+              %s,%s,'paid',%s,%s,%s
             )
             on conflict (parent_order_id,parent_item_id)
               where parent_order_id is not null do nothing
@@ -705,7 +833,9 @@ def insert_package_children(
                 order.get("offer_agreed"), order.get("offer_text"), order.get("offer_version"),
                 order.get("personal_data_agreed"), order.get("personal_data_consent_text"),
                 order.get("personal_data_consent_version"), order.get("consent_user_agent"),
-                paid_at, provider_payment_id, order.get("payment_environment"), paid_at, paid_at,
+                paid_at, created_by, order.get("payment_method") or "online",
+                item.get("discount_amount") or 0, payment_provider, provider_payment_id,
+                order.get("payment_environment"), paid_at, paid_at,
             ),
         )
 
@@ -716,6 +846,7 @@ def notify_paid_order(
     amount: Any,
     applied: dict[str, Any] | None = None,
     manual_review: bool = False,
+    manual_transfer: bool = False,
 ) -> None:
     if not OWNER_TELEGRAM_CHAT_ID:
         return
@@ -737,7 +868,7 @@ def notify_paid_order(
         )
     suffix = "\n⚠ Нужна ручная привязка заказа к карточке." if manual_review else "\n✅ CRM и финансы обновлены автоматически."
     message = (
-        "💳 Онлайн-оплата получена!\n"
+        ("💳 Перевод по реквизитам подтверждён!\n" if manual_transfer else "💳 Онлайн-оплата получена!\n") +
         f"👤 {order.get('client_name') or order.get('client_email') or 'клиент'}\n"
         f"{'Пакеты' if packages else 'Анкета'}: {target}\n"
         f"Сумма: {money(amount):.0f} ₽"

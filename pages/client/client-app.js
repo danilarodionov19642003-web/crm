@@ -812,6 +812,25 @@
     return `<option value="${index}">${escapeHtml(label)}</option>`;
   }
 
+  function _requisiteRows(requisites) {
+    const source = (requisites && typeof requisites === 'object') ? requisites : {};
+    return [
+      ['Телефон СБП', source.sbpPhone],
+      ['Банк', source.bank],
+      ['Карта', source.card],
+      ['Получатель', source.recipient],
+      ['Примечание', source.note]
+    ].filter(([, value]) => String(value || '').trim());
+  }
+
+  function _requisitesHtml(requisites) {
+    return _requisiteRows(requisites).map(([label, value]) => `
+      <div class="cli-req-row">
+        <div><small>${escapeHtml(label)}</small><strong>${escapeHtml(value)}</strong></div>
+        <button type="button" class="cli-req-row__copy" data-copy="${escapeAttr(value)}" title="Скопировать">Копировать</button>
+      </div>`).join('');
+  }
+
   let _orderRowSequence = 0;
   function _orderPackageHtml(index, tariffs, anketas, suggestedIndex) {
     const hasExisting = anketas.length > 0;
@@ -860,6 +879,10 @@
     const body = document.querySelector('[data-cli-order-body]');
     if (!m || !body || !_orderPayload) return;
     const tariffs = ((_orderPayload.payment || {}).tariffs || []);
+    const payment = _orderPayload.payment || {};
+    const requisites = payment.requisites || {};
+    const requisiteRows = _requisiteRows(requisites);
+    const manualEnabled = requisiteRows.some(([label]) => label === 'Телефон СБП' || label === 'Карта');
     const anketas = _orderPayload.anketas || [];
     const cart = window.MentoriOrderCart;
     if (!cart || !tariffs.length) return;
@@ -869,13 +892,28 @@
       <div class="cli-cart-list" data-order-list></div>
       <button type="button" class="cli-cart-add" data-order-add><span aria-hidden="true">+</span> Добавить пакет для другой анкеты</button>
       <div class="cli-ord-field cli-cart-payment">
-        <div class="cli-ord-label">Оплата</div>
+        <div class="cli-ord-label">Способ оплаты</div>
+        <div class="cli-cart-target">
+          <label class="cli-cart-target__option"><input type="radio" name="ordMethod" value="online" checked/><span>Онлайн: СБП или крипта</span></label>
+          <label class="cli-cart-target__option"><input type="radio" name="ordMethod" value="card_transfer" ${manualEnabled ? '' : 'disabled'}/><span>Перевод · скидка 300 ₽</span></label>
+        </div>
+      </div>
+      <div class="cli-ord-field cli-cart-payment">
+        <div class="cli-ord-label">Размер оплаты</div>
         <div class="cli-cart-target">
           <label class="cli-cart-target__option"><input type="radio" name="ordPay" value="half" checked/><span>50% сейчас</span></label>
           <label class="cli-cart-target__option"><input type="radio" name="ordPay" value="full"/><span>100% сейчас</span></label>
         </div>
       </div>
       <div class="cli-ord-amount cli-cart-total" id="ordAmount"></div>
+      <div class="cli-manual-payment" data-manual-payment hidden>
+        <div class="cli-ord-label">Реквизиты для перевода</div>
+        <div class="cli-requisites">${_requisitesHtml(requisites)}</div>
+        <label class="cli-cart-control">
+          <span>Чек об оплате</span>
+          <input type="file" class="cli-ord-file" id="ordReceipt" accept="image/*,application/pdf"/>
+        </label>
+      </div>
       <div class="cli-ord-field">
         <div class="cli-ord-label">Комментарий <span class="muted">(необязательно)</span></div>
         <textarea class="cli-ord-input" id="ordComment" rows="2" maxlength="1000" placeholder="Общие пожелания по заказу"></textarea>
@@ -896,6 +934,7 @@
     const list = body.querySelector('[data-order-list]');
     const addButton = body.querySelector('[data-order-add]');
     const isCartFull = () => (body.querySelector('input[name="ordPay"]:checked') || {}).value === 'full';
+    const isManualTransfer = () => (body.querySelector('input[name="ordMethod"]:checked') || {}).value === 'card_transfer';
     const rowTariff = row => tariffs[Number(row.querySelector('[data-order-tariff]').value) || 0] || {};
     const nextSuggestedAnketa = () => {
       const used = new Set([...list.querySelectorAll('[data-order-item]')]
@@ -916,7 +955,11 @@
         tariff: rowTariff(row),
         qty: Number(row.querySelector('[data-order-qty]').value) || 0
       }));
-      const summary = cart.summarize(priced, isCartFull());
+      const summary = cart.summarize(
+        priced,
+        isCartFull(),
+        isManualTransfer() ? (Number(payment.manualTransferDiscount) || cart.MANUAL_TRANSFER_DISCOUNT) : 0
+      );
       summary.items.forEach(entry => {
         const qtyWrap = entry.row.querySelector('[data-order-qty-wrap]');
         const qtyInput = entry.row.querySelector('[data-order-qty]');
@@ -927,12 +970,19 @@
         }
         entry.row.querySelector('[data-order-item-sum]').textContent =
           `Пакет: ${fmtMoney(entry.pricing.amount)} · сейчас ${fmtMoney(entry.pricing.prepayAmount)}`
+          + (entry.pricing.discountAmount ? ` · скидка ${fmtMoney(entry.pricing.discountAmount)}` : '')
           + (entry.pricing.remainder ? ` · остаток ${fmtMoney(entry.pricing.remainder)}` : '');
       });
       const amountEl = document.getElementById('ordAmount');
-      amountEl.innerHTML = `<span>Стоимость пакетов: ${fmtMoney(summary.amount)}</span>`
+      amountEl.innerHTML = `<span>Стоимость пакетов: ${fmtMoney(summary.baseAmount)}</span>`
+        + (summary.discount ? `<span class="cli-cart-discount">Скидка за перевод: −${fmtMoney(summary.discount)}</span>` : '')
+        + (summary.discount ? `<span>Стоимость со скидкой: ${fmtMoney(summary.amount)}</span>` : '')
         + `<b>К оплате сейчас: ${fmtMoney(summary.prepayAmount)}</b>`
         + (summary.remainder ? `<small>Остаток после выполнения: ${fmtMoney(summary.remainder)}</small>` : '');
+      const manualBlock = body.querySelector('[data-manual-payment]');
+      if (manualBlock) manualBlock.hidden = !isManualTransfer();
+      const submit = document.getElementById('ordSubmit');
+      if (submit) submit.textContent = isManualTransfer() ? 'Отправить чек на проверку' : 'Перейти к оплате';
       rows.forEach((row, index) => {
         row.querySelector('[data-order-item-title]').textContent = `Пакет ${index + 1}`;
         row.querySelector('[data-order-remove]').hidden = rows.length === 1;
@@ -964,6 +1014,20 @@
     });
     addButton.addEventListener('click', addRow);
     body.querySelectorAll('input[name="ordPay"]').forEach(input => input.addEventListener('change', recalc));
+    body.querySelectorAll('input[name="ordMethod"]').forEach(input => input.addEventListener('change', recalc));
+    body.querySelectorAll('.cli-req-row__copy').forEach(button => {
+      button.addEventListener('click', async () => {
+        const value = button.dataset.copy || '';
+        try {
+          await navigator.clipboard.writeText(value);
+          const original = button.textContent;
+          button.textContent = 'Скопировано';
+          setTimeout(() => { button.textContent = original; }, 1200);
+        } catch (_) {
+          button.textContent = 'Скопируй вручную';
+        }
+      });
+    });
     document.getElementById('ordOfferLink').addEventListener('click', event => { event.preventDefault(); openTerms(); });
     document.getElementById('ordSubmit').addEventListener('click', onOrderSubmit);
     addRow();
@@ -1017,6 +1081,9 @@
     const rows = [...document.querySelectorAll('[data-order-list] [data-order-item]')];
     const comment = (document.getElementById('ordComment').value || '').trim();
     const pay_full = (document.querySelector('input[name="ordPay"]:checked') || {}).value === 'full';
+    const payment_method = (document.querySelector('input[name="ordMethod"]:checked') || {}).value === 'card_transfer'
+      ? 'card_transfer'
+      : 'online';
     if (!cart || !rows.length || rows.length > cart.MAX_ITEMS) {
       result.className = 'cli-ord-result is-err';
       result.textContent = 'Добавь хотя бы один пакет.';
@@ -1076,7 +1143,15 @@
       tariff: tariffs.find(t => String(t.id || '') === String(item.tariff_id || ''))
         || tariffs.find(t => t.name === item.tariff_name),
       qty: item.qty
-    })), pay_full);
+    })), pay_full, payment_method === 'card_transfer'
+      ? (Number(((_orderPayload.payment || {}).manualTransferDiscount)) || cart.MANUAL_TRANSFER_DISCOUNT)
+      : 0);
+    summary.items.forEach((entry, index) => {
+      items[index].amount = entry.pricing.amount;
+      items[index].pay_full = entry.pricing.payFull;
+      items[index].prepay_amount = entry.pricing.prepayAmount;
+      items[index].discount_amount = entry.pricing.discountAmount || 0;
+    });
 
     // Оферта и обработка персональных данных подтверждаются отдельно.
     const offerChk = document.getElementById('ordOffer');
@@ -1094,8 +1169,34 @@
     const offer_agreed = true;
     const personal_data_agreed = true;
 
+    let receipt_url = null;
+    if (payment_method === 'card_transfer') {
+      const fileInput = document.getElementById('ordReceipt');
+      const file = fileInput && fileInput.files && fileInput.files[0];
+      if (!file) {
+        result.className = 'cli-ord-result is-err';
+        result.textContent = 'Прикрепи чек перевода.';
+        return;
+      }
+      if (file.size > 50 * 1024 * 1024) {
+        result.className = 'cli-ord-result is-err';
+        result.textContent = 'Файл больше 50 МБ — выбери файл поменьше.';
+        return;
+      }
+      btn.disabled = true;
+      btn.textContent = 'Загружаю чек…';
+      receipt_url = await uploadReceipt(file);
+      if (!receipt_url) {
+        btn.disabled = false;
+        btn.textContent = 'Отправить чек на проверку';
+        result.className = 'cli-ord-result is-err';
+        result.textContent = 'Не получилось загрузить чек. Попробуй ещё раз.';
+        return;
+      }
+    }
+
     btn.disabled = true;
-    btn.textContent = 'Создаю платёж…';
+    btn.textContent = payment_method === 'card_transfer' ? 'Отправляю чек…' : 'Создаю платёж…';
     const email = (Auth.email() || '').toLowerCase();
     const order = await submitOrder({
       client_email: email,
@@ -1108,7 +1209,9 @@
       pay_full,
       prepay_amount: summary.prepayAmount,
       items,
-      receipt_url: null,
+      receipt_url,
+      payment_method,
+      discount_amount: summary.discount,
       offer_agreed: offer_agreed,
       offer_text: offerText,
       offer_version: OFFER_VERSION,
@@ -1120,10 +1223,24 @@
     });
 
     if (order && order.id) {
-      const opened = await startPayment(order.id, btn, result);
-      if (!opened) loadMyOrders().then(renderMyOrders);
+      if (payment_method === 'card_transfer') {
+        const box = document.querySelector('[data-cli-order-body]');
+        box.innerHTML = `
+          <div class="cli-ord-success">
+            <div style="font-size:36px">✓</div>
+            <div style="font-weight:700;margin:10px 0 4px">Чек отправлен</div>
+            <div style="color:var(--cli-muted,#888);font-size:13px">После проверки платежа заказ появится в работе.</div>
+            <button type="button" class="cli-ord-submit" id="ordDone" style="margin-top:18px">Закрыть</button>
+          </div>`;
+        document.getElementById('ordDone').addEventListener('click', closeOrderModal);
+        loadMyOrders().then(renderMyOrders);
+      } else {
+        const opened = await startPayment(order.id, btn, result);
+        if (!opened) loadMyOrders().then(renderMyOrders);
+      }
     } else {
-      btn.disabled = false; btn.textContent = 'Перейти к оплате';
+      btn.disabled = false;
+      btn.textContent = payment_method === 'card_transfer' ? 'Отправить чек на проверку' : 'Перейти к оплате';
       result.className = 'cli-ord-result is-err';
       result.textContent = 'Не получилось создать заказ. Попробуй ещё раз или напиши менеджеру.';
     }
@@ -1186,7 +1303,7 @@
     try {
       const url = `${_url()}/rest/v1/client_orders`
         + `?client_email=eq.${encodeURIComponent(email)}`
-        + `&select=id,parent_order_id,parent_item_id,anketa_code,anketa_name,is_new_anketa,tariff_name,qty,amount,status,created_at,confirmed_at,receipt_url,offer_agreed,offer_text,offer_version,personal_data_agreed,personal_data_consent_text,personal_data_consent_version,pay_full,prepay_amount,remainder_status,order_type,items,comment,payment_provider,payment_id,payment_status,payment_url,payment_environment,payment_created_at,payment_paid_at`
+        + `&select=id,parent_order_id,parent_item_id,anketa_code,anketa_name,is_new_anketa,tariff_name,qty,amount,status,created_at,confirmed_at,receipt_url,offer_agreed,offer_text,offer_version,personal_data_agreed,personal_data_consent_text,personal_data_consent_version,pay_full,prepay_amount,remainder_status,order_type,items,comment,payment_method,discount_amount,payment_provider,payment_id,payment_status,payment_url,payment_environment,payment_created_at,payment_paid_at`
         + `&order=created_at.desc&limit=200`;
       const res = await fetch(url, { headers: { 'apikey': _key(), 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' } });
       if (!res.ok) { console.warn('[client-app] loadMyOrders failed', res.status); return []; }
@@ -1214,6 +1331,7 @@
       : (ORDER_STATUS[o.status] || { label: o.status || '—', cls: '' });
     const isRem = o.order_type === 'remainder';
     const isMulti = o.order_type === 'multi_order';
+    const isManualTransfer = o.payment_method === 'card_transfer';
     const amt = Number(o.amount) || 0;
     let title, sub, payLine = '';
     if (isRem) {
@@ -1246,7 +1364,8 @@
       const prepay = o.prepay_amount != null ? Number(o.prepay_amount) : amt;
       payLine = `<div class="cli-order__packages">${packageLines}</div>`
         + `<div class="cli-order__pay">💳 ${paymentReceived && outstanding <= 0 ? 'Оплачено полностью' : (o.status === 'confirmed' || paymentReceived ? 'Оплачено' : 'К оплате')}: ${fmtMoney(paymentReceived && outstanding <= 0 ? amt : prepay)}`
-        + `${outstanding > 0 ? ` · общий остаток: <b>${fmtMoney(outstanding)}</b>` : ''}</div>`;
+        + `${outstanding > 0 ? ` · общий остаток: <b>${fmtMoney(outstanding)}</b>` : ''}</div>`
+        + (Number(o.discount_amount) > 0 ? `<div class="cli-order__discount">Скидка за перевод: −${fmtMoney(o.discount_amount)}</div>` : '');
     } else {
       const anketa = o.is_new_anketa
         ? `новая «${escapeHtml(o.anketa_name || '—')}»`
@@ -1271,10 +1390,12 @@
     const receipt = o.receipt_url
       ? `<a class="cli-order__receipt" href="${escapeAttr(o.receipt_url)}" target="_blank" rel="noopener">Открыть чек</a>`
       : '';
-    const paymentAction = o.status === 'new' && !paymentReceived
+    const paymentAction = o.status === 'new' && !paymentReceived && !isManualTransfer
       ? `<button type="button" class="cli-order__pay-btn" data-pay-order="${o.id}">Перейти к оплате</button>`
       : paymentReceived && o.status !== 'confirmed'
         ? `<div class="cli-order__payment-note">Оплата получена. Заказ обрабатывается.</div>`
+        : isManualTransfer && o.status === 'new'
+          ? `<div class="cli-order__payment-note">Чек отправлен. Платёж проверяется менеджером.</div>`
         : '';
     return `
       <div class="cli-order">

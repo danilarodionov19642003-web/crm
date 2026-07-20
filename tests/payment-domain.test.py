@@ -127,6 +127,18 @@ class PaymentDomainTest(unittest.TestCase):
         self.assertTrue(domain.verify_webhook_signature(raw, timestamp, signature, secret))
         self.assertFalse(domain.verify_webhook_signature(raw + b" ", timestamp, signature, secret))
 
+    def test_manual_transfer_discount_reprices_package_and_prepayment(self):
+        items = [{"amount": 4800, "pay_full": False, "prepay_amount": 2400}]
+        applied = domain.apply_flat_discount(items, 300)
+        self.assertEqual(applied, 300)
+        self.assertEqual(items[0], {
+            "amount": 4500,
+            "pay_full": False,
+            "prepay_amount": 2250,
+            "base_amount": 4800,
+            "discount_amount": 300,
+        })
+
 
 if __name__ == "__main__":
     unittest.main()

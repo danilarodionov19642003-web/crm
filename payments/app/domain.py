@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime, timezone
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import hashlib
 import hmac
 import re
@@ -38,6 +38,27 @@ def expected_payment_amount(order: dict[str, Any]) -> Decimal:
     if amount <= 0:
         raise PaymentApplyError("payment amount must be positive")
     return amount
+
+
+def apply_flat_discount(items: list[dict[str, Any]], raw_discount: Any) -> Decimal:
+    """Apply one order-level discount across package items and recalculate prepay."""
+    total = sum((money(item.get("amount")) for item in items), money(0))
+    remaining = min(max(money(0), money(raw_discount)), max(money(0), total - money(1)))
+    applied = money(0)
+    for item in items:
+        base = money(item.get("amount"))
+        part = min(remaining, max(money(0), base - money(1)))
+        remaining -= part
+        applied += part
+        amount = base - part
+        item["base_amount"] = json_number(base)
+        item["discount_amount"] = json_number(part)
+        item["amount"] = json_number(amount)
+        prepay = amount if item.get("pay_full") else (
+            amount / 2
+        ).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+        item["prepay_amount"] = json_number(prepay)
+    return applied
 
 
 def verify_webhook_signature(raw: bytes, timestamp: str, signature: str, secret: str) -> bool:

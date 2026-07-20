@@ -8,6 +8,7 @@
   const MAX_ITEMS = 10;
   const MAX_NEW_ANKETAS = 5;
   const MAX_ITEM_QTY = 500;
+  const MANUAL_TRANSFER_DISCOUNT = 300;
 
   function priceItem(tariff, rawQty, cartPayFull) {
     const source = tariff || {};
@@ -31,13 +32,38 @@
     };
   }
 
-  function summarize(items, cartPayFull) {
+  function summarize(items, cartPayFull, rawDiscount) {
     const priced = (items || []).map(item => ({
       ...item,
       pricing: priceItem(item.tariff, item.qty, cartPayFull)
     }));
+    const baseAmount = priced.reduce((sum, item) => sum + item.pricing.amount, 0);
+    let remainingDiscount = Math.min(
+      Math.max(0, Number(rawDiscount) || 0),
+      Math.max(0, baseAmount - 1)
+    );
+    priced.forEach(item => {
+      const available = Math.max(0, item.pricing.amount - 1);
+      const discount = Math.min(remainingDiscount, available);
+      remainingDiscount -= discount;
+      if (discount <= 0) {
+        item.pricing.discountAmount = 0;
+        item.pricing.baseAmount = item.pricing.amount;
+        return;
+      }
+      item.pricing.baseAmount = item.pricing.amount;
+      item.pricing.discountAmount = discount;
+      item.pricing.amount -= discount;
+      item.pricing.prepayAmount = item.pricing.payFull
+        ? item.pricing.amount
+        : Math.round(item.pricing.amount / 2);
+      item.pricing.remainder = Math.max(0, item.pricing.amount - item.pricing.prepayAmount);
+    });
+    const discount = priced.reduce((sum, item) => sum + (item.pricing.discountAmount || 0), 0);
     return {
       items: priced,
+      baseAmount,
+      discount,
       amount: priced.reduce((sum, item) => sum + item.pricing.amount, 0),
       prepayAmount: priced.reduce((sum, item) => sum + item.pricing.prepayAmount, 0),
       remainder: priced.reduce((sum, item) => sum + item.pricing.remainder, 0),
@@ -45,5 +71,12 @@
     };
   }
 
-  return { MAX_ITEMS, MAX_NEW_ANKETAS, MAX_ITEM_QTY, priceItem, summarize };
+  return {
+    MAX_ITEMS,
+    MAX_NEW_ANKETAS,
+    MAX_ITEM_QTY,
+    MANUAL_TRANSFER_DISCOUNT,
+    priceItem,
+    summarize
+  };
 });

@@ -343,8 +343,7 @@
     </div>
   </div>
 
-  <!-- Тарифы видны клиентам при заказе. Реквизиты сохранены только в CRM и
-       в клиентский кабинет не передаются. -->
+  <!-- Тарифы и реквизиты видны клиентам при выборе перевода с чеком. -->
   <div class="modal-backdrop" id="requisitesModal">
     <div class="modal" style="max-width:600px">
       <div class="modal__header">
@@ -355,7 +354,7 @@
       </div>
       <div class="modal__body">
         <div style="font-size:12px;color:var(--text-mute);margin-bottom:8px">
-          Эти реквизиты сохранены только в админской CRM и клиентам не показываются. Тарифы ниже обновятся у клиентов после ближайшего сохранения.
+          Реквизиты показываются клиенту только при выборе «Перевод по реквизитам». Для такого способа оплаты кабинет применяет скидку 300 ₽ на весь заказ. Тарифы обновятся у клиентов после ближайшего сохранения.
         </div>
         <label style="font-weight:600;font-size:13px;display:block;margin:6px 0 4px">Реквизиты для оплаты</label>
         <div style="display:flex;flex-direction:column;gap:8px">
@@ -400,7 +399,7 @@
   </div>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260717a"></script>
+  <script src="../js/app.js?v=20260720a"></script>
   <script src="../js/supabase-client.js?v=20260528a"></script>
   <script src="../js/auth-gate.js"></script>
   <script src="../js/cloud-sync.js?v=20260710b"></script>
@@ -1403,6 +1402,7 @@
 
     /* ---- Заявки клиентов на оплату (client_orders, владелец видит все по RLS) ---- */
     let _ordersCache = [];
+    const PAYMENTS_API = 'https://mentori.tech/api/payments';
     function _sb() { return window.Supabase || {}; }
     function _sbToken() { const S = _sb(); return (S.accessToken && S.accessToken()) || S.KEY; }
     async function fetchOrders() {
@@ -1560,12 +1560,18 @@
           o.receipt_url ? `<a href="${escapeHtml(o.receipt_url)}" target="_blank" rel="noopener">🧾 чек</a>` : ''
         ].filter(Boolean).join(' · ');
         const onlinePayment = o.payment_provider === 'rollypay';
+        const manualTransfer = o.payment_method === 'card_transfer';
         const onlinePaid = o.payment_status === 'paid';
         const onlineActive = onlinePayment && ['initiating', 'created', 'processing'].includes(o.payment_status);
-        const canConfirm = o.status === 'new' && o.order_type !== 'multi_order' && (!onlinePayment || onlinePaid);
+        const canConfirm = o.status === 'new' && (
+          (manualTransfer && !!o.receipt_url) ||
+          (o.order_type !== 'multi_order' && (!onlinePayment || onlinePaid))
+        );
         const canReject = o.status === 'new' && !onlineActive && !onlinePaid;
-        const canDelete = !onlinePayment;
-        const paymentState = onlinePayment
+        const canDelete = !onlinePayment && !(manualTransfer && o.status === 'confirmed');
+        const paymentState = manualTransfer
+          ? `<div style="font-size:12px;margin-top:4px;color:var(--text-mute)">🧾 Перевод по реквизитам${Number(o.discount_amount) > 0 ? ` · скидка ${Number(o.discount_amount).toLocaleString('ru-RU')} ₽` : ''}</div>`
+          : onlinePayment
           ? `<div style="font-size:12px;margin-top:4px;color:${onlinePaid ? 'var(--green)' : 'var(--text-mute)'}">${onlinePaid ? '✅ Онлайн-оплата получена' : '⏳ Ожидает онлайн-оплату'}</div>`
           : '';
         const actions = `<div style="display:flex;gap:8px;margin-top:10px">
@@ -1678,6 +1684,32 @@
     async function confirmOrderOnce(id) {
       const o = _ordersCache.find(x => x.id === id);
       if (!o) return;
+      if (o.payment_method === 'card_transfer') {
+        try {
+          const response = await fetch(`${PAYMENTS_API}/manual-confirm`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${_sbToken()}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ client_order_id: Number(id) })
+          });
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            toast(data.detail || 'Не удалось подтвердить перевод', 'error');
+            return;
+          }
+          toast(`Перевод подтверждён: ${Number(data.amount || 0).toLocaleString('ru-RU')} ₽`, 'success');
+          if (window.CloudSync && window.CloudSync.pull) await window.CloudSync.pull({ silent: false });
+          await refreshOrders();
+          renderOrdersList();
+          render();
+        } catch (error) {
+          console.warn('[orders] manual confirm failed', error);
+          toast('Не удалось подтвердить перевод', 'error');
+        }
+        return;
+      }
       const confirmedAt = new Date().toISOString();
       // ── доплата остатка по анкетам ──
       if (o.order_type === 'remainder') {
