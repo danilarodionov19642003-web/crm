@@ -119,6 +119,35 @@
       color: #a5b4fc;
       margin-left: 1px;
     }
+    .stg__chip__age {
+      font-size: 10px;
+      font-weight: 700;
+      line-height: 1;
+      padding: 2px 5px;
+      border-radius: 8px;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+      background: rgba(99,102,241,0.14);
+      color: #a5b4fc;
+    }
+    .stg__chip__age[data-due="today"] {
+      background: rgba(245,158,11,0.18);
+      color: #fbbf24;
+    }
+    .stg__chip__age[data-due="overdue"] {
+      background: rgba(239,68,68,0.16);
+      color: #f87171;
+    }
+    .status-action-field {
+      margin-top: 12px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: rgba(255,255,255,0.02);
+    }
+    .status-action-field__quick { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+    .status-action-field__quick button { padding:4px 8px; font-size:11px; }
+    .status-action-field__hint { margin-top:6px; font-size:11px; color:var(--text-mute); }
     /* Сводка по исполнителям (для ЗП) — сколько у кого аккаунтов/откликов. */
     .perf-panel { margin: 14px 0 4px; }
     .perf-panel__title {
@@ -382,6 +411,13 @@
           <div class="field"><label>Статус</label><select id="addStatus" class="select"></select></div>
           <div class="field"><label>Дата статуса</label><input type="date" id="addDate" class="input"/></div>
         </div>
+        <div class="status-action-field" id="addActionWrap" style="display:none">
+          <div class="field"><label id="addActionLabel">Следующее действие до</label><input type="date" id="addActionDate" class="input"/></div>
+          <div class="status-action-field__quick" data-action-quick="add">
+            <button type="button" class="btn btn--ghost" data-days="3">+3</button><button type="button" class="btn btn--ghost" data-days="5">+5</button><button type="button" class="btn btn--ghost" data-days="7">+7</button><button type="button" class="btn btn--ghost" data-days="15">+15</button><button type="button" class="btn btn--ghost" data-days="20">+20</button><button type="button" class="btn btn--ghost" data-days="30">+30</button>
+          </div>
+          <div class="status-action-field__hint" id="addActionHint"></div>
+        </div>
         <div class="field" style="margin-top:12px"><label>Комментарий</label><input type="text" id="addComment" class="input"/></div>
         <div class="field" style="margin-top:12px"><label>Кто делал · для ЗП</label><select id="addPerformer" class="select"></select></div>
         <div class="field" id="addReviewWrap" style="margin-top:12px;display:none">
@@ -408,6 +444,13 @@
         <div class="field-row" style="margin-top:12px">
           <div class="field"><label>Дата статуса</label><input type="date" id="chgDate" class="input"/></div>
           <div class="field" style="flex:2"><label>Комментарий</label><input type="text" id="chgComment" class="input"/></div>
+        </div>
+        <div class="status-action-field" id="chgActionWrap" style="display:none">
+          <div class="field"><label id="chgActionLabel">Следующее действие до</label><input type="date" id="chgActionDate" class="input"/></div>
+          <div class="status-action-field__quick" data-action-quick="chg">
+            <button type="button" class="btn btn--ghost" data-days="3">+3</button><button type="button" class="btn btn--ghost" data-days="5">+5</button><button type="button" class="btn btn--ghost" data-days="7">+7</button><button type="button" class="btn btn--ghost" data-days="15">+15</button><button type="button" class="btn btn--ghost" data-days="20">+20</button><button type="button" class="btn btn--ghost" data-days="30">+30</button>
+          </div>
+          <div class="status-action-field__hint" id="chgActionHint"></div>
         </div>
         <div class="field" style="margin-top:12px"><label>Кто делал · для ЗП</label><select id="chgPerformer" class="select"></select></div>
         <!-- Поле ввода нового отзыва. Структура жёсткая — НЕ переписываем
@@ -477,7 +520,7 @@
   </style>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260720a"></script>
+  <script src="../js/app.js?v=20260722a"></script>
   <script src="../js/supabase-client.js?v=20260528a"></script>
   <script src="../js/auth-gate.js"></script>
   <script src="../js/cloud-sync.js?v=20260710b"></script>
@@ -489,7 +532,11 @@
 
   <script>
   document.addEventListener('DOMContentLoaded', () => {
-    const { Store, Modal, toast, fmtDate, todayISO, PROFILE_STATUSES, PERFORMERS, cityFromCode } = window.App;
+    const {
+      Store, Modal, toast, fmtDate, todayISO, addDaysISO, deriveStatusAction,
+      PROFILE_STATUSES, PERFORMERS, cityFromCode,
+      STATUS_SELECT, STATUS_CHOSEN
+    } = window.App;
     const { confirmDelete } = window.TableUtils;
 
     Store.load();
@@ -686,11 +733,16 @@
             const perfBadge = (st && st.performer)
               ? `<span class="stg__chip__perf" title="Делал: ${escapeHtml(st.performer)}">${escapeHtml(st.performer.slice(0, 1))}</span>`
               : '';
+            const action = st ? Store.getProfileStatusAction(st) : null;
+            const ageBadge = action
+              ? `<span class="stg__chip__age" data-due="${action.dueState}" title="В статусе ${action.daysInStatus} дн. · следующее действие до ${escapeHtml(fmtDate(action.date))}">${action.daysInStatus} дн.</span>`
+              : '';
             const titleText = mentorFull(m)
               + (st && st.date ? '\nДата: ' + fmtDate(st.date) : '')
+              + (action ? `\nВ статусе: ${action.daysInStatus} дн.\nСледующее действие: ${fmtDate(action.date)}${action.daysOverdue > 0 ? ` (просрочено ${action.daysOverdue} дн.)` : ''}` : '')
               + (st && st.performer ? '\nДелал: ' + st.performer : '')
               + (st && st.comment ? '\n' + st.comment : '');
-            return `<span class="stg__chip" data-st="${kind}" data-act="chgst" data-pid="${p.id}" data-mid="${m.id}" title="${escapeHtml(titleText)}">${escapeHtml(mentorLabel(m))}${dateBadge}${perfBadge}</span>`;
+            return `<span class="stg__chip" data-st="${kind}" data-act="chgst" data-pid="${p.id}" data-mid="${m.id}" title="${escapeHtml(titleText)}">${escapeHtml(mentorLabel(m))}${dateBadge}${perfBadge}${ageBadge}</span>`;
           }).join('');
           return `<div class="stg__row"><div class="stg__lbl">${escapeHtml(s)}</div><div class="stg__items">${chips}</div></div>`;
         }).filter(Boolean).join('');
@@ -1060,14 +1112,80 @@
       document.getElementById('addComment').value = '';
       document.getElementById('addDate').value = window.App.todayISO();
       document.getElementById('addReviewText').value = '';
+      addActionTouched = false;
+      refreshActionEditor('add', null, true);
       toggleAddReviewField();
       checkAddWarn();
       Modal.open('addToAccModal');
     }
-    document.getElementById('addMentor').addEventListener('change', checkAddWarn);
-    document.getElementById('addStatus').addEventListener('change', toggleAddReviewField);
-
     const DONE_STATUS = '🎯 Готов';
+    let addActionTouched = false;
+    let chgActionTouched = false;
+
+    function isActionStatus(status) {
+      return status === STATUS_SELECT || status === STATUS_CHOSEN;
+    }
+
+    function refreshActionEditor(prefix, existing = null, force = false) {
+      const status = document.getElementById(`${prefix}Status`).value;
+      const wrap = document.getElementById(`${prefix}ActionWrap`);
+      const dateInput = document.getElementById(`${prefix}ActionDate`);
+      const label = document.getElementById(`${prefix}ActionLabel`);
+      const hint = document.getElementById(`${prefix}ActionHint`);
+      if (!isActionStatus(status)) {
+        wrap.style.display = 'none';
+        dateInput.value = '';
+        return;
+      }
+      wrap.style.display = 'block';
+      label.textContent = status === STATUS_SELECT
+        ? 'Перевести в «Выбран» до'
+        : 'Опубликовать отзыв до';
+      const mentorId = prefix === 'add'
+        ? document.getElementById('addMentor').value
+        : chgMid;
+      const statusDate = document.getElementById(`${prefix}Date`).value || todayISO();
+      const touched = prefix === 'add' ? addActionTouched : chgActionTouched;
+      const action = existing && existing.status === status && !force
+        ? Store.getProfileStatusAction(existing)
+        : deriveStatusAction({ status, date: statusDate, mentorId }, Store.state);
+      if (action && (force || !touched || !dateInput.value)) dateInput.value = action.date;
+      hint.textContent = status === STATUS_SELECT
+        ? 'Автоматически: через 5 дней после даты статуса.'
+        : `Автоматический срок: ${action ? action.waitDays : 7} дн. по нише клиента. Можно изменить вручную.`;
+    }
+
+    function markActionTouched(prefix) {
+      if (prefix === 'add') addActionTouched = true;
+      else chgActionTouched = true;
+    }
+
+    document.getElementById('addMentor').addEventListener('change', () => {
+      checkAddWarn();
+      if (!addActionTouched) refreshActionEditor('add', null, true);
+    });
+    ['add', 'chg'].forEach(prefix => {
+      document.getElementById(`${prefix}Status`).addEventListener('change', () => {
+        if (prefix === 'add') addActionTouched = false;
+        else chgActionTouched = false;
+        refreshActionEditor(prefix, null, true);
+        if (prefix === 'add') toggleAddReviewField();
+        else toggleChgReviewField();
+      });
+      document.getElementById(`${prefix}Date`).addEventListener('change', () => {
+        const touched = prefix === 'add' ? addActionTouched : chgActionTouched;
+        if (!touched) refreshActionEditor(prefix, null, true);
+      });
+      document.getElementById(`${prefix}ActionDate`).addEventListener('change', () => markActionTouched(prefix));
+      document.querySelectorAll(`[data-action-quick="${prefix}"] [data-days]`).forEach(button => {
+        button.addEventListener('click', () => {
+          const statusDate = document.getElementById(`${prefix}Date`).value || todayISO();
+          document.getElementById(`${prefix}ActionDate`).value = addDaysISO(statusDate, Number(button.dataset.days));
+          markActionTouched(prefix);
+        });
+      });
+    });
+
     function toggleAddReviewField() {
       const s = document.getElementById('addStatus').value;
       document.getElementById('addReviewWrap').style.display = (s === DONE_STATUS) ? 'block' : 'none';
@@ -1112,7 +1230,9 @@
       profile.mentorIds = [...(profile.mentorIds || []), mid];
       Store.updateProfile(profile.id, { mentorIds: profile.mentorIds });
       const performer = document.getElementById('addPerformer').value;
-      Store.setProfileStatus(mid, addProfileId, status, comment, date, performer);
+      const nextActionDate = isActionStatus(status) ? document.getElementById('addActionDate').value : undefined;
+      const nextActionMode = isActionStatus(status) ? (addActionTouched ? 'manual' : 'auto') : undefined;
+      Store.setProfileStatus(mid, addProfileId, status, comment, date, performer, nextActionDate, nextActionMode);
       if (reviewText) {
         const myEmail = (window.AuthGate && window.AuthGate.email && window.AuthGate.email()) || '';
         Store.addReview({
@@ -1148,6 +1268,8 @@
       document.getElementById('chgDate').value = (cur && cur.date) ? cur.date : window.App.todayISO();
       fillPerformerSelect(document.getElementById('chgPerformer'), cur ? cur.performer : '');
       document.getElementById('chgReviewText').value = '';
+      chgActionTouched = !!(cur && cur.nextActionMode === 'manual');
+      refreshActionEditor('chg', cur, false);
       toggleChgReviewField();
       // Если уже есть pending/approved отзыв для этой пары — показать его
       // в ОТДЕЛЬНОМ контейнере (chgExistingReview) и спрятать поле ввода
@@ -1184,13 +1306,14 @@
       } else { histDiv.innerHTML = ''; }
       Modal.open('chgStatusModal');
     }
-    document.getElementById('chgStatus').addEventListener('change', toggleChgReviewField);
     document.getElementById('chgSave').addEventListener('click', () => {
       if (!chgPid || !chgMid) return;
       const newStatus = document.getElementById('chgStatus').value;
       const newComment = document.getElementById('chgComment').value.trim();
       const newDate = document.getElementById('chgDate').value || window.App.todayISO();
       const newPerformer = document.getElementById('chgPerformer').value;
+      const nextActionDate = isActionStatus(newStatus) ? document.getElementById('chgActionDate').value : undefined;
+      const nextActionMode = isActionStatus(newStatus) ? (chgActionTouched ? 'manual' : 'auto') : undefined;
       const cur = getStatusFor(chgPid, chgMid);
       // Если новый статус «Готов», а у пары ещё нет review — требуем текст и создаём review.
       const existingReview = (Store.state.reviews || []).find(r => r.mentorId === chgMid && r.profileId === chgPid);
@@ -1216,9 +1339,9 @@
       // исполнителя (без новой записи в истории, чтобы её не засорять).
       // Иначе — полноценная смена статуса (запишет историю).
       if (cur && cur.status === newStatus && (cur.comment || '') === newComment) {
-        Store.setProfileStatusDate(chgMid, chgPid, newDate, newPerformer);
+        Store.setProfileStatusDate(chgMid, chgPid, newDate, newPerformer, nextActionDate, nextActionMode);
       } else {
-        Store.setProfileStatus(chgMid, chgPid, newStatus, newComment, newDate, newPerformer);
+        Store.setProfileStatus(chgMid, chgPid, newStatus, newComment, newDate, newPerformer, nextActionDate, nextActionMode);
       }
       if (goingAway) {
         Store.deleteReviewsForPair(chgPid, chgMid);
@@ -1446,6 +1569,13 @@
     window.addEventListener('store:reloaded', renderAll);
 
     renderAll();
+    const deepLink = new URLSearchParams(window.location.search);
+    const deepProfileId = deepLink.get('profileId');
+    const deepMentorId = deepLink.get('mentorId');
+    if (deepProfileId && deepMentorId) {
+      openChangeStatus(deepProfileId, deepMentorId);
+      window.history.replaceState({}, '', window.location.pathname);
+    }
   });
 
   function formatPhone(n) {

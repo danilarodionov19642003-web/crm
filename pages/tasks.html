@@ -36,6 +36,12 @@
       background: var(--accent); border-color: var(--accent); color: #fff;
     }
     .task-card.done .task-check::after { content: '✓'; font-weight: 700; }
+    .task-system-icon {
+      width: 22px; height: 22px;
+      display:inline-flex; align-items:center; justify-content:center;
+      color:var(--accent); flex-shrink:0;
+    }
+    .task-card--system { border-left:3px solid var(--accent); }
     .task-meta { display:flex; flex-direction:column; gap:4px; min-width:0; }
     .task-row1 { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
     .task-pill {
@@ -51,6 +57,7 @@
     .task-note { color: var(--text); font-size: 14px; line-height: 1.4; word-break: break-word; }
     .task-actions { display:flex; gap:6px; flex-shrink:0; }
     .task-actions button { padding: 4px 8px; font-size: 12px; }
+    .task-open { padding:4px 9px; font-size:12px; text-decoration:none; white-space:nowrap; }
     .task-empty { padding:30px; text-align:center; color:var(--text-mute); }
     .task-group-title {
       font-size: 12px; text-transform: uppercase; letter-spacing: .05em;
@@ -258,7 +265,7 @@
 
         <div class="filters">
           <select id="fScope" class="select">
-            <option value="today">Сегодня</option>
+            <option value="today">Сегодня и просроченные</option>
             <option value="upcoming">Предстоящие</option>
             <option value="overdue">Просрочены</option>
             <option value="done">Выполненные</option>
@@ -319,7 +326,7 @@
   </div>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260720a"></script>
+  <script src="../js/app.js?v=20260722a"></script>
   <script src="../js/supabase-client.js?v=20260528a"></script>
   <script src="../js/auth-gate.js"></script>
   <script src="../js/cloud-sync.js?v=20260710b"></script>
@@ -348,9 +355,9 @@
     function mentorById(id) { return (Store.state.mentors || []).find(m => m.id === id) || null; }
     function clientByMentorId(id) {
       const mentor = mentorById(id);
-      const code = String(mentor && mentor.code || '').toLowerCase().trim();
+      const code = String(mentor && mentor.code || '').toLowerCase().replace(/[\s-]+/g, '');
       if (!code) return null;
-      return (Store.state.clients || []).find(c => String(c.code || '').toLowerCase().trim() === code) || null;
+      return (Store.state.clients || []).find(c => String(c.code || '').toLowerCase().replace(/[\s-]+/g, '') === code) || null;
     }
     function managerForMentor(id) {
       const client = clientByMentorId(id);
@@ -398,7 +405,7 @@
 
     function applyFilters(tasks) {
       return tasks.filter(t => {
-        if (!matchesManager(managerForMentor(t.mentorId))) return false;
+        if (!matchesManager(t.manager || managerForMentor(t.mentorId))) return false;
         if (filters.mentorId && t.mentorId !== filters.mentorId) return false;
         if (filters.q) {
           const m = mentorById(t.mentorId);
@@ -407,7 +414,7 @@
           if (!hay.includes(filters.q)) return false;
         }
         switch (filters.scope) {
-          case 'today':    return !t.done && isToday(t.date);
+          case 'today':    return !t.done && (isToday(t.date) || isPast(t.date));
           case 'upcoming': return !t.done && isFuture(t.date);
           case 'overdue':  return !t.done && isPast(t.date);
           case 'done':     return t.done;
@@ -419,10 +426,12 @@
 
     function render() {
       fillSelects();
-      const all = (Store.state.dailyTasks || []).slice()
+      const manualTasks = (Store.state.dailyTasks || []).slice();
+      const statusTasks = Store.listProfileStatusActionTasks(todayISO());
+      const all = manualTasks.concat(statusTasks)
         .sort((a,b) => (a.date||'').localeCompare(b.date||'') || (a.createdAt||'').localeCompare(b.createdAt||''));
       const filtered = applyFilters(all);
-      const managerScoped = all.filter(t => matchesManager(managerForMentor(t.mentorId)));
+      const managerScoped = all.filter(t => matchesManager(t.manager || managerForMentor(t.mentorId)));
 
       // KPI
       const today = todayISO();
@@ -464,7 +473,7 @@
       list.innerHTML = html.join('');
 
       // bind
-      list.querySelectorAll('.task-check').forEach(el => {
+      list.querySelectorAll('.task-check[data-id]').forEach(el => {
         el.addEventListener('click', () => {
           Store.toggleDailyTask(el.dataset.id);
           render();
@@ -488,26 +497,35 @@
     function taskHtml(t) {
       const m = mentorById(t.mentorId);
       const p = profileById(t.profileId);
-      const manager = managerForMentor(t.mentorId);
+      const manager = t.manager || managerForMentor(t.mentorId);
+      const isSystem = t.source === 'profile_status_action';
       const datePill = t.date === todayISO() ? 'task-pill--today'
         : (isPast(t.date) && !t.done) ? 'task-pill--overdue'
         : 'task-pill--date';
-      const accBlock = p ? `<span class="task-pill task-pill--acc">📋 ${escapeHtml(profileLabel(p))}</span>` : '';
-      const editBtn = isOwner ? `<button class="btn btn--ghost" data-act="edit" data-id="${t.id}" title="Редактировать">✎</button>` : '';
-      const delBtn  = isOwner ? `<button class="btn btn--ghost" data-act="del" data-id="${t.id}" style="color:var(--red)" title="Удалить">🗑</button>` : '';
+      const ownerSuffix = isSystem && t.accountOwner ? ` · ${t.accountOwner}` : '';
+      const accBlock = p ? `<span class="task-pill task-pill--acc">📋 ${escapeHtml(profileLabel(p) + ownerSuffix)}</span>` : '';
+      const editBtn = isOwner && !isSystem ? `<button class="btn btn--ghost" data-act="edit" data-id="${t.id}" title="Редактировать">✎</button>` : '';
+      const delBtn  = isOwner && !isSystem ? `<button class="btn btn--ghost" data-act="del" data-id="${t.id}" style="color:var(--red)" title="Удалить">🗑</button>` : '';
+      const openBtn = isSystem
+        ? `<a class="btn btn--ghost task-open" href="statuses.html?profileId=${encodeURIComponent(t.profileId)}&mentorId=${encodeURIComponent(t.mentorId)}">Открыть →</a>`
+        : '';
+      const statusMeta = isSystem
+        ? `<span class="task-pill task-pill--date">в статусе ${t.daysInStatus} дн.</span>`
+        : '';
       return `
-        <div class="task-card${t.done ? ' done' : ''}">
-          <div class="task-check" data-id="${t.id}" title="${t.done ? 'Снять выполнение' : 'Отметить выполненным'}"></div>
+        <div class="task-card${t.done ? ' done' : ''}${isSystem ? ' task-card--system' : ''}">
+          ${isSystem ? '<div class="task-system-icon" title="Закроется после смены статуса">⏱</div>' : `<div class="task-check" data-id="${t.id}" title="${t.done ? 'Снять выполнение' : 'Отметить выполненным'}"></div>`}
           <div class="task-meta">
             <div class="task-row1">
               <span class="task-pill ${datePill}">📅 ${escapeHtml(fmtDate(t.date) || t.date || '—')}</span>
               <span class="task-pill task-pill--client">👤 ${escapeHtml(mentorLabel(m))}</span>
               <span class="task-pill task-pill--manager">${escapeHtml(manager || 'не назначен')}</span>
               ${accBlock}
+              ${statusMeta}
             </div>
             <div class="task-note">${escapeHtml(t.note || '— без описания —')}</div>
           </div>
-          <div class="task-actions">${editBtn}${delBtn}</div>
+          <div class="task-actions">${openBtn}${editBtn}${delBtn}</div>
         </div>`;
     }
 

@@ -71,6 +71,11 @@
     '🏆 Выбран',
     '🎯 Готов'
   ];
+  const STATUS_SELECT = '⭐ Выбрать';
+  const STATUS_CHOSEN = '🏆 Выбран';
+  const STATUS_READY = '🎯 Готов';
+  const STATUS_SELECT_WAIT_DAYS = 5;
+  const STATUS_CHOSEN_FALLBACK_DAYS = 7;
   // Исполнители откликов/заказов — для расчёта ЗП. Владелец (Данил) и его брат
   // (Илья) работают под ОДНИМ логином CRM, поэтому на каждом статусе аккаунта
   // можно отметить, КТО делал работу. Пустое значение = не указан.
@@ -96,6 +101,72 @@
     d.setDate(d.getDate() + 1);
     return _iso(d);
   };
+
+  function parseISODate(iso) {
+    const parts = String(iso || '').slice(0, 10).split('-').map(Number);
+    if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) return null;
+    const value = new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0, 0);
+    return isNaN(value.getTime()) ? null : value;
+  }
+  function addDaysISO(iso, days) {
+    const value = parseISODate(iso) || parseISODate(todayISO());
+    value.setDate(value.getDate() + (Number(days) || 0));
+    return _iso(value);
+  }
+  function daysBetweenISO(fromISO, toISO = todayISO()) {
+    const from = parseISODate(fromISO);
+    const to = parseISODate(toISO);
+    if (!from || !to) return 0;
+    return Math.round((to.getTime() - from.getTime()) / 86400000);
+  }
+  function statusActionTarget(status) {
+    if (status === STATUS_SELECT) return STATUS_CHOSEN;
+    if (status === STATUS_CHOSEN) return STATUS_READY;
+    return '';
+  }
+  function normalizeClientCode(value) {
+    return String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '');
+  }
+  function clientForStatusMentor(state, mentorId) {
+    const mentor = (state.mentors || []).find(item => item.id === mentorId);
+    const code = normalizeClientCode(mentor && mentor.code);
+    if (!code) return null;
+    return (state.clients || []).find(item => normalizeClientCode(item.code) === code) || null;
+  }
+  function statusActionDefaultDays(rec, state) {
+    if (!rec) return 0;
+    if (rec.status === STATUS_SELECT) return STATUS_SELECT_WAIT_DAYS;
+    if (rec.status !== STATUS_CHOSEN) return 0;
+    const client = clientForStatusMentor(state || {}, rec.mentorId);
+    const niche = client && client.niche;
+    const config = niche && state && state.nicheConfig && state.nicheConfig[niche];
+    const configured = config && Number(config.daysToPublish);
+    return configured > 0 ? configured : STATUS_CHOSEN_FALLBACK_DAYS;
+  }
+  function deriveStatusAction(rec, state, today = todayISO()) {
+    const targetStatus = statusActionTarget(rec && rec.status);
+    if (!rec || !targetStatus) return null;
+    const waitDays = statusActionDefaultDays(rec, state || {});
+    const statusDate = String(rec.date || today).slice(0, 10);
+    const storedDate = /^\d{4}-\d{2}-\d{2}$/.test(String(rec.nextActionDate || ''))
+      ? String(rec.nextActionDate).slice(0, 10)
+      : '';
+    const date = storedDate || addDaysISO(statusDate, waitDays);
+    const daysInStatus = Math.max(0, daysBetweenISO(statusDate, today));
+    const daysOverdue = daysBetweenISO(date, today);
+    return {
+      date,
+      targetStatus,
+      waitDays,
+      daysInStatus,
+      daysOverdue,
+      dueState: daysOverdue > 0 ? 'overdue' : daysOverdue === 0 ? 'today' : 'future',
+      mode: storedDate ? (rec.nextActionMode || 'manual') : 'legacy-auto',
+      note: rec.status === STATUS_SELECT
+        ? `Перевести ${STATUS_SELECT} → ${STATUS_CHOSEN}`
+        : `Опубликовать отзыв и перевести ${STATUS_CHOSEN} → ${STATUS_READY}`
+    };
+  }
 
   function fmtMoney(v) {
     if (v == null || isNaN(v)) return '0 ₽';
@@ -1169,7 +1240,10 @@
      * Поставить/обновить статус. Если запись уже есть — апдейт + история.
      * Если нет — создаём. date опционально — по умолчанию сегодня.
      */
-    setProfileStatus(mentorId, profileId, status, comment = '', date = null, performer = undefined) {
+    setProfileStatus(
+      mentorId, profileId, status, comment = '', date = null, performer = undefined,
+      nextActionDate = undefined, nextActionMode = undefined
+    ) {
       const list = this.state.profileStatuses;
       let rec = list.find(s => s.mentorId === mentorId && s.profileId === profileId);
       const stamp = date || todayISO();
@@ -1178,7 +1252,13 @@
       const isNew = !rec;
       if (rec) {
         rec.history = rec.history || [];
-        rec.history.push({ date: rec.date || stamp, status: rec.status, comment: rec.comment || '' });
+        rec.history.push({
+          date: rec.date || stamp,
+          status: rec.status,
+          comment: rec.comment || '',
+          nextActionDate: rec.nextActionDate || '',
+          nextActionStatus: rec.nextActionStatus || statusActionTarget(rec.status)
+        });
         rec.status = status;
         rec.comment = comment;
         rec.date = stamp;
@@ -1196,11 +1276,43 @@
         };
         list.push(rec);
       }
+      this._syncProfileStatusAction(rec, {
+        reset: isNew || oldStatus !== status,
+        nextActionDate,
+        nextActionMode
+      });
       this.save();
       // Уведомление в Telegram-очередь — best effort, не блокирует и не валит save.
       try { this._queueStatusNotification(mentorId, profileId, status, oldStatus, comment, isNew); }
       catch (e) { console.warn('[Store] queueStatusNotification failed', e); }
       return rec;
+    },
+
+    /** Дата следующего действия живёт в самой записи статуса.
+     *  При смене статуса создаём новый срок; при обычном сохранении без
+     *  явной даты существующий ручной срок не трогаем. */
+    _syncProfileStatusAction(rec, options = {}) {
+      if (!rec) return;
+      const targetStatus = statusActionTarget(rec.status);
+      if (!targetStatus) {
+        delete rec.nextActionDate;
+        delete rec.nextActionStatus;
+        delete rec.nextActionMode;
+        return;
+      }
+      const hasExplicitDate = options.nextActionDate !== undefined;
+      const fallbackDate = addDaysISO(
+        rec.date || todayISO(),
+        statusActionDefaultDays(rec, this.state)
+      );
+      rec.nextActionStatus = targetStatus;
+      if (hasExplicitDate) {
+        rec.nextActionDate = options.nextActionDate || fallbackDate;
+        rec.nextActionMode = options.nextActionMode || 'manual';
+      } else if (options.reset || !rec.nextActionDate) {
+        rec.nextActionDate = fallbackDate;
+        rec.nextActionMode = 'auto';
+      }
     },
 
     /** Кладёт уведомление о смене статуса в notification_outbox (Supabase).
@@ -1259,14 +1371,61 @@
       }).catch(e => console.warn('[Store] queueTelegramNotification failed', e));
     },
     /** Обновить только дату статуса, не меняя сам статус (inline edit из карточки) */
-    setProfileStatusDate(mentorId, profileId, date, performer = undefined) {
+    setProfileStatusDate(
+      mentorId, profileId, date, performer = undefined,
+      nextActionDate = undefined, nextActionMode = undefined
+    ) {
       const rec = (this.state.profileStatuses || [])
         .find(s => s.mentorId === mentorId && s.profileId === profileId);
       if (!rec) return null;
+      const oldDate = rec.date;
       rec.date = date || todayISO();
       if (performer !== undefined) rec.performer = performer;
+      const statusDateChanged = oldDate !== rec.date;
+      this._syncProfileStatusAction(rec, {
+        reset: statusDateChanged && rec.nextActionMode !== 'manual',
+        nextActionDate,
+        nextActionMode
+      });
       this.save();
       return rec;
+    },
+
+    getProfileStatusAction(rec, today = todayISO()) {
+      return deriveStatusAction(rec, this.state, today);
+    },
+
+    /** Системные задачи, вычисленные из profileStatuses. Они не копируются
+     *  в dailyTasks и закрываются только реальной сменой статуса. */
+    listProfileStatusActionTasks(today = todayISO()) {
+      return (this.state.profileStatuses || []).map(rec => {
+        const action = deriveStatusAction(rec, this.state, today);
+        if (!action) return null;
+        const mentor = (this.state.mentors || []).find(item => item.id === rec.mentorId);
+        const profile = (this.state.profiles || []).find(item => item.id === rec.profileId);
+        if (!mentor || !profile) return null;
+        const client = clientForStatusMentor(this.state, rec.mentorId);
+        const registration = (this.state.accountRegs || []).find(item => item.profileId === rec.profileId);
+        return {
+          id: `status-action:${rec.id}`,
+          source: 'profile_status_action',
+          statusId: rec.id,
+          date: action.date,
+          mentorId: rec.mentorId,
+          profileId: rec.profileId,
+          note: action.note,
+          done: false,
+          createdAt: rec.date || '',
+          currentStatus: rec.status,
+          targetStatus: action.targetStatus,
+          daysInStatus: action.daysInStatus,
+          daysOverdue: action.daysOverdue,
+          dueState: action.dueState,
+          manager: String((client && client.manager) || '').trim(),
+          accountCode: profile.code || '',
+          accountOwner: (registration && registration.ownerName) || ''
+        };
+      }).filter(Boolean);
     },
     deleteProfileStatus(id) {
       this.state.profileStatuses = (this.state.profileStatuses || []).filter(s => s.id !== id);
@@ -2120,9 +2279,10 @@
   window.App = {
     Store, Modal, Counter, toast,
     fmtMoney, fmtDate, monthKey, monthLabel,
-    uid, todayISO, tomorrowISO,
+    uid, todayISO, tomorrowISO, addDaysISO, daysBetweenISO, deriveStatusAction,
     SERVICES, EXPENSE_CATEGORIES, PERSONAL_CATEGORIES, PHONE_EXPENSE_AMOUNT, TARIFFS, TARIFF_NAMES,
-    PROFILE_STATUSES, PERFORMERS, CITIES, cityFromCode
+    PROFILE_STATUSES, PERFORMERS, CITIES, cityFromCode,
+    STATUS_SELECT, STATUS_CHOSEN, STATUS_READY
   };
 
   /* ------------------------------------------------------------------ */
