@@ -38,7 +38,7 @@
       </div>
     </div>
 
-    <!-- Две колонки (на ПК): слева анкеты+заказы, справа условия/календарь/прокси -->
+    <!-- Две колонки (на ПК): слева анкеты+заказы, справа условия/календарь/действия -->
     <div class="cli-cols">
       <div class="cli-col cli-col--left">
         <h2 class="cli-section-title">Анкеты</h2>
@@ -62,12 +62,6 @@
 
         <h2 class="cli-section-title">Календарь</h2>
         <div class="cli-cal" data-cli-calendar></div>
-
-        <!-- Прокси для Telegram — на случай, если Telegram не открывается. -->
-        <h2 class="cli-section-title">Прокси для Telegram</h2>
-        <div class="cli-proxy-block" data-cli-proxies>
-          <div class="cli-empty">Загрузка прокси…</div>
-        </div>
 
         <div data-cli-feed style="margin-top:22px"></div>
       </div>
@@ -150,8 +144,6 @@
     document.querySelectorAll('[data-cli-remain-close]').forEach(el => el.addEventListener('click', () => window.ClientApp.closeRemainModal()));
     window.ClientApp.renderMyOrders(myOrders);
     await window.ClientApp.handlePaymentReturn();
-    // Прокси — независимо от snapshot, доступны всем залогиненным клиентам.
-    window.ClientApp.renderProxies();
     // Условия заказа — открытие модалки по ссылке (футер + ссылка в галочке) и закрытие
     document.querySelectorAll('[data-cli-terms]').forEach(el => el.addEventListener('click', e => { e.preventDefault(); window.ClientApp.openTerms(); }));
     document.querySelectorAll('[data-cli-terms-close]').forEach(el => el.addEventListener('click', () => window.ClientApp.closeTerms()));

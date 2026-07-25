@@ -645,87 +645,6 @@
     `;
   }
 
-  /* ==========================================================================
-     Прокси для Telegram. Читаем из public.client_proxies + meta.
-     Обновляется на сервере раз в 30 мин (cron + /home/mentori/scripts/client_proxies_refresh.py).
-     Клиент тапает на ссылку tg://proxy?... — Telegram сам подставит настройки.
-     ========================================================================== */
-  async function loadProxies() {
-    const token = accessToken();
-    if (!token) return { proxies: [], meta: null };
-    try {
-      const [px, meta] = await Promise.all([
-        fetch(`${_url()}/rest/v1/client_proxies?select=host,port,tg_link,latency_ms,tested_at&order=latency_ms.asc&limit=10`, {
-          headers: { apikey: _key(), Authorization: `Bearer ${token}`, Accept: 'application/json' }
-        }).then(r => r.ok ? r.json() : []),
-        fetch(`${_url()}/rest/v1/client_proxies_meta?id=eq.main&select=updated_at,alive_count,feed_count`, {
-          headers: { apikey: _key(), Authorization: `Bearer ${token}`, Accept: 'application/json' }
-        }).then(r => r.ok ? r.json() : []),
-      ]);
-      return { proxies: px || [], meta: (meta && meta[0]) || null };
-    } catch (e) {
-      console.warn('[client-app] proxies load failed', e);
-      return { proxies: [], meta: null };
-    }
-  }
-
-  function _fmtAgo(iso) {
-    if (!iso) return 'неизвестно';
-    const ms = Date.now() - new Date(iso).getTime();
-    if (ms < 60_000) return 'только что';
-    const min = Math.floor(ms / 60_000);
-    if (min < 60) return `${min} мин назад`;
-    const hr = Math.floor(min / 60);
-    if (hr < 24) return `${hr} ч назад`;
-    return `${Math.floor(hr / 24)} д назад`;
-  }
-
-  async function renderProxies() {
-    const el = document.querySelector('[data-cli-proxies]');
-    if (!el) return;
-    const { proxies, meta } = await loadProxies();
-    if (!proxies.length) {
-      el.innerHTML = `
-        <div class="cli-proxy-empty">
-          <div style="font-size:14px;color:var(--text-mute);margin-bottom:8px">⚠️ Сейчас нет проверенных прокси.</div>
-          <div style="font-size:12px;color:var(--text-mute)">Список обновляется каждые 30 минут. Зайди чуть позже.</div>
-          ${meta && meta.updated_at ? `<div style="font-size:11px;color:var(--text-mute);margin-top:8px">Последняя проверка: ${escapeHtml(_fmtAgo(meta.updated_at))}</div>` : ''}
-        </div>`;
-      return;
-    }
-    const updated = meta && meta.updated_at ? _fmtAgo(meta.updated_at) : '—';
-    // Список свёрнут в <details>-дропдаун: закрытым — одна строка со счётчиком,
-    // по тапу раскрывается весь список (иначе 10 прокси съедали пол-экрана).
-    el.innerHTML = `
-      <details class="cli-proxy-dd">
-        <summary class="cli-proxy-summary">
-          <span class="cli-proxy-summary__icon">🛰️</span>
-          <span class="cli-proxy-summary__label">Показать прокси <b>(${proxies.length})</b></span>
-          <span class="cli-proxy-summary__meta">обновлено ${escapeHtml(updated)}</span>
-          <span class="cli-proxy-summary__chev">▾</span>
-        </summary>
-        <div class="cli-proxy-info">
-          Если Telegram не открывается — нажми на любой прокси ниже. Telegram сам подставит настройки.
-          Если не получилось через один — попробуй другой (некоторые могут не работать на твоём операторе).
-        </div>
-        <div class="cli-proxy-list">
-          ${proxies.map((p, i) => `
-            <a class="cli-proxy-item" href="${escapeAttr(p.tg_link)}">
-              <div class="cli-proxy-num">${i + 1}</div>
-              <div class="cli-proxy-body">
-                <div class="cli-proxy-host">${escapeHtml(p.host)}:${escapeHtml(p.port)}</div>
-                <div class="cli-proxy-meta">⚡ ${escapeHtml(p.latency_ms || '?')} ms · открыть в Telegram</div>
-              </div>
-              <div class="cli-proxy-arrow">→</div>
-            </a>
-          `).join('')}
-        </div>
-        <div style="font-size:11px;color:var(--text-mute);margin-top:10px;text-align:center">
-          Если ни один не работает — напиши менеджеру.
-        </div>
-      </details>
-    `;
-  }
   function escapeAttr(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
       '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
@@ -1699,7 +1618,6 @@
     renderFeed,
     renderCalendar,
     renderProfileDetail,
-    renderProxies,
     renderOrder,
     renderRemainder,
     openRemainModal,
