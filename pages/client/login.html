@@ -42,7 +42,7 @@
     </div>
   </main>
 
-  <script src="../../js/supabase-client.js?v=20260528a"></script>
+  <script src="../../js/supabase-client.js?v=20260726a"></script>
   <script>
   (async () => {
     const { Auth } = window.Supabase;
@@ -51,8 +51,8 @@
       return './index.html';
     }
 
-    if (Auth.isLogged() && Auth.role() === 'client') { location.replace(landing()); return; }
-    if (await Auth.refresh()) {
+    const restored = Auth.ensureFresh ? await Auth.ensureFresh() : await Auth.refresh();
+    if (restored) {
       if (Auth.role() === 'client') { location.replace(landing()); return; }
     }
 

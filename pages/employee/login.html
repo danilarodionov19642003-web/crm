@@ -38,7 +38,7 @@
     </div>
   </main>
 
-  <script src="../../js/supabase-client.js?v=20260528a"></script>
+  <script src="../../js/supabase-client.js?v=20260726a"></script>
   <script>
   (async () => {
     const { Auth } = window.Supabase;
@@ -54,10 +54,9 @@
       return role === 'team' ? '../statuses.html' : '../../index.html';
     }
 
-    // если уже залогинен — сразу на главную
-    if (Auth.isLogged()) { location.replace(landing()); return; }
-    // попробуем refresh — на случай протухшего access_token
-    if (await Auth.refresh()) { location.replace(landing()); return; }
+    // Восстановим сессию и при необходимости обновим протухший access_token.
+    const restored = Auth.ensureFresh ? await Auth.ensureFresh() : await Auth.refresh();
+    if (restored) { location.replace(landing()); return; }
 
     const err = document.getElementById('err');
     function showErr(msg) { err.textContent = msg; err.hidden = false; }

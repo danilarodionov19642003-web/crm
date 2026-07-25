@@ -62,10 +62,19 @@
     };
   }
 
+  async function _fetch(url, opts = {}) {
+    const sb = _SB();
+    const headers = { ..._hdr(), ...(opts.headers || {}) };
+    const request = { ...opts, headers };
+    if (typeof sb.authFetch === 'function') return sb.authFetch(url, request);
+    if (sb.Auth && typeof sb.Auth.ensureFresh === 'function') await sb.Auth.ensureFresh();
+    return fetch(url, { ...opts, headers: { ..._hdr(), ...(opts.headers || {}) } });
+  }
+
   /* ---- Сетевые операции ---- */
   async function fetchRemote() {
     const url = `${_supaUrl()}/rest/v1/${TABLE}?id=eq.${ROW_ID}&select=data,updated_at`;
-    const res = await fetch(url, { headers: _hdr() });
+    const res = await _fetch(url);
     if (!res.ok) throw new Error(`fetch ${res.status}: ${await res.text()}`);
     const rows = await res.json();
     return rows[0] || null;  // { data, updated_at } или null
@@ -80,7 +89,7 @@
     const url = expected
       ? `${_supaUrl()}/rest/v1/${TABLE}?id=eq.${ROW_ID}&updated_at=eq.${expected}&select=id`
       : `${_supaUrl()}/rest/v1/${TABLE}?on_conflict=id`;
-    const res = await fetch(url, {
+    const res = await _fetch(url, {
       method: expected ? 'PATCH' : 'POST',
       headers: {
         ...(_hdr()),
@@ -121,7 +130,7 @@
       client_info: (navigator.userAgent || '').slice(0, 200)
     };
     const url = `${_supaUrl()}/rest/v1/${HISTORY_TABLE}`;
-    const res = await fetch(url, {
+    const res = await _fetch(url, {
       method: 'POST',
       headers: { ...(_hdr()), 'Prefer': 'return=minimal' },
       body: JSON.stringify(row)
@@ -164,7 +173,7 @@
       updated_at
     }));
     const url = `${_supaUrl()}/rest/v1/${SNAPSHOTS_TABLE}?on_conflict=email`;
-    const res = await fetch(url, {
+    const res = await _fetch(url, {
       method: 'POST',
       headers: { ...(_hdr()), 'Prefer': 'resolution=merge-duplicates,return=minimal' },
       body: JSON.stringify(rows)
@@ -178,7 +187,7 @@
     // строка в client_snapshots должна исчезнуть, иначе клиент сохранит
     // последний снимок в своём кабинете).
     try {
-      const existingRes = await fetch(
+      const existingRes = await _fetch(
         `${_supaUrl()}/rest/v1/${SNAPSHOTS_TABLE}?select=email`,
         { headers: _hdr() }
       );
@@ -188,7 +197,7 @@
         const stale = existing.map(r => r.email).filter(e => !allowed.has(e));
         for (const email of stale) {
           const enc = encodeURIComponent(email);
-          await fetch(
+          await _fetch(
             `${_supaUrl()}/rest/v1/${SNAPSHOTS_TABLE}?email=eq.${enc}`,
             { method: 'DELETE', headers: _hdr() }
           ).catch(() => {});
@@ -617,8 +626,24 @@
     catch { return null; }
   }
 
+  let resumePromise = null;
+  function resumeSync({ silent = false } = {}) {
+    if (!navigator.onLine || document.visibilityState === 'hidden') {
+      if (!navigator.onLine) setStatus('offline', 'Оффлайн');
+      return Promise.resolve({ changed: false });
+    }
+    if (resumePromise) return resumePromise;
+    if (!silent) setStatus('syncing', 'Восстановление…');
+    resumePromise = (async () => {
+      const result = await pull({ silent });
+      if (!result.error) await flush();
+      return result;
+    })().finally(() => { resumePromise = null; });
+    return resumePromise;
+  }
+
   /* ---- Online/offline events ---- */
-  window.addEventListener('online',  () => { setStatus('syncing','Восстановление…'); pull(); flush(); });
+  window.addEventListener('online',  () => { resumeSync(); });
   window.addEventListener('offline', () => setStatus('offline','Оффлайн'));
 
   /* ---- Закрытие/сворачивание вкладки ----
@@ -638,7 +663,9 @@
   // дополнительно спасаемся при переходе вкладки в hidden.
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') flushOnHide();
+    else resumeSync();
   });
+  window.addEventListener('pageshow', () => { resumeSync({ silent: pullCompleted }); });
 
   /* ---- Фоновый pull раз в минуту ----
      Закрывает сценарий «вторая вкладка с устаревшим стейтом перетёрла
@@ -648,8 +675,7 @@
   setInterval(() => {
     if (document.visibilityState !== 'visible') return;
     if (!navigator.onLine) return;
-    if (!pullCompleted) return;
-    pull({ silent: true });
+    resumeSync({ silent: true });
   }, POLL_INTERVAL_MS);
 
   /* ---- Очередь Telegram-уведомлений ----
@@ -660,7 +686,7 @@
     if (!row || !row.message) return false;
     const url = `${_supaUrl()}/rest/v1/${OUTBOX_TABLE}`;
     try {
-      const res = await fetch(url, {
+      const res = await _fetch(url, {
         method: 'POST',
         headers: { ...(_hdr()), 'Prefer': 'return=minimal' },
         body: JSON.stringify(row)
@@ -759,7 +785,7 @@
     if (!navigator.onLine) { setStatus('offline','Оффлайн'); return; }
     // Дать app.js успеть инициализировать Store.load() сначала из localStorage,
     // затем тянем облако и при необходимости ререндерим.
-    setTimeout(() => pull(), 50);
+    setTimeout(() => resumeSync(), 50);
   });
 
   /* store:reloaded — локальное событие страниц/модулей. Не прокидываем его

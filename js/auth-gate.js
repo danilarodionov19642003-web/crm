@@ -63,10 +63,12 @@
   async function gate() {
     if (!isAdminPage()) return;
 
-    if (!Auth.isLogged()) {
-      // попытаемся обновить refresh-токен
-      try { await Auth.refresh(); } catch (_) {}
-    }
+    // Даже если user лежит в localStorage, access_token мог протухнуть пока
+    // вкладка спала. Освежаем сессию до запуска остальных модулей страницы.
+    try {
+      if (Auth.ensureFresh) await Auth.ensureFresh();
+      else if (!Auth.isLogged()) await Auth.refresh();
+    } catch (_) {}
 
     if (!Auth.isLogged()) {
       // запоминаем куда хотели зайти, чтобы вернуть после входа
@@ -112,6 +114,12 @@
       }
     }
   }
+
+  window.addEventListener('supabase:auth-expired', () => {
+    if (!isAdminPage()) return;
+    try { sessionStorage.setItem('mentori-after-login', location.pathname + location.search); } catch (_) {}
+    location.replace(_rootHref());
+  });
 
   // Запускаем сразу синхронно (top-level await не везде ок) — без блокировки рендера.
   gate();

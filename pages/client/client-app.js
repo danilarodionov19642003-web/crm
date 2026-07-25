@@ -57,9 +57,10 @@
   }
 
   async function requireLogin() {
-    if (!Auth.isLogged()) {
-      try { await Auth.refresh(); } catch (_) {}
-    }
+    try {
+      if (Auth.ensureFresh) await Auth.ensureFresh();
+      else if (!Auth.isLogged()) await Auth.refresh();
+    } catch (_) {}
     if (!Auth.isLogged()) {
       try { sessionStorage.setItem('mentori-cli-after-login', location.pathname + location.search); } catch (_) {}
       location.replace(rootHref());

@@ -32,6 +32,8 @@
   // Геттеры — другие модули (cloud-sync.js и т.п.) могут читать URL/KEY
   // через window.Supabase.URL и window.Supabase.KEY (см. экспорт ниже).
   const SESSION_KEY = 'mentori-supabase-session';
+  const REFRESH_LOCK_NAME = 'mentori-supabase-auth-refresh';
+  const REFRESH_MIN_VALIDITY_MS = 60 * 1000;
 
   /* ---- сессия (для Auth) ---- */
   function getSession() {
@@ -41,6 +43,23 @@
   function setSession(s) {
     if (s) localStorage.setItem(SESSION_KEY, JSON.stringify(s));
     else   localStorage.removeItem(SESSION_KEY);
+  }
+
+  function sessionIsFresh(s, minValidityMs = REFRESH_MIN_VALIDITY_MS) {
+    if (!s || !s.user || !s.access_token) return false;
+    const expiresAt = Number(s.expires_at) * 1000;
+    // Старые сохранённые сессии без expires_at считаем пригодными: серверный
+    // 401 всё равно запустит refresh и повтор запроса через authFetch().
+    if (!Number.isFinite(expiresAt) || expiresAt <= 0) return true;
+    return expiresAt - Date.now() > minValidityMs;
+  }
+
+  async function withRefreshLock(task) {
+    const locks = typeof navigator !== 'undefined' && navigator.locks;
+    if (locks && typeof locks.request === 'function') {
+      return locks.request(REFRESH_LOCK_NAME, task);
+    }
+    return task();
   }
 
   function authHeader() {
@@ -73,10 +92,10 @@
     if (!s || !s.expires_at) return;
     // expires_at — unix seconds. Переводим в ms, вычитаем 5 мин.
     const fireAt  = (s.expires_at * 1000) - (5 * 60 * 1000);
-    const delayMs = Math.max(5_000, fireAt - Date.now());   // не раньше чем через 5с
+    const delayMs = Math.max(0, fireAt - Date.now());
     _refreshTimer = setTimeout(() => {
-      if (window.Supabase && window.Supabase.Auth && window.Supabase.Auth.refresh) {
-        window.Supabase.Auth.refresh().catch(() => {});
+      if (window.Supabase && window.Supabase.Auth && window.Supabase.Auth.ensureFresh) {
+        window.Supabase.Auth.ensureFresh(5 * 60 * 1000).catch(() => {});
       }
     }, delayMs);
   }
@@ -87,26 +106,39 @@
   // (могли спать ноут несколько часов, токен уже истёк).
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState !== 'visible') return;
-    const s = getSession();
-    if (!s || !s.expires_at) return;
-    // Если меньше 60 сек осталось — refresh сразу, не ждём таймер.
-    if (s.expires_at * 1000 - Date.now() < 60_000) {
-      if (window.Supabase && window.Supabase.Auth) window.Supabase.Auth.refresh().catch(() => {});
-    } else {
-      _scheduleRefresh();
+    if (window.Supabase && window.Supabase.Auth && window.Supabase.Auth.ensureFresh) {
+      window.Supabase.Auth.ensureFresh(5 * 60 * 1000).catch(() => {});
     }
   });
+
+  /** Авторизованный fetch: освежает токен до запроса и один раз повторяет
+   *  запрос после 401. Заголовок Authorization всегда строится заново. */
+  async function authFetch(url, opts = {}) {
+    await _probePromise;
+    await Auth.ensureFresh();
+    const request = () => fetch(url, {
+      ...opts,
+      headers: {
+        ...(opts.headers || {}),
+        'Authorization': authHeader()
+      }
+    });
+    let res = await request();
+    if (res.status === 401) {
+      const user = await Auth.refresh();
+      if (user) res = await request();
+    }
+    return res;
+  }
 
   /* ---- общий fetch к PostgREST ----
      Ждём пока _probe выберет рабочий backend (обычно мгновенно из кэша,
      иначе до 4с при первом заходе). */
   async function rest(path, opts = {}) {
-    await _probePromise;
-    const res = await fetch(`${CURRENT.URL}/rest/v1/${path}`, {
+    const res = await authFetch(`${CURRENT.URL}/rest/v1/${path}`, {
       ...opts,
       headers: {
         'apikey': CURRENT.KEY,
-        'Authorization': authHeader(),
         'Content-Type': 'application/json',
         'Prefer': opts.prefer || 'return=representation',
         ...(opts.headers || {})
@@ -150,7 +182,20 @@
       const s = getSession();
       return s ? s.user : null;
     },
-    isLogged() { return !!this.user(); },
+    isLogged() {
+      const s = getSession();
+      return !!(s && s.user && s.refresh_token);
+    },
+
+    ensureFresh(minValidityMs = REFRESH_MIN_VALIDITY_MS) {
+      const s = getSession();
+      if (!s || !s.user || !s.refresh_token) return Promise.resolve(null);
+      if (sessionIsFresh(s, minValidityMs)) {
+        _scheduleRefresh();
+        return Promise.resolve(s.user);
+      }
+      return this.refresh();
+    },
 
     async signIn(email, password) {
       // Fallback убран, идём прямо на PRIMARY.
@@ -174,28 +219,59 @@
     // вкладки одновременно) → GoTrue инвалидирует обе сессии.
     refresh() {
       if (Auth._refreshing) return Auth._refreshing;
+      const startedSession = getSession();
+      const startedRefreshToken = startedSession && startedSession.refresh_token;
       Auth._refreshing = (async () => {
         await _probePromise;
-        const s = getSession();
-        if (!s || !s.refresh_token) return null;
-        try {
-          const res = await fetch(`${CURRENT.URL}/auth/v1/token?grant_type=refresh_token`, {
-            method: 'POST',
-            headers: { 'apikey': CURRENT.KEY, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ refresh_token: s.refresh_token })
-          });
-          const data = await res.json();
-          if (!res.ok) { setSession(null); return null; }
-          setSession(data);
-          _scheduleRefresh();   // переставить таймер под новый expires_at
-          return data.user;
-        } catch (_) { return null; }
-        finally {
-          // Чистим lock ПОСЛЕ записи новой сессии, чтобы следующие
-          // параллельные вызовы получили свежий access_token.
-          setTimeout(() => { Auth._refreshing = null; }, 0);
-        }
+        return withRefreshLock(async () => {
+          const s = getSession();
+          if (!s || !s.refresh_token) return null;
+
+          // Пока эта вкладка ждала lock, другая уже могла обновить ротационный
+          // refresh_token и записать свежую сессию в общий localStorage.
+          if (startedRefreshToken && s.refresh_token !== startedRefreshToken && sessionIsFresh(s)) {
+            _scheduleRefresh();
+            return s.user;
+          }
+
+          const usedRefreshToken = s.refresh_token;
+          try {
+            const res = await fetch(`${CURRENT.URL}/auth/v1/token?grant_type=refresh_token`, {
+              method: 'POST',
+              headers: { 'apikey': CURRENT.KEY, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ refresh_token: usedRefreshToken })
+            });
+            let data;
+            try { data = await res.json(); } catch (_) { data = {}; }
+            if (!res.ok) {
+              // Fallback для браузеров без Web Locks: параллельная вкладка могла
+              // успеть записать новую сессию между нашим запросом и ответом.
+              const latest = getSession();
+              if (latest && latest.refresh_token !== usedRefreshToken && sessionIsFresh(latest)) {
+                _scheduleRefresh();
+                return latest.user;
+              }
+              // Сетевые/серверные ошибки не должны выкидывать пользователя.
+              // Чистим сессию только когда сервер явно отверг refresh_token.
+              if (res.status === 400 || res.status === 401) {
+                setSession(null);
+                window.dispatchEvent(new CustomEvent('supabase:auth-expired'));
+              }
+              return null;
+            }
+            setSession(data);
+            _scheduleRefresh();
+            return data.user || null;
+          } catch (_) {
+            return null;
+          }
+        });
       })();
+      const releaseLocalRefresh = () => {
+        // Чистим локальный single-flight после записи новой сессии.
+        setTimeout(() => { Auth._refreshing = null; }, 0);
+      };
+      Auth._refreshing.then(releaseLocalRefresh, releaseLocalRefresh);
       return Auth._refreshing;
     },
 
@@ -248,7 +324,7 @@
   // и другие модули используют window.Supabase.URL/KEY и автоматически
   // подхватят правильный backend, не зная о фолбэке ничего.
   window.Supabase = Object.defineProperties({
-    rest, Tbl, Auth, accessToken,
+    rest, authFetch, Tbl, Auth, accessToken,
     // Promise — дождаться выбора backend (полезно если модуль хочет точно
     // знать что URL/KEY уже верные). Например cloud-sync await'ит до push.
     ready: _probePromise,

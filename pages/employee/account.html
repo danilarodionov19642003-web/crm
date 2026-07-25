@@ -45,11 +45,12 @@
     </div>
   </div>
 
-  <script src="../../js/supabase-client.js?v=20260528a"></script>
+  <script src="../../js/supabase-client.js?v=20260726a"></script>
   <script>
   (async () => {
     const { Auth, Tbl } = window.Supabase;
-    if (!Auth.isLogged()) await Auth.refresh();
+    if (Auth.ensureFresh) await Auth.ensureFresh();
+    else if (!Auth.isLogged()) await Auth.refresh();
     Auth.requireLogin('./login.html');
 
     const me = Auth.email();
