@@ -399,8 +399,8 @@
   </div>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260722a"></script>
-  <script src="../js/supabase-client.js?v=20260726a"></script>
+  <script src="../js/app.js?v=20260726b"></script>
+  <script src="../js/supabase-client.js?v=20260726b"></script>
   <script src="../js/auth-gate.js?v=20260726a"></script>
   <script src="../js/cloud-sync.js?v=20260726b"></script>
   <script src="../js/accounts-sync.js"></script>
@@ -1405,6 +1405,48 @@
     const PAYMENTS_API = 'https://mentori.tech/api/payments';
     function _sb() { return window.Supabase || {}; }
     function _sbToken() { const S = _sb(); return (S.accessToken && S.accessToken()) || S.KEY; }
+    function receiptObjectPath(reference) {
+      const value = String(reference || '').trim();
+      const privatePrefix = 'storage://receipts/';
+      if (value.startsWith(privatePrefix)) return value.slice(privatePrefix.length);
+      const publicMarker = '/storage/v1/object/public/receipts/';
+      const authenticatedMarker = '/storage/v1/object/authenticated/receipts/';
+      const marker = value.includes(publicMarker) ? publicMarker
+        : value.includes(authenticatedMarker) ? authenticatedMarker : '';
+      if (!marker) return '';
+      const encoded = value.slice(value.indexOf(marker) + marker.length).split(/[?#]/, 1)[0];
+      try { return decodeURIComponent(encoded); } catch (_) { return encoded; }
+    }
+    async function openReceipt(reference) {
+      const S = _sb();
+      const objectPath = receiptObjectPath(reference);
+      if (!S.URL || !objectPath) throw new Error('Receipt path is invalid');
+      const popup = window.open('about:blank', '_blank');
+      if (popup) popup.opener = null;
+      try {
+        const encodedPath = objectPath.split('/').map(encodeURIComponent).join('/');
+        const response = await fetch(`${S.URL}/storage/v1/object/sign/receipts/${encodedPath}`, {
+          method: 'POST',
+          headers: {
+            'apikey': S.KEY,
+            'Authorization': `Bearer ${_sbToken()}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ expiresIn: 300 })
+        });
+        if (!response.ok) throw new Error(`Receipt access failed (${response.status})`);
+        const payload = await response.json();
+        const signed = String(payload.signedURL || payload.signedUrl || '');
+        if (!signed || !popup) throw new Error('Receipt link is missing');
+        const url = /^https?:\/\//i.test(signed) ? signed
+          : signed.startsWith('/storage/v1/') ? `${S.URL}${signed}`
+          : `${S.URL}/storage/v1${signed.startsWith('/') ? '' : '/'}${signed}`;
+        popup.location.replace(url);
+      } catch (error) {
+        if (popup) popup.close();
+        throw error;
+      }
+    }
     async function fetchOrders() {
       const S = _sb();
       if (!S.URL) return [];
@@ -1557,7 +1599,7 @@
           : `💳 предоплата 50%: <b>${_prepay.toLocaleString('ru-RU')} ₽</b> · остаток ${_rest.toLocaleString('ru-RU')} ₽ после выполнения`;
         const links = [
           o.profile_url ? `<a href="${escapeHtml(o.profile_url)}" target="_blank" rel="noopener">🔗 профиль</a>` : '',
-          o.receipt_url ? `<a href="${escapeHtml(o.receipt_url)}" target="_blank" rel="noopener">🧾 чек</a>` : ''
+          o.receipt_url ? `<button type="button" data-receipt-ref="${escapeHtml(o.receipt_url)}" style="border:0;background:none;padding:0;color:var(--accent);text-decoration:underline;cursor:pointer;font:inherit">🧾 чек</button>` : ''
         ].filter(Boolean).join(' · ');
         const onlinePayment = o.payment_provider === 'rollypay';
         const manualTransfer = o.payment_method === 'card_transfer';
@@ -1607,6 +1649,12 @@
       wrap.querySelectorAll('[data-confirm]').forEach(b => b.addEventListener('click', () => confirmOrder(Number(b.dataset.confirm))));
       wrap.querySelectorAll('[data-reject]').forEach(b => b.addEventListener('click', () => rejectOrder(Number(b.dataset.reject))));
       wrap.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => deleteOrder(Number(b.dataset.del))));
+      wrap.querySelectorAll('[data-receipt-ref]').forEach(button => button.addEventListener('click', async () => {
+        button.disabled = true;
+        try { await openReceipt(button.dataset.receiptRef); }
+        catch (_) { toast('Не удалось открыть чек', 'error'); }
+        finally { button.disabled = false; }
+      }));
     }
     const _deletingOrders = new Set();
     async function deleteOrder(id) {

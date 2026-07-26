@@ -44,19 +44,44 @@ grant select, insert, update, delete on storage.objects to anon, authenticated, 
 grant select, insert, update, delete on storage.buckets to anon, authenticated, service_role;
 grant usage, select on all sequences in schema storage to anon, authenticated, service_role;
 
--- bucket receipts: ПУБЛИЧНЫЙ (ссылка на чек кликабельна из Telegram),
--- лимит 50 МБ, только pdf/картинки. Имена файлов — UUID (security by obscurity).
+-- Private bucket: доступ к чеку выдаётся через RLS и короткую signed URL.
+-- Лимит 50 МБ, только pdf/картинки.
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-values ('receipts','receipts', true, 52428800,
+values ('receipts','receipts', false, 52428800,
         array['application/pdf','image/jpeg','image/png','image/webp','image/heic','image/heif'])
 on conflict (id) do update set public=excluded.public,
   file_size_limit=excluded.file_size_limit, allowed_mime_types=excluded.allowed_mime_types;
 
--- RLS: загружать в receipts может любой authenticated (storage-api делает insert
--- НЕ под ролью authenticated, поэтому политика `to public` + проверка auth.role()).
+-- Клиент загружает только в собственную папку auth.uid().
 drop policy if exists receipts_auth_insert on storage.objects;
 create policy receipts_auth_insert on storage.objects
   for insert to public
-  with check (bucket_id = 'receipts' and coalesce(auth.role(),'') = 'authenticated');
+  with check (
+    bucket_id = 'receipts'
+    and (auth.jwt() -> 'app_metadata' ->> 'role') = 'client'
+    and split_part(name, '/', 1) = auth.uid()::text
+  );
+
+-- Владелец видит все чеки. Клиент видит свою папку и старые корневые файлы,
+-- которые уже привязаны к его заявкам.
+drop policy if exists receipts_auth_select on storage.objects;
+create policy receipts_auth_select on storage.objects
+  for select to public
+  using (
+    bucket_id = 'receipts'
+    and (
+      (auth.jwt() -> 'app_metadata' ->> 'role') = 'owner'
+      or split_part(name, '/', 1) = auth.uid()::text
+      or exists (
+        select 1
+        from public.client_orders co
+        where co.client_email = (auth.jwt() ->> 'email')
+          and (
+            co.receipt_url = 'storage://receipts/' || name
+            or co.receipt_url like '%/object/public/receipts/' || name
+          )
+      )
+    )
+  );
 
 -- Проверка upload (mint JWT, POST /sb/storage/v1/object/receipts/<file>) — см. историю сессии.

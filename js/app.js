@@ -279,20 +279,6 @@
         legal:     { label: 'Юридические услуги', daysToPublish: 7  },
         other:     { label: 'Другое',  daysToPublish: 5  },
       };
-      // Сид: первая пара ссылок на смену IP для рабочего раздела аккаунтов
-      // (владелец потом редактирует/добавляет в модалке «Управлять прокси»).
-      if (!this.state._proxySeeded) {
-        const seedLinks = [
-          { url: 'https://manager.lte-center.ru/api/proxies/20718/reconnect-link/bc887de42323ab9ded0a6be32ea96348', label: 'Прокси 1' },
-          { url: 'https://manager.lte-center.ru/api/proxies/20600/reconnect-link/1f2f07d0315bbcaec634b73ba8b5ecd5', label: 'Прокси 2' }
-        ];
-        seedLinks.forEach(s => {
-          if (!(this.state.proxyLinks || []).some(p => p.url === s.url)) {
-            this.state.proxyLinks.push({ id: uid(), url: s.url, label: s.label, createdAt: todayISO() });
-          }
-        });
-        this.state._proxySeeded = true;
-      }
       this._migrateNormalizePhones();
       this._migrateRenameDialogStatus();
       // Бэкфилл менторов из клиентов: если клиент был создан на странице

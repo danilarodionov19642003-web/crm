@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Mentori CRM database backup every night
+
+[Timer]
+OnCalendar=*-*-* 03:20:00 Europe/Moscow
+Persistent=true
+RandomizedDelaySec=20m
+Unit=mentori-db-backup.service
+
+[Install]
+WantedBy=timers.target

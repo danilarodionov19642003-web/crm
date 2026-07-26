@@ -56,8 +56,14 @@ class PaymentMainTest(unittest.TestCase):
         self.assertEqual(len(conn.calls), 1)
 
     def test_only_owner_can_confirm_manual_transfer(self):
-        self.assertTrue(main.is_owner({"user_metadata": {"role": "owner"}}))
-        self.assertFalse(main.is_owner({"user_metadata": {"role": "team"}}))
+        self.assertTrue(main.is_owner({"app_metadata": {"role": "owner"}}))
+        self.assertFalse(main.is_owner({"app_metadata": {"role": "team"}}))
+        self.assertFalse(
+            main.is_owner({
+                "app_metadata": {"role": "client"},
+                "user_metadata": {"role": "owner"},
+            })
+        )
 
 
 if __name__ == "__main__":

@@ -832,7 +832,9 @@ body:has(.cli-modal:not([hidden])) { overflow: hidden; }
 .cli-order__receipt {
   align-self: flex-start; font-size: 12.5px; font-weight: 600;
   color: var(--cli-accent); text-decoration: underline;
+  border: 0; background: none; padding: 0; font-family: inherit; cursor: pointer;
 }
+.cli-order__receipt:disabled { opacity: .6; cursor: wait; }
 .cli-ord-amount__rest { font-size: 12px; color: var(--text-mute, #888); font-weight: 400; }
 
 /* Оплатить остаток: CTA (зелёный) + строки выбора анкет */

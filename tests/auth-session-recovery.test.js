@@ -59,9 +59,23 @@ function createAuthRuntime(initialSession, fetchImpl, onLock) {
 }
 
 const nowSec = Math.floor(Date.now() / 1000);
-const user = { id: 'owner-1', email: 'owner@example.test', user_metadata: { role: 'owner' } };
+const user = { id: 'owner-1', email: 'owner@example.test', app_metadata: { role: 'owner' } };
 
 (async () => {
+  {
+    const spoofedUser = {
+      id: 'client-1',
+      email: 'client@example.test',
+      app_metadata: { role: 'client' },
+      user_metadata: { role: 'owner' }
+    };
+    const runtime = createAuthRuntime(
+      { user: spoofedUser, access_token: 'access', refresh_token: 'refresh', expires_at: nowSec + 3600 },
+      async () => response(200, {})
+    );
+    assert.equal(runtime.Supabase.Auth.role(), 'client', 'user_metadata must not elevate a role');
+  }
+
   {
     const calls = [];
     const freshSession = {

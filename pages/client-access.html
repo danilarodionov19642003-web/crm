@@ -27,7 +27,7 @@
         </div>
 
         <div class="panel" style="padding:14px;margin-bottom:14px;background:#fff7e6;border:1px solid #ffd591;color:#874d00">
-          <strong>Важно:</strong> создание доступа здесь — это только связка email→анкеты на нашей стороне. Сам пользователь должен быть заведён в Supabase (Dashboard → Auth → Users → Add user) с этим же email и паролем, и в его user_metadata прописана роль <code>client</code>. Подробности — в SUPABASE_SETUP.md.
+          <strong>Важно:</strong> создание доступа здесь — это только связка email→анкеты на нашей стороне. Сам пользователь должен быть заведён в Supabase (Dashboard → Auth → Users → Add user) с этим же email и паролем, а роль <code>client</code> должна быть задана сервером в app_metadata. Подробности — в SUPABASE_SETUP.md.
         </div>
 
         <div class="panel">
@@ -109,8 +109,8 @@
   </div>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260722a"></script>
-  <script src="../js/supabase-client.js?v=20260726a"></script>
+  <script src="../js/app.js?v=20260726b"></script>
+  <script src="../js/supabase-client.js?v=20260726b"></script>
   <script src="../js/auth-gate.js?v=20260726a"></script>
   <script src="../js/cloud-sync.js?v=20260726b"></script>
   <script src="../components/sidebar.js"></script>

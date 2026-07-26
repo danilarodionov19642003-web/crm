@@ -11,6 +11,7 @@ const clientCss = read('pages/client/client.css');
 const orderCart = read('pages/client/order-cart.js');
 const crmApp = read('js/app.js');
 const crmClients = read('pages/clients.html');
+const receiptSql = read('sql/storage_receipts.sql');
 
 assert.match(clientApp, /name="ordMethod" value="online"/);
 assert.match(clientApp, /name="ordMethod" value="card_transfer"/);
@@ -18,7 +19,9 @@ assert.match(clientApp, /id="ordReceipt"/);
 assert.match(clientApp, /Прикрепи чек перевода/);
 assert.match(clientApp, /async function uploadReceipt\(file\)/);
 assert.match(clientApp, /storage\/v1\/object\/receipts/);
-assert.match(clientApp, /storage\/v1\/object\/public\/receipts/);
+assert.match(clientApp, /storage:\/\/receipts\//);
+assert.match(clientApp, /storage\/v1\/object\/sign\/receipts/);
+assert.doesNotMatch(clientApp, /return `\$\{_url\(\)\}\/storage\/v1\/object\/public\/receipts/);
 assert.match(clientApp, /receipt upload failed/);
 assert.match(clientApp, /unexpected order submit error/);
 assert.match(clientApp, /manualTransferDiscount/);
@@ -40,5 +43,8 @@ assert.match(crmClients, /manualTransfer && !!o\.receipt_url/);
 assert.match(crmClients, /\/manual-confirm/);
 assert.match(crmClients, /const canDelete = !onlinePayment && !\(manualTransfer && o\.status === 'confirmed'\)/);
 assert.match(crmClients, /const canReject = o\.status === 'new' && !onlineActive && !onlinePaid/);
+assert.match(receiptSql, /values \('receipts','receipts', false/);
+assert.match(receiptSql, /app_metadata' ->> 'role'\) = 'owner'/);
+assert.match(receiptSql, /split_part\(name, '\/', 1\) = auth\.uid\(\)::text/);
 
 console.log('client payment methods and requisites: OK');

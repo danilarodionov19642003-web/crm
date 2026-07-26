@@ -13,6 +13,7 @@ assert.match(crmApp, /Math\.max\(realDone, Number\(client && client\.manualDone\
 assert.match(clients, /Math\.max\(realDone, Number\(client\.manualDone\) \|\| 0\)/);
 assert.match(clientApp, /confirmed_at,receipt_url,offer_agreed/);
 assert.match(clientApp, /class="cli-order__receipt"/);
-assert.match(clientApp, />Открыть чек<\/a>/);
+assert.match(clientApp, /data-receipt-ref/);
+assert.match(clientApp, />Открыть чек<\/button>/);
 
 console.log('manual done override and client receipt link: OK');

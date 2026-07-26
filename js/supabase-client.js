@@ -297,25 +297,14 @@
     email() { const u = this.user(); return u ? u.email : null; },
     rate()  { const u = this.user(); return u && u.user_metadata ? Number(u.user_metadata.rate) || 0 : 0; },
     name()  { const u = this.user(); return u && u.user_metadata && u.user_metadata.name || (u ? u.email : ''); },
-    /**
-     * Роль определяется в порядке:
-     *   1. user_metadata.role  (предпочтительно, ставится при создании)
-     *   2. app_metadata.role   (зеркало в JWT — иногда заполняется без user_metadata)
-     *   3. email в OWNER_EMAILS → 'owner'
-     *   4. fallback 'team'
-     * Раньше (до 25.05.2026) смотрели только user_metadata.role и при
-     * его отсутствии валились в 'team' — клиенты видели admin-интерфейс.
-     */
+    /** Роль выдаётся только сервером через app_metadata. */
     role() {
       const u = this.user();
       if (!u) return null;
-      const userMeta = u.user_metadata || {};
       const appMeta  = u.app_metadata  || {};
-      const role = userMeta.role || appMeta.role;
+      const role = appMeta.role;
       if (role === 'owner' || role === 'team' || role === 'client') return role;
-      const email = (u.email || '').toLowerCase();
-      const OWNER_EMAILS = ['danila.rodionov19642003@gmail.com'];
-      return OWNER_EMAILS.includes(email) ? 'owner' : 'team';
+      return null;
     }
   };
 

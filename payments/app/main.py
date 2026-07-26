@@ -89,11 +89,7 @@ async def current_user(authorization: str | None = Header(default=None)) -> dict
 
 
 def is_owner(user: dict[str, Any]) -> bool:
-    role = str(
-        (user.get("user_metadata") or {}).get("role")
-        or (user.get("app_metadata") or {}).get("role")
-        or ""
-    ).strip().lower()
+    role = str((user.get("app_metadata") or {}).get("role") or "").strip().lower()
     return role == "owner"
 
 

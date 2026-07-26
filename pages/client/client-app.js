@@ -692,12 +692,15 @@
   async function uploadReceipt(file) {
     const ext = receiptExtension(file);
     if (!ext) throw new Error('Unsupported receipt format');
+    const userId = String((Auth.user() || {}).id || '').trim();
+    if (!userId) throw new Error('Authentication required');
     const uuid = window.crypto && typeof window.crypto.randomUUID === 'function'
       ? window.crypto.randomUUID()
       : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    const fileName = `${uuid}.${ext}`;
+    const objectPath = `${userId}/${uuid}.${ext}`;
+    const encodedPath = objectPath.split('/').map(encodeURIComponent).join('/');
     const mime = RECEIPT_MIME_TYPES[ext];
-    const response = await fetch(`${_url()}/storage/v1/object/receipts/${encodeURIComponent(fileName)}`, {
+    const response = await fetch(`${_url()}/storage/v1/object/receipts/${encodedPath}`, {
       method: 'POST',
       headers: {
         'apikey': _key(),
@@ -711,7 +714,55 @@
       const details = await response.text().catch(() => '');
       throw new Error(`Receipt upload failed (${response.status}): ${details.slice(0, 300)}`);
     }
-    return `${_url()}/storage/v1/object/public/receipts/${encodeURIComponent(fileName)}`;
+    return `storage://receipts/${objectPath}`;
+  }
+
+  function receiptObjectPath(reference) {
+    const value = String(reference || '').trim();
+    const privatePrefix = 'storage://receipts/';
+    if (value.startsWith(privatePrefix)) return value.slice(privatePrefix.length);
+    const publicMarker = '/storage/v1/object/public/receipts/';
+    const authenticatedMarker = '/storage/v1/object/authenticated/receipts/';
+    const marker = value.includes(publicMarker) ? publicMarker
+      : value.includes(authenticatedMarker) ? authenticatedMarker : '';
+    if (!marker) return '';
+    const encoded = value.slice(value.indexOf(marker) + marker.length).split(/[?#]/, 1)[0];
+    try { return decodeURIComponent(encoded); } catch (_) { return encoded; }
+  }
+
+  async function receiptSignedUrl(reference) {
+    const objectPath = receiptObjectPath(reference);
+    if (!objectPath) throw new Error('Receipt path is invalid');
+    const encodedPath = objectPath.split('/').map(encodeURIComponent).join('/');
+    const response = await fetch(`${_url()}/storage/v1/object/sign/receipts/${encodedPath}`, {
+      method: 'POST',
+      headers: {
+        'apikey': _key(),
+        'Authorization': `Bearer ${accessToken()}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ expiresIn: 300 })
+    });
+    if (!response.ok) throw new Error(`Receipt access failed (${response.status})`);
+    const payload = await response.json();
+    const signed = String(payload.signedURL || payload.signedUrl || '');
+    if (!signed) throw new Error('Receipt link is missing');
+    if (/^https?:\/\//i.test(signed)) return signed;
+    if (signed.startsWith('/storage/v1/')) return `${_url()}${signed}`;
+    return `${_url()}/storage/v1${signed.startsWith('/') ? '' : '/'}${signed}`;
+  }
+
+  async function openReceipt(reference) {
+    const popup = window.open('about:blank', '_blank');
+    if (popup) popup.opener = null;
+    try {
+      const url = await receiptSignedUrl(reference);
+      if (!popup) throw new Error('Popup blocked');
+      popup.location.replace(url);
+    } catch (error) {
+      if (popup) popup.close();
+      throw error;
+    }
   }
 
   // Оферта одна: кабинет читает её из /legal/offer.html и сохраняет точный
@@ -1377,7 +1428,7 @@
       ? `<div class="cli-order__consent">✅ Оферта${o.offer_version ? ' ' + escapeHtml(o.offer_version) : ''} принята${o.personal_data_agreed ? ' · согласие на обработку данных дано' : ''} · ${_fmtDateTime(o.created_at)}${o.offer_text ? ` · <button type="button" class="cli-order__terms" data-view-terms="${o.id}">оферта</button>` : ''}${o.personal_data_consent_text ? ` · <button type="button" class="cli-order__terms" data-view-consent="${o.id}">согласие</button>` : ''}</div>`
       : '';
     const receipt = o.receipt_url
-      ? `<a class="cli-order__receipt" href="${escapeAttr(o.receipt_url)}" target="_blank" rel="noopener">Открыть чек</a>`
+      ? `<button type="button" class="cli-order__receipt" data-receipt-ref="${escapeAttr(o.receipt_url)}">Открыть чек</button>`
       : '';
     const paymentAction = o.status === 'new' && !paymentReceived && !isManualTransfer
       ? `<button type="button" class="cli-order__pay-btn" data-pay-order="${o.id}">Перейти к оплате</button>`
@@ -1431,6 +1482,18 @@
       const o = _myOrders.find(x => String(x.id) === b.dataset.viewConsent);
       if (o) openDataConsent(o.personal_data_consent_text);
     }));
+    el.querySelectorAll('[data-receipt-ref]').forEach(button => {
+      button.addEventListener('click', async () => {
+        button.disabled = true;
+        try {
+          await openReceipt(button.dataset.receiptRef);
+        } catch (error) {
+          alert('Не удалось открыть чек. Обновите страницу и попробуйте ещё раз.');
+        } finally {
+          button.disabled = false;
+        }
+      });
+    });
     el.querySelectorAll('[data-pay-order]').forEach(button => {
       button.addEventListener('click', () => startPayment(button.dataset.payOrder, button, null));
     });

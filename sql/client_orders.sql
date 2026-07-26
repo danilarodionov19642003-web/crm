@@ -39,7 +39,7 @@ create table if not exists public.client_orders (
   parent_item_id text,
   comment       text,
   profile_url   text,                         -- ссылка на профиль клиента (упрощает работу владельцу)
-  receipt_url   text,                         -- публичная ссылка на чек (Supabase Storage, bucket receipts)
+  receipt_url   text,                         -- private storage reference (bucket receipts)
   offer_agreed  boolean default false,        -- клиент поставил галочку согласия с офертой
   offer_text    text,                          -- СНИМОК текста условий на момент заказа (пруф согласия)
   offer_version text,                          -- редакция оферты, например 2026-07-13
@@ -132,16 +132,14 @@ create policy client_orders_auth_select
   on public.client_orders for select to authenticated
   using (client_email = (auth.jwt() ->> 'email'));
 
--- Владелец (role='owner' в JWT-метаданных) видит и ПРАВИТ все заявки —
+-- Владелец (role='owner' в защищённой app_metadata JWT) видит и ПРАВИТ все заявки —
 -- для раздела «Заявки» в CRM: подтверждение/отклонение оплаты. Permissive-
 -- политики OR-ятся: клиент видит свои, владелец — все.
 drop policy if exists client_orders_owner_all on public.client_orders;
 create policy client_orders_owner_all on public.client_orders
   for all to authenticated
-  using ( coalesce(auth.jwt() -> 'user_metadata' ->> 'role',
-                   auth.jwt() -> 'app_metadata' ->> 'role') = 'owner' )
-  with check ( coalesce(auth.jwt() -> 'user_metadata' ->> 'role',
-                        auth.jwt() -> 'app_metadata' ->> 'role') = 'owner' );
+  using ((auth.jwt() -> 'app_metadata' ->> 'role') = 'owner')
+  with check ((auth.jwt() -> 'app_metadata' ->> 'role') = 'owner');
 
 -- ВАЖНО: RLS отдельно от table-GRANT. На этой инсталляции CRM-фронт и кабинет
 -- ходят под ролью `authenticated` (JWT), `anon` не используется. У новой таблицы
