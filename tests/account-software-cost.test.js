@@ -96,8 +96,8 @@ assert.match(statusesSource, /id="costStartedAt"/,
   'владелец должен иметь возможность исправить дату начала содержания');
 assert.doesNotMatch(statusesSource, /data-act="restore"/,
   'архивный аккаунт не должен иметь кнопки восстановления');
-assert.match(financeSource, /data-toggle-account-software/,
-  'существующую оплату софта можно отметить прямо в расходах');
+assert.match(financeSource, /data-toggle-infrastructure/,
+  'существующую оплату софта или прокси можно отметить прямо в расходах');
 assert.match(financeSource, /costScope:\s*document\.getElementById\('eAccountSoftware'\)/,
   'новая оплата софта должна сохранять устойчивую отметку назначения');
 assert.doesNotMatch(

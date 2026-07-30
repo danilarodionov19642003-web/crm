@@ -168,10 +168,10 @@
         <div class="field" id="eAccountSoftwareWrap" style="display:none;border:1px solid rgba(99,102,241,.35);border-radius:8px;padding:10px 12px;background:rgba(99,102,241,.06)">
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin:0">
             <input type="checkbox" id="eAccountSoftware" style="margin:0;width:18px;height:18px"/>
-            <span><strong>Софт для хранения аккаунтов</strong></span>
+            <span><strong id="eInfrastructureLabel">Инфраструктура аккаунтов</strong></span>
           </label>
           <div style="font-size:11px;color:var(--text-mute);margin-top:4px;line-height:1.4">
-            Платёж будет распределён между аккаунтами по дням их нахождения в софте. В расходах сумма останется одной операцией.
+            Платёж будет распределён между аккаунтами по дням использования. В расходах сумма останется одной операцией.
           </div>
         </div>
         <div class="field" style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;background:rgba(255,193,7,0.04)">
@@ -559,14 +559,16 @@
       const personalBadge = r.personal
         ? '<span class="badge" style="background:rgba(255,193,7,0.15);color:#b8860b;border:1px solid rgba(255,193,7,0.5);padding:2px 6px;border-radius:6px;font-size:10px;font-weight:600;margin-left:6px" title="Личный расход — не в P&L">💼 Личное</span>'
         : '';
-      const accountSoftware = !r.personal && r.category === 'Софт' && r.costScope === 'account_software';
-      const softwareBadge = accountSoftware
+      const expectedScope = r.category === 'Софт' ? 'account_software'
+        : r.category === 'Прокси' ? 'account_proxy' : '';
+      const accountInfrastructure = !r.personal && expectedScope && r.costScope === expectedScope;
+      const infrastructureBadge = accountInfrastructure
         ? '<span class="badge" style="background:rgba(99,102,241,.14);color:#a5b4fc;border:1px solid rgba(99,102,241,.35);padding:2px 6px;border-radius:6px;font-size:10px;font-weight:600;margin-left:6px" title="Распределяется между аккаунтами">Аккаунты</span>'
         : '';
-      const softwareToggle = !r.personal && r.category === 'Софт'
+      const infrastructureToggle = !r.personal && expectedScope
         ? `<label style="display:inline-flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;margin-right:6px" title="Распределять этот платёж между аккаунтами">
-             <input type="checkbox" data-toggle-account-software ${accountSoftware ? 'checked' : ''} style="margin:0;width:14px;height:14px"/>
-             софт
+             <input type="checkbox" data-toggle-infrastructure data-scope="${expectedScope}" ${accountInfrastructure ? 'checked' : ''} style="margin:0;width:14px;height:14px"/>
+             ${r.category === 'Прокси' ? 'прокси' : 'софт'}
            </label>`
         : '';
       // Для личных трат — список личных категорий; для бизнеса — бизнес.
@@ -582,12 +584,12 @@
               ${catList.map(s => `<option value="${s}" ${r.category===s?'selected':''}>${s}</option>`).join('')}
             </select>
             ${personalBadge}
-            ${softwareBadge}
+            ${infrastructureBadge}
           </td>
           <td class="num neg" data-field="amount" data-type="number">${r.amount||0}</td>
           <td data-field="comment">${escapeHtml(r.comment||'')}</td>
           <td class="actions">
-            ${softwareToggle}
+            ${infrastructureToggle}
             <label style="display:inline-flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;margin-right:6px" title="Переключить «Личное»">
               <input type="checkbox" data-toggle-personal ${r.personal ? 'checked' : ''} style="margin:0;width:14px;height:14px"/>
               💼
@@ -673,12 +675,12 @@
             renderAll();
           });
         }
-        const softwareToggle = tr.querySelector('[data-toggle-account-software]');
-        if (softwareToggle) {
-          softwareToggle.addEventListener('change', e => {
-            Store.updateExpense(id, { costScope: e.target.checked ? 'account_software' : '' });
+        const infrastructureToggle = tr.querySelector('[data-toggle-infrastructure]');
+        if (infrastructureToggle) {
+          infrastructureToggle.addEventListener('change', e => {
+            Store.updateExpense(id, { costScope: e.target.checked ? e.target.dataset.scope : '' });
             toast(e.target.checked
-              ? 'Платёж участвует в расчёте содержания аккаунтов'
+              ? 'Платёж участвует в себестоимости аккаунтов'
               : 'Платёж исключён из расчёта аккаунтов');
             renderAll();
           });
@@ -756,8 +758,12 @@
     }
     function updateAccountSoftwareOption() {
       const personal = !!document.getElementById('ePersonal').checked;
-      const eligible = !personal && document.getElementById('eCategory').value === 'Софт';
+      const category = document.getElementById('eCategory').value;
+      const eligible = !personal && (category === 'Софт' || category === 'Прокси');
       document.getElementById('eAccountSoftwareWrap').style.display = eligible ? '' : 'none';
+      document.getElementById('eInfrastructureLabel').textContent = category === 'Прокси'
+        ? 'Прокси для аккаунтов'
+        : 'Софт для хранения аккаунтов';
       if (!eligible) document.getElementById('eAccountSoftware').checked = false;
     }
     // При переключении галочки 💼 в модалке — меняем список категорий.
@@ -881,7 +887,9 @@
         amount: Number(document.getElementById('eAmount').value) || 0,
         comment: document.getElementById('eComment').value.trim(),
         personal: isPersonal,
-        costScope: document.getElementById('eAccountSoftware').checked ? 'account_software' : '',
+        costScope: document.getElementById('eAccountSoftware').checked
+          ? (document.getElementById('eCategory').value === 'Прокси' ? 'account_proxy' : 'account_software')
+          : '',
       };
       if (!rec.costScope) delete rec.costScope;
       if (rec.amount <= 0) { toast('Укажите сумму', 'error'); return; }

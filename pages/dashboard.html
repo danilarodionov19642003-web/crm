@@ -185,7 +185,8 @@
   </div>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260726b"></script>
+  <script src="../js/app.js?v=20260730b"></script>
+  <script src="../js/economics.js?v=20260730a"></script>
   <script src="../js/supabase-client.js?v=20260726b"></script>
   <script src="../js/auth-gate.js?v=20260726a"></script>
   <script src="../js/cloud-sync.js?v=20260726b"></script>
@@ -207,62 +208,26 @@
     const { Store, fmtMoney, fmtDate, todayISO } = window.App;
     const state = Store.load();
 
-    /* ---- Баннер «Свободный кэш» (синхронизирован с finance-pulse.html) ---- */
-    // Алгоритм идентичный с /pages/clients.html и /pages/finance-pulse.html —
-    // считаем фактическое число одобренных отзывов с правильным статусом.
-    // НЕ берём client.done как fallback — оно устаревшее.
-    const DONE_STATUS_DASH = '🎯 Готов';
-    function deriveDone(c) {
-      const code = String(c.code || '').toLowerCase().trim();
-      if (!code) return 0;
-      const mentorIds = new Set((Store.state.mentors || [])
-        .filter(m => String(m.code || '').toLowerCase().trim() === code).map(m => m.id));
-      if (!mentorIds.size) return 0;
-      const reviews = (Store.state.reviews || []).filter(
-        r => mentorIds.has(r.mentorId) && r.moderation === 'approved'
-      );
-      const statuses = Store.state.profileStatuses || [];
-      return reviews.filter(r => statuses.some(
-        s => s.mentorId === r.mentorId && s.profileId === r.profileId && s.status === DONE_STATUS_DASH
-      )).length;
-    }
+    /* ---- Баннер «Свободный кэш» (единый расчёт с finance-pulse.html) ---- */
     function renderFreeCashBanner() {
-      const f = Store.state.finance || {};
-      const phoneCost = +f.phoneCostPerReview || 100;
-      const nastyaRate = +f.nastyaRate || 300;
-      const proxyMonthly = (+f.proxyCount || 3) * (+f.proxyEach || 2250);
-      const fix = proxyMonthly + (+f.antidetectMonthly || 1200);
-      const ratePerLeft = (f.scenario === 'nastya' ? nastyaRate : 0) + phoneCost;
-      // Фильтр activeClients — ИДЕНТИЧНЫЙ с /finance-pulse: пропускаем
-      // closed-флаг и доделанных+полностью оплаченных. Без этого дашборд
-      // считал на старом наборе клиентов и расходился с пульсом.
-      const clients = (Store.state.clients || []).filter(c => {
-        if (c.closed === true) return false;
-        const ordered = +c.ordered || 0;
-        const done    = deriveDone(c);
-        const remain  = +c.remain || 0;
-        if (ordered <= 0) return false;
-        if (done >= ordered && remain <= 0) return false;
-        return true;
-      });
-      const obligations = clients.reduce((s, c) => s + Math.max(0, (+c.ordered||0) - deriveDone(c)) * ratePerLeft, 0);
-      const free = (+f.balance || 0) - obligations - fix;
+      const data = window.Economics.analyze(Store.state, { today: todayISO(), phoneUnitCost: 99 });
+      const free = data.cash.free;
       const valueEl   = document.getElementById('freeCashValue');
       const formulaEl = document.getElementById('freeCashFormula');
       const metaEl    = document.getElementById('freeCashMeta');
       const banner    = document.getElementById('freeCashBanner');
       valueEl.textContent = fmtMoney(free);
-      valueEl.style.color = free < 0 ? '#ef4444' : (free < fix ? '#ff9a3c' : '#22c55e');
-      formulaEl.innerHTML = `Баланс <strong>${fmtMoney(f.balance || 0)}</strong> − Себест.остатка <strong>${fmtMoney(obligations)}</strong> − Фикс/мес <strong>${fmtMoney(fix)}</strong>`;
-      metaEl.innerHTML = f.balanceUpdatedAt
-        ? `обновлено: ${new Date(f.balanceUpdatedAt).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })} →`
+      valueEl.style.color = free < 0 ? '#ef4444' : (free < data.cash.obligations ? '#ff9a3c' : '#22c55e');
+      formulaEl.innerHTML = `Кэш <strong>${fmtMoney(data.cash.current)}</strong> − Обязательства <strong>${fmtMoney(data.cash.obligations)}</strong>`;
+      metaEl.innerHTML = data.cash.baseIso
+        ? `сверено: ${new Date(data.cash.baseIso).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })} →`
         : `<span style="color:#ff9a3c">⚠ Введи баланс →</span>`;
       banner.style.borderColor = free < 0 ? 'rgba(239,68,68,0.4)' :
-                                 (free < fix ? 'rgba(255,154,60,0.4)' : 'rgba(34,197,94,0.4)');
+                                 (free < data.cash.obligations ? 'rgba(255,154,60,0.4)' : 'rgba(34,197,94,0.4)');
     }
     renderFreeCashBanner();
     window.addEventListener('finance:updated',     renderFreeCashBanner);
-    window.addEventListener('cloudstate:updated',  renderFreeCashBanner);
+    window.addEventListener('store:reloaded',      renderFreeCashBanner);
     window.addEventListener('reviews:updated',     renderFreeCashBanner);
 
     /* ---- Финансы за месяц + клиенты в работе ---- */
@@ -272,12 +237,10 @@
       const currMonthKey = todayISO().slice(0, 7);
       const monthIncome  = st.income.filter(r => (r.date||'').startsWith(currMonthKey))
                                     .reduce((s, r) => s + (Number(r.amount) || 0), 0);
-      const monthExpense = st.expenses.filter(r => (r.date||'').startsWith(currMonthKey))
+      const monthExpense = st.expenses.filter(r => !r.personal && (r.date||'').startsWith(currMonthKey))
                                       .reduce((s, r) => s + (Number(r.amount) || 0), 0);
       const monthProfit  = monthIncome - monthExpense;
-      const salaryDebt   = st.employees
-          .filter(e => e.status === 'active')
-          .reduce((s, e) => s + Math.max(0, (+e.reviewsDone||0) * (+e.ratePerReview||0) - (+e.paid||0)), 0);
+      const salaryDebt   = window.Economics.analyze(st, { today: todayISO(), phoneUnitCost: 99 }).cash.salaryDebt;
       const monthKpis = [
         { label: 'Доход за месяц',     value: fmtMoney(monthIncome),  tone: 'up'   },
         { label: 'Расход за месяц',    value: fmtMoney(monthExpense), tone: 'down' },

@@ -53,6 +53,7 @@
               <thead>
                 <tr>
                   <th>Название</th>
+                  <th>Учёт</th>
                   <th>Частота</th>
                   <th class="num">Сумма</th>
                   <th>Статус</th>
@@ -94,6 +95,15 @@
             <select id="mTariff" class="select"></select>
           </div>
         </div>
+        <div class="field">
+          <label for="mScope">Как учитывать в себестоимости</label>
+          <select id="mScope" class="select">
+            <option value="">Определить по названию</option>
+            <option value="account_software">Софт аккаунтов</option>
+            <option value="account_proxy">Прокси аккаунтов</option>
+            <option value="general">Общий рабочий расход</option>
+          </select>
+        </div>
         <div class="field-row">
           <div class="field">
             <label for="mFreq">Частота</label>
@@ -131,7 +141,7 @@
   </div>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260726b"></script>
+  <script src="../js/app.js?v=20260730b"></script>
   <script src="../js/supabase-client.js?v=20260726b"></script>
   <script src="../js/auth-gate.js?v=20260726a"></script>
   <script src="../js/cloud-sync.js?v=20260726b"></script>
@@ -226,12 +236,12 @@
       const tbody = document.getElementById('subRows');
       const tfoot = document.getElementById('subFoot');
       if (rows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="7" class="empty">Нет подписок под фильтр.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="8" class="empty">Нет подписок под фильтр.</td></tr>`;
         tfoot.innerHTML = '';
       } else {
         tbody.innerHTML = rows.map(r => rowHtml(r)).join('');
         const monthly = rows.reduce((s, r) => s + (Number(r.amount) || 0), 0);
-        tfoot.innerHTML = `<tr><td colspan="2">ИТОГО в месяц</td><td class="num">${fmtMoney(monthly)}</td><td colspan="4"></td></tr>`;
+        tfoot.innerHTML = `<tr><td colspan="3">ИТОГО в месяц</td><td class="num">${fmtMoney(monthly)}</td><td colspan="4"></td></tr>`;
         bindRowEditors();
       }
       renderKpis(rows);
@@ -251,9 +261,17 @@
       const statusBadge = paid
         ? '<span class="badge badge--green"><span class="dot"></span>Оплачено</span>'
         : '<span class="badge badge--red"><span class="dot"></span>Не оплачено</span>';
+      const inferredScope = Store.inferSubscriptionCostScope(r.name, r.costScope);
       return `
         <tr data-id="${r.id}">
           <td data-field="name"><strong>${escapeHtml(r.name || '—')}</strong></td>
+          <td>
+            <select class="select" style="padding:4px 8px;min-width:132px" data-field="costScope">
+              <option value="general" ${r.costScope === 'general' ? 'selected' : ''}>Общий расход</option>
+              <option value="account_software" ${inferredScope === 'account_software' ? 'selected' : ''}>Софт аккаунтов</option>
+              <option value="account_proxy" ${inferredScope === 'account_proxy' ? 'selected' : ''}>Прокси аккаунтов</option>
+            </select>
+          </td>
           <td>
             <select class="select" style="padding:4px 8px" data-field="frequency">
               <option value="Каждые 7 дней" ${r.frequency==='Каждые 7 дней'?'selected':''}>Каждые 7 дней</option>
@@ -316,14 +334,13 @@
         });
         tr.querySelector('[data-act="pay"]').addEventListener('click', () => {
           const s = Store.state.subscriptions.find(x => x.id === id);
-          const f = (s.frequency || '').toLowerCase();
-          let add = 30;
-          if (f.includes('7')) add = 7;
-          else if (f.includes('90')) add = 90;
-          else if (f.includes('год')) add = 365;
-          const base = s.nextDate ? new Date(s.nextDate) : new Date();
-          base.setDate(base.getDate() + add);
-          const iso = base.toISOString().slice(0, 10);
+          const coverageStart = s.nextDate || todayISO();
+          const iso = Store.subscriptionPeriodEnd(coverageStart, s.frequency);
+          Store.recordSubscriptionPayment(id, {
+            coverageStart,
+            coverageEnd: iso,
+            date: todayISO()
+          });
           Store.updateSubscription(id, { nextDate: iso, status: 'оплачен' });
           toast(`Продлено до ${fmtDate(iso)}`);
           render();
@@ -359,7 +376,8 @@
       document.getElementById('mFreq').value = 'Каждые 30 дней';
       document.getElementById('mAmount').value = '0';
       document.getElementById('mStatus').value = 'оплачен';
-      document.getElementById('mNext').value = todayISO();
+      document.getElementById('mScope').value = '';
+      document.getElementById('mNext').value = window.App.addMonthsISO(todayISO(), 1);
       Modal.open('addModal');
       setTimeout(() => document.getElementById('mName').focus(), 60);
     });
@@ -371,15 +389,23 @@
     document.getElementById('mSave').addEventListener('click', () => {
       const name = document.getElementById('mName').value.trim();
       if (!name) { toast('Укажите название', 'error'); return; }
-      Store.addSubscription({
+      const item = Store.addSubscription({
         name,
         clientId:  document.getElementById('mClient').value || null,
         tariff:    document.getElementById('mTariff').value,
         frequency: document.getElementById('mFreq').value,
         amount:    Number(document.getElementById('mAmount').value) || 0,
         status:    document.getElementById('mStatus').value,
-        nextDate:  document.getElementById('mNext').value || todayISO()
+        nextDate:  document.getElementById('mNext').value || window.App.addMonthsISO(todayISO(), 1),
+        costScope: document.getElementById('mScope').value
       });
+      if (item.status === 'оплачен') {
+        Store.recordSubscriptionPayment(item.id, {
+          coverageStart: todayISO(),
+          coverageEnd: item.nextDate,
+          date: todayISO()
+        });
+      }
       Modal.close('addModal');
       toast('Подписка добавлена');
       render();

@@ -623,7 +623,7 @@
         createdAt: new Date().toISOString()  // точное время добавления — для «Пульса кэша»
       }, rec);
       if (!item.createdAt) item.createdAt = new Date().toISOString();
-      if (item.costScope === 'account_software' && (item.personal || item.category !== 'Софт')) {
+      if (!this._validInfrastructureScope(item.costScope, item.category, item.personal)) {
         delete item.costScope;
       }
       this.state.expenses.push(item);
@@ -634,7 +634,7 @@
       const i = this.state.expenses.findIndex(x => x.id === id);
       if (i < 0) return;
       const next = Object.assign({}, this.state.expenses[i], patch);
-      if (next.costScope === 'account_software' && (next.personal || next.category !== 'Софт')) {
+      if (!this._validInfrastructureScope(next.costScope, next.category, next.personal)) {
         delete next.costScope;
       }
       this.state.expenses[i] = next;
@@ -643,6 +643,13 @@
     deleteExpense(id) {
       this.state.expenses = this.state.expenses.filter(x => x.id !== id);
       this.save();
+    },
+
+    _validInfrastructureScope(scope, category, personal) {
+      if (personal) return false;
+      if (scope === 'account_software') return category === 'Софт';
+      if (scope === 'account_proxy') return category === 'Прокси';
+      return !scope;
     },
 
     _normalizePaymentSettings() {
@@ -927,8 +934,10 @@
         name: '', clientId: null, tariff: '',
         frequency: 'Каждые 30 дней',
         amount: 0, status: 'оплачен',
-        nextDate: todayISO()
+        nextDate: addMonthsISO(todayISO(), 1),
+        costScope: ''
       }, rec);
+      item.costScope = this.inferSubscriptionCostScope(item.name, item.costScope);
       this.state.subscriptions.push(item);
       this.save();
       return item;
@@ -936,12 +945,62 @@
     updateSubscription(id, patch) {
       const i = this.state.subscriptions.findIndex(x => x.id === id);
       if (i < 0) return;
-      this.state.subscriptions[i] = Object.assign({}, this.state.subscriptions[i], patch);
+      const next = Object.assign({}, this.state.subscriptions[i], patch);
+      next.costScope = this.inferSubscriptionCostScope(next.name, next.costScope);
+      this.state.subscriptions[i] = next;
       this.save();
+      return next;
     },
     deleteSubscription(id) {
       this.state.subscriptions = this.state.subscriptions.filter(x => x.id !== id);
       this.save();
+    },
+
+    inferSubscriptionCostScope(name, current) {
+      if (current === 'general') return 'general';
+      if (current === 'account_software' || current === 'account_proxy') return current;
+      const value = String(name || '').trim().toLowerCase();
+      if (value.includes('прокси') || value.includes('proxy')) return 'account_proxy';
+      if (value.includes('dicloak') || value.includes('антидетект')) return 'account_software';
+      return '';
+    },
+
+    subscriptionPeriodEnd(start, frequency) {
+      const value = String(frequency || '').toLowerCase();
+      if (value.includes('7')) return addDaysISO(start, 7);
+      if (value.includes('90')) return addMonthsISO(start, 3);
+      if (value.includes('год')) return addMonthsISO(start, 12);
+      return addMonthsISO(start, 1);
+    },
+
+    recordSubscriptionPayment(subscriptionId, options = {}) {
+      const subscription = (this.state.subscriptions || []).find(item => item.id === subscriptionId);
+      if (!subscription) return null;
+      const scope = this.inferSubscriptionCostScope(subscription.name, subscription.costScope);
+      if (scope !== 'account_software' && scope !== 'account_proxy') return null;
+      const coverageStart = String(options.coverageStart || todayISO()).slice(0, 10);
+      const coverageEnd = String(
+        options.coverageEnd || this.subscriptionPeriodEnd(coverageStart, subscription.frequency)
+      ).slice(0, 10);
+      const paymentId = `subscription-payment-${subscription.id}-${coverageStart}`;
+      const existing = (this.state.expenses || []).find(expense =>
+        expense.id === paymentId ||
+        (expense.subscriptionId === subscription.id && expense.costCoverageStart === coverageStart)
+      );
+      if (existing) return existing;
+      const category = scope === 'account_proxy' ? 'Прокси' : 'Софт';
+      return this.addExpense({
+        id: paymentId,
+        date: String(options.date || todayISO()).slice(0, 10),
+        category,
+        amount: Number(subscription.amount) || 0,
+        comment: `Оплата подписки: ${subscription.name || category}`,
+        source: 'subscription_payment',
+        subscriptionId: subscription.id,
+        costScope: scope,
+        costCoverageStart: coverageStart,
+        costCoverageEnd: coverageEnd
+      });
     },
 
     /* ====================================================================
@@ -1044,20 +1103,22 @@
       const grouped = new Map();
       (this.state.expenses || []).forEach(expense => {
         if (!expense || expense.personal || expense.costScope !== 'account_software') return;
-        const start = String(expense.date || '').slice(0, 10);
+        const start = String(expense.costCoverageStart || expense.date || '').slice(0, 10);
+        const explicitEnd = String(expense.costCoverageEnd || '').slice(0, 10);
+        const endExclusive = parseISODate(explicitEnd) ? explicitEnd : addMonthsISO(start, 1);
         const amount = Number(expense.amount) || 0;
-        if (!parseISODate(start) || amount <= 0) return;
-        const current = grouped.get(start) || { start, amount: 0, expenseIds: [] };
+        if (!parseISODate(start) || !parseISODate(endExclusive) || endExclusive <= start || amount <= 0) return;
+        const key = `${start}::${endExclusive}`;
+        const current = grouped.get(key) || { start, endExclusive, amount: 0, expenseIds: [] };
         current.amount += amount;
         if (expense.id) current.expenseIds.push(expense.id);
-        grouped.set(start, current);
+        grouped.set(key, current);
       });
 
       const rows = [...grouped.values()].sort((a, b) => a.start.localeCompare(b.start));
       return rows.map((row, index) => {
-        const nominalEnd = addMonthsISO(row.start, 1);
         const nextStart = rows[index + 1] ? rows[index + 1].start : '';
-        const endExclusive = nextStart && nextStart < nominalEnd ? nextStart : nominalEnd;
+        const endExclusive = nextStart && nextStart < row.endExclusive ? nextStart : row.endExclusive;
         return Object.assign({}, row, {
           endExclusive,
           end: addDaysISO(endExclusive, -1)
