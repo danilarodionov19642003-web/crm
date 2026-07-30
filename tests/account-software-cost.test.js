@@ -100,5 +100,10 @@ assert.match(financeSource, /data-toggle-account-software/,
   'существующую оплату софта можно отметить прямо в расходах');
 assert.match(financeSource, /costScope:\s*document\.getElementById\('eAccountSoftware'\)/,
   'новая оплата софта должна сохранять устойчивую отметку назначения');
+assert.doesNotMatch(
+  financeSource,
+  /function renderAll\(\)\s*\{[\s\S]*?dispatchEvent\(new CustomEvent\('finance:updated'\)\)/,
+  'renderAll не должен отправлять событие, на которое сам подписан'
+);
 
 console.log('account software cost: OK');

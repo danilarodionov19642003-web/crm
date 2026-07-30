@@ -696,8 +696,6 @@
       renderIncome();
       renderExpense();
       renderPersonal();
-      // Сигнал «Пульсу кэша» (если открыт во второй вкладке) — пересчитать баланс.
-      try { window.dispatchEvent(new CustomEvent('finance:updated')); } catch(_){}
     }
 
     /* ---- Tabs ---- */
