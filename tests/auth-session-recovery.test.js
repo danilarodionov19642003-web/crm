@@ -10,10 +10,16 @@ const authSource = fs.readFileSync(path.join(root, 'js/supabase-client.js'), 'ut
 const cloudSource = fs.readFileSync(path.join(root, 'js/cloud-sync.js'), 'utf8');
 const SESSION_KEY = 'mentori-supabase-session';
 
-function response(status, body) {
+function response(status, body, responseHeaders = {}) {
   return {
     status,
     ok: status >= 200 && status < 300,
+    headers: {
+      get(name) {
+        const key = Object.keys(responseHeaders).find(item => item.toLowerCase() === String(name).toLowerCase());
+        return key ? String(responseHeaders[key]) : null;
+      }
+    },
     async json() { return body; },
     async text() { return body == null ? '' : JSON.stringify(body); }
   };
@@ -155,6 +161,35 @@ const user = { id: 'owner-1', email: 'owner@example.test', app_metadata: { role:
       'temporary server errors must not sign the user out');
     assert.deepEqual(runtime.events, []);
   }
+
+  {
+    const runtime = createAuthRuntime(null, async url => {
+      assert.match(url, /grant_type=password/);
+      return response(429, {
+        msg: 'Слишком много попыток входа. Повторите через 15 минут.'
+      }, { 'Retry-After': '900' });
+    });
+    await assert.rejects(
+      runtime.Supabase.Auth.signIn('client@example.test', 'wrong'),
+      error => {
+        assert.equal(error.status, 429);
+        assert.equal(error.retryAfterSeconds, 900);
+        assert.match(error.message, /15 минут/);
+        return true;
+      },
+      'login UI must receive a distinct server-side lockout error'
+    );
+  }
+
+  const lockoutMigration = fs.readFileSync(
+    path.join(root, 'sql/migrations/2026-07-30_auth_password_lockout.sql'),
+    'utf8'
+  );
+  assert.match(lockoutMigration, /max_failures constant integer := 5/);
+  assert.match(lockoutMigration, /lock_duration constant interval := interval '15 minutes'/);
+  assert.match(lockoutMigration, /pg_advisory_xact_lock/,
+    'parallel password attempts must be serialized per account');
+  assert.match(lockoutMigration, /'http_code', 429/);
 
   assert.match(cloudSource, /async function _fetch\(url, opts = \{\}\)/);
   assert.match(cloudSource, /typeof sb\.authFetch === 'function'/);

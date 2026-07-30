@@ -207,7 +207,20 @@
       let data;
       try { data = await res.json(); } catch (_) { data = {}; }
       if (!res.ok) {
-        throw new Error(data.error_description || data.msg || 'Ошибка входа');
+        const isRateLimited = res.status === 429;
+        const retryAfter = Number.parseInt(res.headers && res.headers.get('Retry-After'), 10);
+        const error = new Error(
+          data.error_description || data.msg || data.message ||
+          (isRateLimited
+            ? 'Слишком много попыток входа. Повторите через 15 минут.'
+            : 'Неверный email или пароль')
+        );
+        error.status = res.status;
+        error.code = data.error_code || data.code || '';
+        error.retryAfterSeconds = Number.isFinite(retryAfter) && retryAfter > 0
+          ? retryAfter
+          : (isRateLimited ? 15 * 60 : 0);
+        throw error;
       }
       setSession(data);
       _scheduleRefresh();              // запустить таймер авто-обновления
