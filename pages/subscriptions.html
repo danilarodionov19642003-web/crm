@@ -141,7 +141,7 @@
   </div>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260730b"></script>
+  <script src="../js/app.js?v=20260730c"></script>
   <script src="../js/supabase-client.js?v=20260726b"></script>
   <script src="../js/auth-gate.js?v=20260726a"></script>
   <script src="../js/cloud-sync.js?v=20260726b"></script>
@@ -280,7 +280,9 @@
               <option value="Каждый год" ${r.frequency==='Каждый год'?'selected':''}>Каждый год</option>
             </select>
           </td>
-          <td class="num" data-field="amount" data-type="number">${r.amount || 0}</td>
+          <td class="num">
+            <input type="number" class="input" data-field="amount" min="0" step="1" value="${Number(r.amount) || 0}" aria-label="Сумма подписки" style="width:105px;padding:4px 6px;text-align:right"/>
+          </td>
           <td>
             <select class="select" style="padding:4px 8px" data-field="status">
               <option value="оплачен" ${paid?'selected':''}>Оплачено</option>
@@ -332,17 +334,25 @@
           Store.updateSubscription(id, { nextDate: e.target.value });
           render();
         });
+        const amountInput = tr.querySelector('input[data-field="amount"]');
+        if (amountInput) amountInput.addEventListener('change', e => {
+          const amount = Number(e.target.value);
+          if (!Number.isFinite(amount) || amount < 0) {
+            toast('Укажите корректную сумму', 'error');
+            render();
+            return;
+          }
+          Store.updateSubscription(id, { amount });
+        });
         tr.querySelector('[data-act="pay"]').addEventListener('click', () => {
-          const s = Store.state.subscriptions.find(x => x.id === id);
-          const coverageStart = s.nextDate || todayISO();
-          const iso = Store.subscriptionPeriodEnd(coverageStart, s.frequency);
-          Store.recordSubscriptionPayment(id, {
-            coverageStart,
-            coverageEnd: iso,
-            date: todayISO()
-          });
-          Store.updateSubscription(id, { nextDate: iso, status: 'оплачен' });
-          toast(`Продлено до ${fmtDate(iso)}`);
+          const amount = Number(amountInput && amountInput.value);
+          const result = Store.renewSubscription(id, { amount, date: todayISO() });
+          if (!result) {
+            toast('Сначала укажите сумму оплаты', 'error');
+            return;
+          }
+          const expenseNote = result.expense ? ` · расход ${fmtMoney(result.expense.amount)} добавлен` : '';
+          toast(`Продлено до ${fmtDate(result.coverageEnd)}${expenseNote}`);
           render();
         });
         tr.querySelector('[data-act="del"]').addEventListener('click', () => {

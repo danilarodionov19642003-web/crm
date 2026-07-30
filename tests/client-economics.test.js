@@ -108,12 +108,15 @@ assert.equal(result.cash.current, 5051, 'текущий кэш должен уч
 const c1 = result.clients.find(row => row.id === 'c1');
 const c2 = result.clients.find(row => row.id === 'c2');
 assert.deepEqual(
-  { done: c1.done, inWork: c1.inWork, unassigned: c1.unassigned, performer: c1.forecastPerformer },
-  { done: 1, inWork: 1, unassigned: 1, performer: 'Данил' },
-  'неназначенный остаток должен прогнозироваться за Данилом'
+  { done: c1.done, inWork: c1.inWork, unassigned: c1.unassigned },
+  { done: 1, inWork: 1, unassigned: 1 },
+  'счётчики работы остаются фактическими и не создают будущие расходы'
 );
-assert.equal(c1.future.salary, 0);
-assert.equal(c1.future.phones, 99);
+assert.equal(c1.totalCost, c1.actual.total, 'себестоимость клиента должна состоять только из факта');
+assert.equal(result.totals.futureCost, undefined, 'прогноз расходов больше не рассчитывается');
+assert.equal(result.costs.projected, undefined, 'будущие подписки не распределяются по клиентам');
+assert.equal(result.subscriptions, undefined, 'ближайшие подписки не входят в Пульс');
+assert.equal(result.calendar, undefined, 'финансовый календарь удалён');
 
 assert.ok(Math.abs(c1.actual.phones - 148.5) < 1e-9,
   'номер общего аккаунта делится между двумя клиентами');
@@ -132,18 +135,82 @@ assert.equal(c1.actual.salary, 300);
 assert.equal(c2.actual.salary, 300);
 assert.equal(result.costs.labor.debt, 300,
   'долг по зарплате считается как начислено минус выплачено');
+assert.equal(result.cash.obligations, 300,
+  'в обязательствах остаётся только уже начисленная невыплаченная зарплата');
 assert.equal(result.costs.phones.historicalUnlinked, 500,
   'старые общие покупки номеров нельзя молча приписывать клиенту');
 
 assert.equal(Economics.inferSubscriptionCostScope('Прокси МСК 3'), 'account_proxy');
 assert.equal(Economics.inferSubscriptionCostScope('Dicloak'), 'account_software');
-assert.equal(result.costs.projected.cashTotal, 650,
-  'две подписки должны попасть в будущие денежные обязательства');
-assert.ok(c1.future.software > 0 && c1.future.proxy > 0,
-  'будущий аккаунт клиента получает долю подписок по прогнозным account-days');
+assert.ok(c1.reviewCosts.length > 0, 'должна быть доступна себестоимость каждого начатого отзыва');
+assert.ok(Math.abs(
+  c1.reviewCosts.reduce((sum, row) => sum + row.total, 0) - c1.actual.total
+) < 1e-7, 'детализация по аккаунтам должна сходиться с фактической себестоимостью клиента');
 
 assert.equal(result.warnings.financialMismatch.length, 0,
   'нулевое legacy-поле total не должно создавать ложное предупреждение');
+
+const archivedResult = Economics.analyze({
+  clients: [{ id: 'legacy-client', code: 'a9', ordered: 2, paid: 1000, remain: 1 }],
+  mentors: [{ id: 'legacy-mentor', code: 'a9' }],
+  profiles: [],
+  archivedProfiles: [{
+    id: 'legacy-profile', code: '2-1', createdAt: '2026-04-20',
+    deletedAt: '2026-04-10', archived: true
+  }],
+  profileStatuses: [{
+    id: 'legacy-status', mentorId: 'legacy-mentor', profileId: 'legacy-profile',
+    status: '🎯 Готов', date: '2026-03-01', performer: 'Данил'
+  }],
+  reviews: [{
+    id: 'legacy-review', mentorId: 'legacy-mentor', profileId: 'legacy-profile', moderation: 'approved'
+  }],
+  employees: [{ id: 'danil', name: 'Данил', ratePerReview: 0, paid: 0 }],
+  expenses: [
+    { id: 'legacy-soft', date: '2026-03-01', category: 'Софт', amount: 310 },
+    { id: 'legacy-proxy', date: '2026-03-01', category: 'Прокси', amount: 620 },
+    { id: 'employee-vpn', date: '2026-03-01', category: 'Софт', comment: 'VPN Илье', amount: 9999 }
+  ]
+}, { today: '2026-04-30' });
+const archivedClient = archivedResult.clients[0];
+assert.equal(archivedClient.actual.software, 310,
+  'старый фактический платёж софта без costScope должен учитываться');
+assert.equal(archivedClient.actual.proxy, 620,
+  'старый фактический платёж прокси без costScope должен учитываться');
+assert.equal(archivedResult.costs.software.total, 310,
+  'VPN сотрудника нельзя относить к содержанию клиентских аккаунтов');
+assert.equal(archivedClient.reviewCosts[0].archived, true,
+  'архивный аккаунт должен оставаться в детализации себестоимости');
+
+const reusedProfileResult = Economics.analyze({
+  clients: [
+    { id: 'first-client', code: 'a1', ordered: 1, paid: 1000, remain: 1 },
+    { id: 'second-client', code: 'a2', ordered: 1, paid: 1000, remain: 1 }
+  ],
+  mentors: [
+    { id: 'first-mentor', code: 'a1' },
+    { id: 'second-mentor', code: 'a2' }
+  ],
+  profiles: [],
+  archivedProfiles: [{
+    id: 'reused-profile', code: '3-1', createdAt: '2026-03-01',
+    deletedAt: '2026-05-31', archived: true
+  }],
+  profileStatuses: [
+    { id: 'first-status', mentorId: 'first-mentor', profileId: 'reused-profile', status: '🎯 Готов', date: '2026-03-01' },
+    { id: 'second-status', mentorId: 'second-mentor', profileId: 'reused-profile', status: '🎯 Готов', date: '2026-05-01' }
+  ],
+  reviews: [],
+  employees: [],
+  expenses: [
+    { id: 'march-soft', date: '2026-03-01', category: 'Софт', amount: 300 },
+    { id: 'may-soft', date: '2026-05-01', category: 'Софт', amount: 310 }
+  ]
+}, { today: '2026-06-01' });
+assert.ok(Math.abs(reusedProfileResult.clients.find(row => row.id === 'first-client').actual.software - 300) < 1e-9,
+  'после передачи аккаунта следующему клиенту старый клиент больше не оплачивает его содержание');
+assert.ok(Math.abs(reusedProfileResult.clients.find(row => row.id === 'second-client').actual.software - 310) < 1e-9,
+  'последний клиент оплачивает аккаунт до архива');
 
 const pulseSource = fs.readFileSync(path.join(__dirname, '../pages/finance-pulse.html'), 'utf8');
 const dashboardSource = fs.readFileSync(path.join(__dirname, '../pages/dashboard.html'), 'utf8');
@@ -153,5 +220,9 @@ assert.match(dashboardSource, /window\.Economics\.analyze\(Store\.state/,
   'дашборд должен использовать тот же калькулятор');
 assert.match(pulseSource, /row\.tariff === 'Поддержка'.*row\.ordered !== 6/,
   'нестандартный заказ не должен отображаться как типовой тариф Поддержка');
+assert.doesNotMatch(pulseSource, /Ещё нужно|Ближайшие подписки|view-calendar|row\.future/,
+  'Пульс не должен показывать или считать будущие расходы');
+assert.match(pulseSource, /Себестоимость каждого начатого отзыва/,
+  'детали клиента должны показывать себестоимость по аккаунтам');
 
 console.log('client economics: OK');

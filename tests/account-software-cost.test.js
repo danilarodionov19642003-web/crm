@@ -52,13 +52,13 @@ Store.state = {
     { id: 'soft-1', date: '2026-06-12', category: 'Софт', amount: 1600, costScope: 'account_software' },
     { id: 'soft-1-extra', date: '2026-06-12', category: 'Софт', amount: 55, costScope: 'account_software' },
     { id: 'soft-2', date: '2026-07-12', category: 'Софт', amount: 2123, costScope: 'account_software' },
-    { id: 'soft-unrelated', date: '2026-07-15', category: 'Софт', amount: 9999 },
+    { id: 'soft-unrelated', date: '2026-07-15', category: 'Софт', amount: 9999, costScope: 'general' },
     { id: 'phone-a', date: '2026-06-01', category: 'Реклама - Номера', amount: 99, source: 'account_phone_auto', profileId: 'a' }
   ]
 };
 
 const cycles = Store.accountSoftwareCycles();
-assert.equal(cycles.length, 2, 'только отмеченные платежи должны стать циклами');
+assert.equal(cycles.length, 2, 'явно исключённый общий расход не должен стать циклом');
 assert.equal(cycles[0].amount, 1655, 'платежи одного дня должны суммироваться');
 assert.equal(cycles[0].start, '2026-06-12');
 assert.equal(cycles[0].end, '2026-07-11');

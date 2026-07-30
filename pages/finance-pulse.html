@@ -48,12 +48,15 @@
     .expand-button { width:30px; height:30px; padding:0; border:1px solid var(--border); border-radius:6px; background:transparent; color:var(--text); cursor:pointer; }
     .expand-button[aria-expanded="true"] { background:var(--bg); }
     .detail-row td { padding:0; background:var(--bg); }
-    .client-detail { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:1px; background:var(--border); }
+    .client-detail { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1px; background:var(--border); }
     .client-detail__cell { min-width:0; padding:12px 14px; background:var(--bg-elev); }
     .client-detail__title { margin-bottom:8px; color:var(--text-mute); font-size:10px; text-transform:uppercase; }
     .cost-line { display:flex; justify-content:space-between; gap:10px; padding:3px 0; font-size:11px; }
     .cost-line strong { white-space:nowrap; font-variant-numeric:tabular-nums; }
     .cost-line.total { margin-top:4px; padding-top:7px; border-top:1px solid var(--border); font-weight:700; }
+    .review-costs { grid-column:1/-1; padding:12px 14px 14px; background:var(--bg-elev); border-top:1px solid var(--border); }
+    .review-costs__title { margin-bottom:8px; color:var(--text-mute); font-size:10px; text-transform:uppercase; }
+    .review-costs .pulse-table th, .review-costs .pulse-table td { padding:6px 8px; font-size:11px; }
     .cost-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); border-bottom:1px solid var(--border); }
     .cost-block { min-width:0; padding:14px; border-right:1px solid var(--border); }
     .cost-block:last-child { border-right:0; }
@@ -82,12 +85,11 @@
       .page-title > .btn { display:none; }
       .pulse-panel__meta { max-width:55%; }
       .table-scroll { overflow-x:auto; -webkit-overflow-scrolling:touch; }
-      .pulse-table { min-width:930px; }
+      .pulse-table { min-width:820px; }
       .client-detail { grid-template-columns:1fr 1fr; min-width:690px; }
       .cost-grid { grid-template-columns:1fr; }
       .cost-block { border-right:0; border-bottom:1px solid var(--border); }
       .cost-block:last-child { border-bottom:0; }
-      .calendar-table { min-width:720px; }
     }
   </style>
 </head>
@@ -119,7 +121,6 @@
         <nav class="pulse-tabs" aria-label="Разделы пульса">
           <button class="pulse-tab is-active" data-tab="clients">Клиенты</button>
           <button class="pulse-tab" data-tab="costs">Себестоимость</button>
-          <button class="pulse-tab" data-tab="calendar">Календарь</button>
         </nav>
 
         <section class="pulse-view" id="view-clients">
@@ -137,7 +138,6 @@
                     <th class="num">Получено</th>
                     <th class="num">Остаток</th>
                     <th class="num">Потрачено</th>
-                    <th class="num">Ещё нужно</th>
                     <th class="num">Прибыль</th>
                     <th class="num">Маржа</th>
                     <th></th>
@@ -152,40 +152,11 @@
         <section class="pulse-view" id="view-costs" hidden>
           <div class="pulse-panel">
             <div class="pulse-panel__head">
-              <h2>Фактическая и будущая себестоимость</h2>
+              <h2>Фактическая себестоимость</h2>
               <div class="pulse-panel__meta" id="costMeta"></div>
             </div>
             <div class="cost-grid" id="costGrid"></div>
             <div class="warning-strip" id="costWarnings" hidden></div>
-          </div>
-          <div class="pulse-panel">
-            <div class="pulse-panel__head">
-              <h2>Ближайшие подписки</h2>
-              <div class="pulse-panel__meta">Софт и прокси аккаунтов</div>
-            </div>
-            <div class="table-scroll">
-              <table class="pulse-table">
-                <thead><tr><th>Дата</th><th>Подписка</th><th>Тип</th><th class="num">Сумма</th></tr></thead>
-                <tbody id="subscriptionRows"></tbody>
-              </table>
-            </div>
-          </div>
-        </section>
-
-        <section class="pulse-view" id="view-calendar" hidden>
-          <div class="pulse-panel">
-            <div class="pulse-panel__head">
-              <h2>План на 8 недель</h2>
-              <div class="pulse-panel__meta">Неназначенные отзывы считаются за Данилом</div>
-            </div>
-            <div class="table-scroll">
-              <table class="pulse-table calendar-table">
-                <thead>
-                  <tr><th>Неделя</th><th class="num">Отзывы</th><th class="num">Данил</th><th class="num">Илья</th><th class="num">Поступления</th><th class="num">Расходы</th><th class="num">Итог</th></tr>
-                </thead>
-                <tbody id="calendarRows"></tbody>
-              </table>
-            </div>
           </div>
         </section>
       </main>
@@ -193,8 +164,8 @@
   </div>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260730b"></script>
-  <script src="../js/economics.js?v=20260730a"></script>
+  <script src="../js/app.js?v=20260730c"></script>
+  <script src="../js/economics.js?v=20260730b"></script>
   <script src="../js/supabase-client.js?v=20260726b"></script>
   <script src="../js/auth-gate.js?v=20260726a"></script>
   <script src="../js/cloud-sync.js?v=20260726b"></script>
@@ -252,8 +223,8 @@
       const values = [
         { label:'Кэш сейчас', value:data.cash.current, meta:data.cash.baseIso ? `сверено ${dateLabel(data.cash.baseDate)}` : 'баланс ещё не сверялся', cls:data.cash.current >= 0 ? '' : 'is-negative' },
         { label:'Прибыль за месяц', value:data.month.profit, meta:`доход ${money(data.month.income)} · расход ${money(data.month.businessExpense)}`, cls:data.month.profit >= 0 ? 'is-positive' : 'is-negative' },
-        { label:'Обязательства', value:data.cash.obligations, meta:`зарплата, номера, софт и прокси`, cls:data.cash.obligations > data.cash.current ? 'is-warning' : '' },
-        { label:'После закрытия заказов', value:data.cash.afterClose, meta:`с учётом остатка ${money(data.totals.remain)}`, cls:data.cash.afterClose >= 0 ? 'is-positive' : 'is-negative' }
+        { label:'Затраты по клиентам', value:data.totals.actualCost, meta:'только уже понесённые расходы', cls:'' },
+        { label:'Маржа на сегодня', value:data.totals.margin, meta:`выручка ${money(data.totals.revenue)} · ${Math.round(data.totals.marginPct)}%`, cls:data.totals.margin >= 0 ? 'is-positive' : 'is-negative' }
       ];
       document.getElementById('pulseKpis').innerHTML = values.map(item => `
         <div class="pulse-kpi ${item.cls}">
@@ -270,6 +241,19 @@
     }
 
     function detailHtml(row) {
+      const reviewRows = row.reviewCosts.length
+        ? row.reviewCosts.map(review => `
+            <tr>
+              <td><strong>${escapeHtml(review.profileCode || '—')}</strong>${review.archived ? ' <span class="muted">· архив</span>' : ''}</td>
+              <td>${escapeHtml(review.performer)}</td>
+              <td>${escapeHtml(review.status || '—')}</td>
+              <td class="num">${money(review.software)}</td>
+              <td class="num">${money(review.proxy)}</td>
+              <td class="num">${money(review.phones)}</td>
+              <td class="num">${money(review.salary)}</td>
+              <td class="num"><strong>${money(review.total)}</strong></td>
+            </tr>`).join('')
+        : '<tr><td colspan="8" class="empty">Нет начатых отзывов</td></tr>';
       return `
         <div class="client-detail">
           <div class="client-detail__cell">
@@ -281,25 +265,25 @@
             ${line('Итого', row.actual.total, true)}
           </div>
           <div class="client-detail__cell">
-            <div class="client-detail__title">Осталось потратить</div>
-            ${line('Зарплата', row.future.salary)}
-            ${line('Номера', row.future.phones)}
-            ${line('Софт', row.future.software)}
-            ${line('Прокси', row.future.proxy)}
-            ${line('Итого', row.future.total, true)}
-          </div>
-          <div class="client-detail__cell">
             <div class="client-detail__title">Деньги клиента</div>
             ${line('Получено', row.paid)}
             ${line('К получению', row.remain)}
             ${line('Полная выручка', row.revenue, true)}
           </div>
           <div class="client-detail__cell">
-            <div class="client-detail__title">Результат</div>
-            ${line('Себестоимость', row.totalCost)}
-            ${line('На один отзыв', row.projectedCostPerReview)}
-            ${line('Прогноз закрытия', 0).replace(money(0), dateLabel(row.forecastEnd))}
-            ${line('Прибыль', row.margin, true)}
+            <div class="client-detail__title">Результат на сегодня</div>
+            ${line('Себестоимость по факту', row.totalCost)}
+            ${line('На один начатый отзыв', row.actualCostPerStarted)}
+            ${line('Прибыль по текущим затратам', row.margin, true)}
+          </div>
+          <div class="review-costs">
+            <div class="review-costs__title">Себестоимость каждого начатого отзыва</div>
+            <div class="table-scroll">
+              <table class="pulse-table">
+                <thead><tr><th>Аккаунт</th><th>Кто делал</th><th>Статус</th><th class="num">Софт</th><th class="num">Прокси</th><th class="num">Номер</th><th class="num">ЗП</th><th class="num">Итого</th></tr></thead>
+                <tbody>${reviewRows}</tbody>
+              </table>
+            </div>
           </div>
         </div>`;
     }
@@ -309,7 +293,7 @@
         `${data.totals.clients} клиентов · ${data.totals.done} готово · ${data.totals.inWork} в работе · ${data.totals.unassigned} не назначено`;
       const root = document.getElementById('clientRows');
       if (!data.clients.length) {
-        root.innerHTML = '<tr><td colspan="9" class="empty">Нет активных заказов</td></tr>';
+        root.innerHTML = '<tr><td colspan="8" class="empty">Нет активных заказов</td></tr>';
         return;
       }
       root.innerHTML = data.clients.map(row => {
@@ -321,12 +305,11 @@
             <td class="num positive">${money(row.paid)}</td>
             <td class="num">${money(row.remain)}</td>
             <td class="num">${money(row.actual.total)}</td>
-            <td class="num">${money(row.future.total)}</td>
             <td class="num ${row.margin >= 0 ? 'positive' : 'negative'}"><strong>${money(row.margin)}</strong></td>
             <td class="num"><span class="margin-pill ${marginClass(row.marginPct)}">${Math.round(row.marginPct)}%</span></td>
             <td class="num"><button class="expand-button" data-expand="${escapeHtml(row.id)}" aria-expanded="${open}" title="Детали">${open ? '⌃' : '⌄'}</button></td>
           </tr>
-          ${open ? `<tr class="detail-row"><td colspan="9">${detailHtml(row)}</td></tr>` : ''}`;
+          ${open ? `<tr class="detail-row"><td colspan="8">${detailHtml(row)}</td></tr>` : ''}`;
       }).join('');
       root.querySelectorAll('[data-expand]').forEach(button => button.addEventListener('click', () => {
         const id = button.dataset.expand;
@@ -343,29 +326,19 @@
       const c = data.costs;
       const earned = [...c.labor.byPerformer.values()].reduce((sum, row) => sum + row.earned, 0);
       const paid = (Store.state.employees || []).reduce((sum, employee) => sum + (Number(employee.paid) || 0), 0);
-      const futureSoftware = c.projected.cycles
-        .filter(cycle => cycle.scope === window.Economics.SOFTWARE_SCOPE && cycle.start < c.projected.workEnd)
-        .reduce((sum, cycle) => sum + cycle.amount, 0);
-      const futureProxy = c.projected.cycles
-        .filter(cycle => cycle.scope === window.Economics.PROXY_SCOPE && cycle.start < c.projected.workEnd)
-        .reduce((sum, cycle) => sum + cycle.amount, 0);
-      document.getElementById('costMeta').textContent =
-        `факт ${money(data.totals.actualCost)} · прогноз ${money(data.totals.futureCost)}`;
+      document.getElementById('costMeta').textContent = `по факту ${money(data.totals.actualCost)}`;
       document.getElementById('costGrid').innerHTML = [
-        costBlock('Софт аккаунтов', c.software.total + futureSoftware, [
-          line('Факт распределён', c.software.allocated),
-          line('Простой / без связи', c.software.idle + c.software.unallocated),
-          line('Будущие платежи', futureSoftware)
+        costBlock('Софт аккаунтов', c.software.total, [
+          line('Разнесено по клиентам', c.software.allocated),
+          line('Простой / без связи', c.software.idle + c.software.unallocated)
         ]),
-        costBlock('Прокси аккаунтов', c.proxy.total + futureProxy, [
-          line('Факт распределён', c.proxy.allocated),
-          line('Простой / без связи', c.proxy.idle + c.proxy.unallocated),
-          line('Будущие платежи', futureProxy)
+        costBlock('Прокси аккаунтов', c.proxy.total, [
+          line('Разнесено по клиентам', c.proxy.allocated),
+          line('Простой / без связи', c.proxy.idle + c.proxy.unallocated)
         ]),
-        costBlock('Номера', c.phones.linkedTotal + c.phones.historicalUnlinked + data.cash.futurePhone, [
+        costBlock('Номера', c.phones.linkedTotal + c.phones.historicalUnlinked, [
           line('Привязано к аккаунтам', c.phones.linkedTotal),
-          line('Старая история без связи', c.phones.historicalUnlinked),
-          line('Будущие номера', data.cash.futurePhone)
+          line('Старая история без связи', c.phones.historicalUnlinked)
         ]),
         costBlock('Зарплата', earned, [
           line('Начислено', earned),
@@ -380,30 +353,6 @@
       const warningRoot = document.getElementById('costWarnings');
       warningRoot.hidden = warnings.length === 0;
       warningRoot.textContent = warnings.join(' ');
-
-      const seen = new Set();
-      const cycles = data.subscriptions.filter(cycle => {
-        const key = cycle.subscriptionId + '::' + cycle.start;
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      }).slice(0, 12);
-      document.getElementById('subscriptionRows').innerHTML = cycles.length
-        ? cycles.map(cycle => `<tr><td>${dateLabel(cycle.start)}</td><td>${escapeHtml(cycle.name)}</td><td>${cycle.scope === window.Economics.PROXY_SCOPE ? 'Прокси' : 'Софт'}</td><td class="num">${money(cycle.amount)}</td></tr>`).join('')
-        : '<tr><td colspan="4" class="empty">Нет подписок софта и прокси</td></tr>';
-    }
-
-    function renderCalendar(data) {
-      document.getElementById('calendarRows').innerHTML = data.calendar.map(row => `
-        <tr>
-          <td><strong>${dateLabel(row.start)}–${dateLabel(row.end)}</strong></td>
-          <td class="num">${row.reviews}</td>
-          <td class="num">${row.danil}</td>
-          <td class="num">${row.ilya}</td>
-          <td class="num positive">${money(row.income)}</td>
-          <td class="num negative">${money(row.expenses)}</td>
-          <td class="num ${row.net >= 0 ? 'positive' : 'negative'}"><strong>${money(row.net)}</strong></td>
-        </tr>`).join('');
     }
 
     function render() {
@@ -411,9 +360,8 @@
       renderKpis(data);
       renderClients(data);
       renderCosts(data);
-      renderCalendar(data);
       document.getElementById('pulseUpdated').textContent =
-        `Активных клиентов: ${data.totals.clients}. Полная прогнозная маржа: ${money(data.totals.margin)} (${Math.round(data.totals.marginPct)}%).`;
+        `Активных клиентов: ${data.totals.clients}. Маржа по фактическим затратам: ${money(data.totals.margin)} (${Math.round(data.totals.marginPct)}%).`;
     }
 
     document.querySelectorAll('[data-tab]').forEach(button => button.addEventListener('click', () => {

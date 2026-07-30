@@ -965,6 +965,23 @@
       return '';
     },
 
+    inferExpenseCostScope(expense) {
+      if (!expense || expense.personal || expense.costScope === 'general') return '';
+      if (expense.costScope === 'account_software' || expense.costScope === 'account_proxy') {
+        return expense.costScope;
+      }
+      const text = [expense.category, expense.comment, expense.name]
+        .map(value => String(value || '').trim().toLowerCase())
+        .join(' ');
+      if (/\b(?:vpn|впн)\b/.test(text)) return '';
+      const category = String(expense.category || '').trim().toLowerCase();
+      if (category === 'прокси' || text.includes('proxy')) return 'account_proxy';
+      if (category === 'софт' || text.includes('dicloak') || text.includes('антидетект')) {
+        return 'account_software';
+      }
+      return '';
+    },
+
     subscriptionPeriodEnd(start, frequency) {
       const value = String(frequency || '').toLowerCase();
       if (value.includes('7')) return addDaysISO(start, 7);
@@ -978,6 +995,8 @@
       if (!subscription) return null;
       const scope = this.inferSubscriptionCostScope(subscription.name, subscription.costScope);
       if (scope !== 'account_software' && scope !== 'account_proxy') return null;
+      const paymentAmount = Number(options.amount ?? subscription.amount);
+      if (!Number.isFinite(paymentAmount) || paymentAmount <= 0) return null;
       const coverageStart = String(options.coverageStart || todayISO()).slice(0, 10);
       const coverageEnd = String(
         options.coverageEnd || this.subscriptionPeriodEnd(coverageStart, subscription.frequency)
@@ -993,7 +1012,7 @@
         id: paymentId,
         date: String(options.date || todayISO()).slice(0, 10),
         category,
-        amount: Number(subscription.amount) || 0,
+        amount: paymentAmount,
         comment: `Оплата подписки: ${subscription.name || category}`,
         source: 'subscription_payment',
         subscriptionId: subscription.id,
@@ -1001,6 +1020,53 @@
         costCoverageStart: coverageStart,
         costCoverageEnd: coverageEnd
       });
+    },
+
+    renewSubscription(subscriptionId, options = {}) {
+      const subscription = (this.state.subscriptions || []).find(item => item.id === subscriptionId);
+      if (!subscription) return null;
+      const scope = this.inferSubscriptionCostScope(subscription.name, subscription.costScope);
+      const isInfrastructure = scope === 'account_software' || scope === 'account_proxy';
+      const paymentAmount = Number(options.amount ?? subscription.amount);
+      if (isInfrastructure && (!Number.isFinite(paymentAmount) || paymentAmount <= 0)) return null;
+
+      const coverageStart = String(options.coverageStart || subscription.nextDate || todayISO()).slice(0, 10);
+      const coverageEnd = String(
+        options.coverageEnd || this.subscriptionPeriodEnd(coverageStart, subscription.frequency)
+      ).slice(0, 10);
+      let expense = null;
+      if (isInfrastructure) {
+        const paymentId = `subscription-payment-${subscription.id}-${coverageStart}`;
+        expense = (this.state.expenses || []).find(item =>
+          item.id === paymentId ||
+          (item.subscriptionId === subscription.id && item.costCoverageStart === coverageStart)
+        );
+        if (!expense) {
+          const category = scope === 'account_proxy' ? 'Прокси' : 'Софт';
+          expense = {
+            id: paymentId,
+            date: String(options.date || todayISO()).slice(0, 10),
+            category,
+            amount: paymentAmount,
+            comment: `Оплата подписки: ${subscription.name || category}`,
+            personal: false,
+            source: 'subscription_payment',
+            createdAt: new Date().toISOString(),
+            subscriptionId: subscription.id,
+            costScope: scope,
+            costCoverageStart: coverageStart,
+            costCoverageEnd: coverageEnd
+          };
+          this.state.expenses.push(expense);
+        }
+      }
+
+      if (Number.isFinite(paymentAmount) && paymentAmount >= 0) subscription.amount = paymentAmount;
+      subscription.costScope = scope || subscription.costScope || '';
+      subscription.nextDate = coverageEnd;
+      subscription.status = 'оплачен';
+      this.save();
+      return { subscription, expense, coverageStart, coverageEnd };
     },
 
     /* ====================================================================
@@ -1102,7 +1168,7 @@
     accountSoftwareCycles() {
       const grouped = new Map();
       (this.state.expenses || []).forEach(expense => {
-        if (!expense || expense.personal || expense.costScope !== 'account_software') return;
+        if (this.inferExpenseCostScope(expense) !== 'account_software') return;
         const start = String(expense.costCoverageStart || expense.date || '').slice(0, 10);
         const explicitEnd = String(expense.costCoverageEnd || '').slice(0, 10);
         const endExclusive = parseISODate(explicitEnd) ? explicitEnd : addMonthsISO(start, 1);
@@ -1128,7 +1194,17 @@
 
     _profileSoftwareRange(profile) {
       if (!profile) return null;
-      const start = String(profile.softwareStartedAt || profile.createdAt || '').slice(0, 10);
+      const explicitStart = String(profile.softwareStartedAt || '').slice(0, 10);
+      const statusDates = (this.state.profileStatuses || [])
+        .filter(status => status && status.profileId === profile.id)
+        .flatMap(status => [status.date, ...(status.history || []).map(item => item && item.date)])
+        .map(value => String(value || '').slice(0, 10))
+        .filter(parseISODate)
+        .sort();
+      const knownStarts = [String(profile.createdAt || '').slice(0, 10), statusDates[0]]
+        .filter(parseISODate)
+        .sort();
+      const start = parseISODate(explicitStart) ? explicitStart : (knownStarts[0] || '');
       if (!parseISODate(start)) return null;
       const rawEnd = profile.softwareEndedAt || profile.deletedAt || '';
       const end = parseISODate(rawEnd) ? String(rawEnd).slice(0, 10) : '';

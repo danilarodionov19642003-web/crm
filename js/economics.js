@@ -74,9 +74,28 @@
     return '';
   }
 
-  function profileRange(profile, today) {
+  function inferExpenseCostScope(expense) {
+    if (!expense || expense.personal || expense.costScope === 'general') return '';
+    if (expense.costScope === SOFTWARE_SCOPE || expense.costScope === PROXY_SCOPE) {
+      return expense.costScope;
+    }
+    const text = [expense.category, expense.comment, expense.name]
+      .map(value => String(value || '').trim().toLowerCase())
+      .join(' ');
+    if (/\b(?:vpn|впн)\b/.test(text)) return '';
+    const category = String(expense.category || '').trim().toLowerCase();
+    if (category === 'прокси' || text.includes('proxy')) return PROXY_SCOPE;
+    if (category === 'софт' || text.includes('dicloak') || text.includes('антидетект')) {
+      return SOFTWARE_SCOPE;
+    }
+    return '';
+  }
+
+  function profileRange(profile, today, knownStatusStart) {
     if (!profile) return null;
-    const start = iso(profile.softwareStartedAt || profile.createdAt);
+    const explicitStart = iso(profile.softwareStartedAt);
+    const knownStarts = [iso(profile.createdAt), iso(knownStatusStart)].filter(Boolean).sort();
+    const start = explicitStart || knownStarts[0] || '';
     if (!start) return null;
     const ended = iso(profile.softwareEndedAt || profile.deletedAt);
     return {
@@ -115,6 +134,14 @@
       if (client) clientByMentorId.set(mentor.id, client);
     });
 
+    const statusStartByProfile = new Map();
+    statuses.forEach(status => {
+      if (!status || !status.profileId) return;
+      const start = statusStart(status);
+      const current = statusStartByProfile.get(status.profileId);
+      if (start && (!current || start < current)) statusStartByProfile.set(status.profileId, start);
+    });
+
     const uniqueProfiles = new Map();
     (Array.isArray(state.archivedProfiles) ? state.archivedProfiles : []).forEach(profile => {
       if (profile && profile.id) uniqueProfiles.set(profile.id, profile);
@@ -125,8 +152,9 @@
     const profileById = uniqueProfiles;
     const profileRows = [...uniqueProfiles.values()].map(profile => ({
       profile,
-      range: profileRange(profile, today)
+      range: profileRange(profile, today, statusStartByProfile.get(profile.id))
     })).filter(row => row.range);
+    const profileRangeById = new Map(profileRows.map(row => [row.profile.id, row.range]));
 
     const approvedPairs = new Set();
     const approvedCounts = new Map();
@@ -168,6 +196,7 @@
       mentorById,
       profileById,
       profileRows,
+      profileRangeById,
       statuses,
       statusesByClient,
       statusesByProfile,
@@ -197,7 +226,7 @@
   function expenseCycles(state, scope) {
     const rows = [];
     (Array.isArray(state && state.expenses) ? state.expenses : []).forEach(expense => {
-      if (!expense || expense.personal || expense.costScope !== scope || amount(expense.amount) <= 0) return;
+      if (!expense || inferExpenseCostScope(expense) !== scope || amount(expense.amount) <= 0) return;
       const segments = Array.isArray(expense.costSegments) ? expense.costSegments : [];
       const candidates = segments.length ? segments : [{
         start: expense.costCoverageStart || expense.date,
@@ -242,19 +271,25 @@
   }
 
   function relationInterval(context, status) {
-    const profile = context.profileById.get(status.profileId);
-    const range = profileRange(profile, context.today);
+    const range = context.profileRangeById.get(status.profileId);
     const start = statusStart(status) || (range && range.start) || '';
-    if (!start) return null;
-    const statusEnded = status.status === READY_STATUS ? addDays(status.date, 1) : '';
-    const endExclusive = statusEnded || (range && range.ended ? range.endExclusive : addDays(context.today, 3660));
-    return { start, endExclusive };
+    if (!start || !range) return null;
+    const nextStart = (context.statusesByProfile.get(status.profileId) || [])
+      .filter(other => other !== status)
+      .map(statusStart)
+      .filter(value => value && value > start)
+      .sort()[0];
+    return {
+      start,
+      endExclusive: nextStart && nextStart < range.endExclusive ? nextStart : range.endExclusive
+    };
   }
 
   function allocateSharedExpenses(context, scope) {
     const cycles = expenseCycles(context.state, scope);
     const byClient = new Map();
     const byProfile = new Map();
+    const byClientProfile = new Map();
     let idle = 0;
     let unallocated = 0;
 
@@ -302,7 +337,11 @@
             continue;
           }
           const share = dayCost / active.length;
-          active.forEach(clientId => byClient.set(clientId, (byClient.get(clientId) || 0) + share));
+          active.forEach(clientId => {
+            byClient.set(clientId, (byClient.get(clientId) || 0) + share);
+            const key = pairKey(clientId, row.profile.id);
+            byClientProfile.set(key, (byClientProfile.get(key) || 0) + share);
+          });
         }
       });
     });
@@ -312,6 +351,7 @@
       cycles,
       byClient,
       byProfile,
+      byClientProfile,
       idle,
       unallocated,
       total: cycles.reduce((sum, cycle) => sum + cycle.amount, 0),
@@ -322,6 +362,7 @@
   function allocatePhoneExpenses(context) {
     const byClient = new Map();
     const byProfile = new Map();
+    const byClientProfile = new Map();
     let unallocated = 0;
     let linkedTotal = 0;
     let historicalUnlinked = 0;
@@ -350,10 +391,14 @@
         return;
       }
       const share = value / clientIds.length;
-      clientIds.forEach(clientId => byClient.set(clientId, (byClient.get(clientId) || 0) + share));
+      clientIds.forEach(clientId => {
+        byClient.set(clientId, (byClient.get(clientId) || 0) + share);
+        const key = pairKey(clientId, expense.profileId);
+        byClientProfile.set(key, (byClientProfile.get(key) || 0) + share);
+      });
     });
 
-    return { byClient, byProfile, linkedTotal, unallocated, historicalUnlinked };
+    return { byClient, byProfile, byClientProfile, linkedTotal, unallocated, historicalUnlinked };
   }
 
   function performerRate(context, status, fallbackName) {
@@ -388,163 +433,6 @@
     return { byClient, byPerformer, debt };
   }
 
-  function nicheHoldDays(state, client) {
-    const config = state && state.nicheConfig && state.nicheConfig[client && client.niche];
-    const publishDays = Math.max(0, amount(config && config.daysToPublish));
-    return Math.max(7, publishDays + 7);
-  }
-
-  function futureStartDates(client, count, today) {
-    const starts = [];
-    const schedule = Array.isArray(client && client.schedule) ? client.schedule : [];
-    schedule
-      .filter(item => iso(item && item.date) && iso(item.date) >= today)
-      .sort((a, b) => iso(a.date).localeCompare(iso(b.date)))
-      .forEach(item => {
-        for (let i = 0; i < Math.max(0, Math.floor(amount(item.count))); i++) starts.push(iso(item.date));
-      });
-    if (starts.length > count) starts.length = count;
-    const pace = Math.max(1, Math.floor(amount(client && client.weeklyPace)) || 1);
-    while (starts.length < count) {
-      const index = starts.length;
-      starts.push(addDays(today, Math.floor(index / pace) * 7));
-    }
-    return starts;
-  }
-
-  function projectedWork(context, clients) {
-    const units = new Map();
-    const clientMeta = new Map();
-
-    function ensureUnit(id) {
-      if (!units.has(id)) units.set(id, { id, intervals: [] });
-      return units.get(id);
-    }
-
-    clients.forEach(client => {
-      const statuses = context.statusesByClient.get(client.id) || [];
-      const done = doneForClient(context, client);
-      const inWork = statuses.filter(status => status.status !== READY_STATUS);
-      const ordered = Math.max(0, Math.floor(amount(client.ordered)));
-      const unassigned = Math.max(0, ordered - done - inWork.length);
-      const holdDays = nicheHoldDays(context.state, client);
-      let forecastEnd = context.today;
-
-      inWork.forEach(status => {
-        let end = addDays(context.today, holdDays);
-        const nextDate = iso(status.nextActionDate);
-        if (nextDate && nextDate >= context.today) {
-          const toReady = status.nextActionStatus === READY_STATUS || status.status === '🏆 Выбран';
-          end = addDays(nextDate, toReady ? 1 : holdDays);
-        }
-        if (end > forecastEnd) forecastEnd = end;
-        ensureUnit('profile:' + status.profileId).intervals.push({ clientId: client.id, start: context.today, endExclusive: end });
-      });
-
-      const starts = futureStartDates(client, unassigned, context.today);
-      starts.forEach((start, index) => {
-        const end = addDays(start, holdDays);
-        if (end > forecastEnd) forecastEnd = end;
-        ensureUnit('future:' + client.id + ':' + index).intervals.push({ clientId: client.id, start, endExclusive: end });
-      });
-
-      clientMeta.set(client.id, { done, inWork: inWork.length, unassigned, holdDays, forecastEnd, futureStarts: starts });
-    });
-    return { units: [...units.values()], clientMeta };
-  }
-
-  function addSubscriptionPeriod(start, frequency) {
-    const value = String(frequency || '').toLowerCase();
-    if (value.includes('7')) return addDays(start, 7);
-    if (value.includes('90')) return addMonths(start, 3);
-    if (value.includes('год')) return addMonths(start, 12);
-    return addMonths(start, 1);
-  }
-
-  function subscriptionCycles(state, today, horizonEnd) {
-    const cycles = [];
-    (Array.isArray(state && state.subscriptions) ? state.subscriptions : []).forEach(subscription => {
-      const scope = inferSubscriptionCostScope(subscription && subscription.name, subscription && subscription.costScope);
-      const value = amount(subscription && subscription.amount);
-      let start = iso(subscription && subscription.nextDate);
-      if (!scope || value <= 0 || !start) return;
-      let guard = 0;
-      while (start < today && guard++ < 24) start = addSubscriptionPeriod(start, subscription.frequency);
-      if (start < today) start = today;
-      guard = 0;
-      while (start < horizonEnd && guard++ < 24) {
-        const endExclusive = addSubscriptionPeriod(start, subscription.frequency);
-        cycles.push({
-          subscriptionId: subscription.id || '',
-          name: subscription.name || '',
-          scope,
-          start,
-          endExclusive,
-          amount: value
-        });
-        start = endExclusive;
-      }
-    });
-    return cycles.sort((a, b) => a.start.localeCompare(b.start));
-  }
-
-  function allocateProjectedSubscriptions(context, work) {
-    const byClient = new Map();
-    const byScope = { [SOFTWARE_SCOPE]: new Map(), [PROXY_SCOPE]: new Map() };
-    let workEnd = context.today;
-    work.units.forEach(unit => unit.intervals.forEach(interval => {
-      if (interval.endExclusive > workEnd) workEnd = interval.endExclusive;
-    }));
-    let maxEnd = workEnd > addDays(context.today, 56) ? workEnd : addDays(context.today, 56);
-    const cap = addDays(context.today, 366);
-    if (maxEnd > cap) maxEnd = cap;
-    const cycles = subscriptionCycles(context.state, context.today, maxEnd);
-    let idle = 0;
-
-    cycles.forEach(cycle => {
-      let denominator = 0;
-      const unitDays = [];
-      work.units.forEach(unit => {
-        const days = [];
-        for (let day = dayNumber(cycle.start); day < dayNumber(cycle.endExclusive); day++) {
-          const active = unit.intervals.filter(interval => dayNumber(interval.start) <= day && day < dayNumber(interval.endExclusive));
-          if (active.length) {
-            denominator += 1;
-            days.push({ day, active });
-          }
-        }
-        unitDays.push({ unit, days });
-      });
-
-      if (denominator <= 0) {
-        idle += cycle.amount;
-        return;
-      }
-      const unitDayCost = cycle.amount / denominator;
-      unitDays.forEach(row => row.days.forEach(dayRow => {
-        const ids = [...new Set(dayRow.active.map(interval => interval.clientId))];
-        const share = unitDayCost / ids.length;
-        ids.forEach(clientId => {
-          byClient.set(clientId, (byClient.get(clientId) || 0) + share);
-          const scopeMap = byScope[cycle.scope];
-          scopeMap.set(clientId, (scopeMap.get(clientId) || 0) + share);
-        });
-      }));
-    });
-    return {
-      cycles,
-      byClient,
-      byScope,
-      idle,
-      cashTotal: cycles
-        .filter(cycle => cycle.start < workEnd)
-        .reduce((sum, cycle) => sum + cycle.amount, 0),
-      calendarCashTotal: cycles.reduce((sum, cycle) => sum + cycle.amount, 0),
-      workEnd,
-      horizonEnd: maxEnd
-    };
-  }
-
   function computeCurrentBalance(state) {
     const finance = state && state.finance || {};
     const baseIso = String(finance.balanceUpdatedAt || '');
@@ -569,94 +457,22 @@
     };
   }
 
-  function weekStart(value) {
-    const n = dayNumber(value);
-    if (n == null) return '';
-    const weekday = (new Date(n * DAY_MS).getUTCDay() + 6) % 7;
-    return isoFromDay(n - weekday);
-  }
-
-  function buildCalendar(context, work, projected, clientRows, laborDebt) {
-    const start = weekStart(context.today);
-    const weeks = Array.from({ length: 8 }, (_, index) => {
-      const weekStartIso = addDays(start, index * 7);
-      return {
-        start: weekStartIso,
-        end: addDays(weekStartIso, 6),
-        reviews: 0,
-        danil: 0,
-        ilya: 0,
-        income: 0,
-        expenses: 0,
-        subscription: 0,
-        phones: 0,
-        salary: 0,
-        net: 0
-      };
-    });
-    function weekFor(date) {
-      const index = Math.floor((dayNumber(date) - dayNumber(start)) / 7);
-      return index >= 0 && index < weeks.length ? weeks[index] : null;
-    }
-
-    if (laborDebt > 0) {
-      const row = weekFor(context.today);
-      if (row) {
-        row.salary += laborDebt;
-        row.expenses += laborDebt;
-      }
-    }
-
-    projected.cycles.forEach(cycle => {
-      const row = weekFor(cycle.start);
-      if (!row) return;
-      row.subscription += cycle.amount;
-      row.expenses += cycle.amount;
-    });
-
-    clientRows.forEach(clientRow => {
-      const meta = work.clientMeta.get(clientRow.id);
-      const manager = clientRow.forecastPerformer;
-      (meta && meta.futureStarts || []).forEach(startDate => {
-        const row = weekFor(startDate);
-        if (!row) return;
-        row.reviews += 1;
-        if (manager === 'Илья') row.ilya += 1;
-        else row.danil += 1;
-        row.phones += clientRow.phoneUnitCost;
-        row.expenses += clientRow.phoneUnitCost;
-        const rate = context.employeeRates.get(manager) || 0;
-        row.salary += rate;
-        row.expenses += rate;
-      });
-      if (clientRow.remain > 0) {
-        const row = weekFor(clientRow.forecastEnd);
-        if (row) row.income += clientRow.remain;
-      }
-    });
-    weeks.forEach(row => { row.net = row.income - row.expenses; });
-    return weeks;
-  }
-
   function analyze(state, options) {
     options = options || {};
     const today = iso(options.today) || new Date().toISOString().slice(0, 10);
-    const phoneUnitCost = amount(options.phoneUnitCost) || 99;
     const context = buildContext(state, today);
     const clients = activeClients(context);
     const software = allocateSharedExpenses(context, SOFTWARE_SCOPE);
     const proxy = allocateSharedExpenses(context, PROXY_SCOPE);
     const phones = allocatePhoneExpenses(context);
     const labor = laborCosts(context);
-    const work = projectedWork(context, clients);
-    const projected = allocateProjectedSubscriptions(context, work);
 
     const rows = clients.map(client => {
       const statuses = context.statusesByClient.get(client.id) || [];
-      const meta = work.clientMeta.get(client.id) || { done: 0, inWork: 0, unassigned: 0, forecastEnd: today };
-      const manager = DEFAULT_PERFORMER;
-      const futureLabor = meta.unassigned * (context.employeeRates.get(manager) || 0);
-      const futurePhones = meta.unassigned * phoneUnitCost;
+      const done = doneForClient(context, client);
+      const inWork = statuses.filter(status => status.status !== READY_STATUS).length;
+      const ordered = Math.max(0, Math.floor(amount(client.ordered)));
+      const unassigned = Math.max(0, ordered - done - inWork);
       const actual = {
         salary: labor.byClient.get(client.id) || 0,
         phones: phones.byClient.get(client.id) || 0,
@@ -664,45 +480,60 @@
         proxy: proxy.byClient.get(client.id) || 0
       };
       actual.total = actual.salary + actual.phones + actual.software + actual.proxy;
-      const future = {
-        salary: futureLabor,
-        phones: futurePhones,
-        software: projected.byScope[SOFTWARE_SCOPE].get(client.id) || 0,
-        proxy: projected.byScope[PROXY_SCOPE].get(client.id) || 0
-      };
-      future.total = future.salary + future.phones + future.software + future.proxy;
+      const profileStatusCounts = new Map();
+      statuses.forEach(status => {
+        profileStatusCounts.set(status.profileId, (profileStatusCounts.get(status.profileId) || 0) + 1);
+      });
+      const reviewCosts = statuses.map(status => {
+        const profile = context.profileById.get(status.profileId) || {};
+        const divisor = profileStatusCounts.get(status.profileId) || 1;
+        const key = pairKey(client.id, status.profileId);
+        const performer = performerRate(context, status, DEFAULT_PERFORMER);
+        const parts = {
+          salary: performer.rate,
+          phones: (phones.byClientProfile.get(key) || 0) / divisor,
+          software: (software.byClientProfile.get(key) || 0) / divisor,
+          proxy: (proxy.byClientProfile.get(key) || 0) / divisor
+        };
+        parts.total = parts.salary + parts.phones + parts.software + parts.proxy;
+        return {
+          id: status.id || key,
+          profileId: status.profileId || '',
+          profileCode: profile.code || '',
+          performer: performer.performer,
+          status: status.status || '',
+          archived: profile.archived === true || Boolean(profile.deletedAt || profile.softwareEndedAt),
+          startedAt: statusStart(status),
+          ...parts
+        };
+      }).sort((a, b) => String(a.startedAt).localeCompare(String(b.startedAt)));
       const paid = amount(client.paid);
       const remain = amount(client.remain);
       const revenue = paid + remain;
       const totalField = amount(client.total);
-      const totalCost = actual.total + future.total;
+      const totalCost = actual.total;
       const margin = revenue - totalCost;
-      const ordered = Math.max(0, Math.floor(amount(client.ordered)));
       return {
         id: client.id,
         code: client.code || '',
         name: client.name || '',
         tariff: client.tariff || '',
         manager: client.manager || '',
-        forecastPerformer: manager,
         ordered,
-        done: meta.done,
-        inWork: meta.inWork,
-        unassigned: meta.unassigned,
+        done,
+        inWork,
+        unassigned,
         paid,
         remain,
         revenue,
         totalField,
         financialMismatch: totalField > 0 && remain > 0 && Math.abs(totalField - revenue) > 0.01,
         actual,
-        future,
+        reviewCosts,
         totalCost,
         margin,
         marginPct: revenue > 0 ? margin / revenue * 100 : 0,
-        actualCostPerStarted: statuses.length > 0 ? actual.total / statuses.length : 0,
-        projectedCostPerReview: ordered > 0 ? totalCost / ordered : 0,
-        forecastEnd: meta.forecastEnd,
-        phoneUnitCost
+        actualCostPerStarted: statuses.length > 0 ? actual.total / statuses.length : 0
       };
     }).sort((a, b) => a.marginPct - b.marginPct);
 
@@ -717,22 +548,16 @@
       remain: sum(row => row.remain),
       revenue: sum(row => row.revenue),
       actualCost: sum(row => row.actual.total),
-      futureCost: sum(row => row.future.total),
       totalCost: sum(row => row.totalCost),
       margin: sum(row => row.margin)
     };
     totals.marginPct = totals.revenue > 0 ? totals.margin / totals.revenue * 100 : 0;
 
     const balance = computeCurrentBalance(state || {});
-    const futurePhone = sum(row => row.future.phones);
-    const futureSalary = sum(row => row.future.salary);
-    const cashObligations = labor.debt + futurePhone + futureSalary + projected.cashTotal;
+    const cashObligations = labor.debt;
     const cash = {
       ...balance,
       salaryDebt: labor.debt,
-      futurePhone,
-      futureSalary,
-      futureSubscriptions: projected.cashTotal,
       obligations: cashObligations,
       free: balance.current - cashObligations,
       afterClose: balance.current + totals.remain - cashObligations
@@ -746,14 +571,12 @@
       .filter(row => !row.personal && String(row.date || '').slice(0, 7) === month)
       .reduce((total, row) => total + amount(row.amount), 0);
 
-    const calendar = buildCalendar(context, work, projected, rows, labor.debt);
     const warnings = {
       financialMismatch: rows.filter(row => row.financialMismatch),
       overAssigned: rows.filter(row => row.done + row.inWork > row.ordered),
       historicalUnlinkedPhones: phones.historicalUnlinked,
       actualIdleSoftware: software.idle + software.unallocated,
-      actualIdleProxy: proxy.idle + proxy.unallocated,
-      projectedIdleInfrastructure: projected.idle
+      actualIdleProxy: proxy.idle + proxy.unallocated
     };
 
     return {
@@ -770,16 +593,9 @@
         software,
         proxy,
         phones,
-        labor,
-        projected
+        labor
       },
-      subscriptions: subscriptionCycles(state || {}, today, projected.horizonEnd),
-      calendar,
-      warnings,
-      assumptions: {
-        defaultPerformer: DEFAULT_PERFORMER,
-        phoneUnitCost
-      }
+      warnings
     };
   }
 
@@ -799,9 +615,7 @@
       doneForClient,
       allocateSharedExpenses,
       allocatePhoneExpenses,
-      laborCosts,
-      projectedWork,
-      subscriptionCycles
+      laborCosts
     }
   };
 });
