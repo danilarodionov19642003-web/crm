@@ -1,0 +1,11 @@
+[Unit]
+Description=Send the nightly Mentori CRM backup to Telegram
+
+[Timer]
+OnCalendar=*-*-* 04:05:00 Europe/Moscow
+Persistent=true
+RandomizedDelaySec=5m
+Unit=mentori-backup-telegram.service
+
+[Install]
+WantedBy=timers.target

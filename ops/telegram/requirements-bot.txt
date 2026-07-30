@@ -1,0 +1,7 @@
+aiogram==3.13.1
+aiosqlite==0.20.0
+fastapi==0.115.0
+pydantic==2.9.2
+pydantic-settings==2.5.2
+redis==5.0.8
+sqlalchemy==2.0.35

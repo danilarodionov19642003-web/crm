@@ -1,0 +1,12 @@
+[Unit]
+Description=Check Mentori CRM infrastructure every 15 minutes
+
+[Timer]
+OnBootSec=3m
+OnUnitActiveSec=15m
+RandomizedDelaySec=1m
+Persistent=true
+Unit=mentori-infra-monitor.service
+
+[Install]
+WantedBy=timers.target

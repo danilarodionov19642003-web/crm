@@ -1,0 +1,15 @@
+[Unit]
+Description=Monitor Mentori CRM infrastructure and alert Telegram
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/mentori-infra-monitor
+User=root
+Group=root
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/mentori-infra

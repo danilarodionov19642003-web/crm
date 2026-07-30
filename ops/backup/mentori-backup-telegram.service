@@ -1,0 +1,18 @@
+[Unit]
+Description=Send encrypted Mentori CRM backup to Telegram
+Wants=network-online.target
+After=network-online.target docker.service mentori-db-backup.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/mentori-backup-telegram
+User=root
+Group=root
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/mentori-infra /var/tmp
