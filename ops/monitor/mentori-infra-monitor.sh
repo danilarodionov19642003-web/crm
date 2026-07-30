@@ -54,13 +54,15 @@ elif (( mem_available_pct <= 10 )); then
 fi
 
 for service in mentori-db-backup.timer mentori-backup-telegram.timer \
-  mentori-tg-bot.service mentori-tg-notifier.service; do
+  mentori-tg-bot.service mentori-tg-notifier.service \
+  mentori-receipts-telegram.timer; do
   if ! systemctl is-active --quiet "$service"; then
     add_problem "service_${service}" "🔴 Сервис не активен: ${service}"
   fi
 done
 
-for job in mentori-db-backup.service mentori-backup-telegram.service; do
+for job in mentori-db-backup.service mentori-backup-telegram.service \
+  mentori-receipts-telegram.service; do
   if systemctl is-failed --quiet "$job"; then
     add_problem "failed_${job}" "⛔ Задание завершилось ошибкой: ${job}"
   fi

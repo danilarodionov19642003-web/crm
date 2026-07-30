@@ -5,6 +5,7 @@ umask 077
 
 backup_root=/home/mentori/supabase/backups/daily
 storage_root=/var/lib/docker/volumes/supabase_sup-storage/_data
+receipt_state=/var/lib/mentori-receipts/sent-state.json
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
 partial_dir="$backup_root/.${stamp}.partial"
 final_dir="$backup_root/$stamp"
@@ -42,6 +43,10 @@ for attempt in 1 2 3; do
 done
 test "$storage_ok" -eq 1
 
+if [[ -s "$receipt_state" ]]; then
+  cp "$receipt_state" "$partial_dir/receipt-telegram-state.json"
+fi
+
 test -s "$partial_dir/postgres.dump"
 test -s "$partial_dir/postgres-globals.sql"
 test -s "$partial_dir/storage.tar.gz"
@@ -51,7 +56,9 @@ tar -tzf "$partial_dir/storage.tar.gz" >/dev/null
 
 (
   cd "$partial_dir"
-  sha256sum postgres.dump postgres-globals.sql storage.tar.gz > SHA256SUMS
+  checksum_files=(postgres.dump postgres-globals.sql storage.tar.gz)
+  [[ -s receipt-telegram-state.json ]] && checksum_files+=(receipt-telegram-state.json)
+  sha256sum "${checksum_files[@]}" > SHA256SUMS
 )
 
 printf 'created_at_utc=%s\ncontainer=sup-postgres\nformat=pg_dump_custom\nstorage=storage.tar.gz\n' \

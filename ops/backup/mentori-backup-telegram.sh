@@ -47,8 +47,9 @@ cleanup() {
 }
 trap cleanup EXIT
 
-tar -C "$latest" -cf "$workdir/database.tar" \
-  postgres.dump postgres-globals.sql SHA256SUMS METADATA
+database_files=(postgres.dump postgres-globals.sql SHA256SUMS METADATA)
+[[ -s "$latest/receipt-telegram-state.json" ]] && database_files+=(receipt-telegram-state.json)
+tar -C "$latest" -cf "$workdir/database.tar" "${database_files[@]}"
 cp "$latest/storage.tar.gz" "$workdir/storage.tar.gz"
 
 encrypt_file() {
