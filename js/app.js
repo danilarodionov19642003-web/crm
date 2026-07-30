@@ -113,6 +113,29 @@
     value.setDate(value.getDate() + (Number(days) || 0));
     return _iso(value);
   }
+  function addMonthsISO(iso, months = 1) {
+    const value = parseISODate(iso);
+    if (!value) return '';
+    const day = value.getDate();
+    value.setDate(1);
+    value.setMonth(value.getMonth() + (Number(months) || 0));
+    const lastDay = new Date(value.getFullYear(), value.getMonth() + 1, 0).getDate();
+    value.setDate(Math.min(day, lastDay));
+    return _iso(value);
+  }
+  function isoDayNumber(iso) {
+    const parts = String(iso || '').slice(0, 10).split('-').map(Number);
+    if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) return null;
+    return Math.floor(Date.UTC(parts[0], parts[1] - 1, parts[2]) / 86400000);
+  }
+  function overlapDaysISO(startA, endExclusiveA, startB, endExclusiveB) {
+    const a1 = isoDayNumber(startA);
+    const a2 = isoDayNumber(endExclusiveA);
+    const b1 = isoDayNumber(startB);
+    const b2 = isoDayNumber(endExclusiveB);
+    if ([a1, a2, b1, b2].some(v => v == null)) return 0;
+    return Math.max(0, Math.min(a2, b2) - Math.max(a1, b1));
+  }
   function daysBetweenISO(fromISO, toISO = todayISO()) {
     const from = parseISODate(fromISO);
     const to = parseISODate(toISO);
@@ -600,6 +623,9 @@
         createdAt: new Date().toISOString()  // точное время добавления — для «Пульса кэша»
       }, rec);
       if (!item.createdAt) item.createdAt = new Date().toISOString();
+      if (item.costScope === 'account_software' && (item.personal || item.category !== 'Софт')) {
+        delete item.costScope;
+      }
       this.state.expenses.push(item);
       this.save();
       return item;
@@ -607,7 +633,11 @@
     updateExpense(id, patch) {
       const i = this.state.expenses.findIndex(x => x.id === id);
       if (i < 0) return;
-      this.state.expenses[i] = Object.assign({}, this.state.expenses[i], patch);
+      const next = Object.assign({}, this.state.expenses[i], patch);
+      if (next.costScope === 'account_software' && (next.personal || next.category !== 'Софт')) {
+        delete next.costScope;
+      }
+      this.state.expenses[i] = next;
       this.save();
     },
     deleteExpense(id) {
@@ -965,10 +995,12 @@
         code: '',
         city: '',
         mentorIds: [],
-        createdAt: todayISO()
+        createdAt: todayISO(),
+        softwareStartedAt: todayISO()
       }, rec);
       item.code = String(item.code || '').trim();
       if (!item.city) item.city = cityFromCode(item.code);
+      if (!item.softwareStartedAt) item.softwareStartedAt = item.createdAt || todayISO();
       this.state.profiles.push(item);
       const defaultCloudPassword = this.getDefaultCloudPassword();
       if (defaultCloudPassword) {
@@ -987,6 +1019,126 @@
       this.state.profiles[i] = Object.assign({}, this.state.profiles[i], patch);
       this.save();
     },
+    updateProfileOrArchived(id, patch) {
+      const liveIndex = (this.state.profiles || []).findIndex(x => x.id === id);
+      if (liveIndex >= 0) {
+        this.state.profiles[liveIndex] = Object.assign({}, this.state.profiles[liveIndex], patch);
+        this.save();
+        return this.state.profiles[liveIndex];
+      }
+      const archivedIndex = (this.state.archivedProfiles || []).findIndex(x => x.id === id);
+      if (archivedIndex < 0) return null;
+      this.state.archivedProfiles[archivedIndex] = Object.assign(
+        {},
+        this.state.archivedProfiles[archivedIndex],
+        patch
+      );
+      this.save();
+      return this.state.archivedProfiles[archivedIndex];
+    },
+
+    /** Платежи за софт, в котором хранятся аккаунты. Один платёж покрывает
+     *  период от своей даты до следующего отмеченного платежа, но не дольше
+     *  одного календарного месяца. Несколько платежей в один день суммируются. */
+    accountSoftwareCycles() {
+      const grouped = new Map();
+      (this.state.expenses || []).forEach(expense => {
+        if (!expense || expense.personal || expense.costScope !== 'account_software') return;
+        const start = String(expense.date || '').slice(0, 10);
+        const amount = Number(expense.amount) || 0;
+        if (!parseISODate(start) || amount <= 0) return;
+        const current = grouped.get(start) || { start, amount: 0, expenseIds: [] };
+        current.amount += amount;
+        if (expense.id) current.expenseIds.push(expense.id);
+        grouped.set(start, current);
+      });
+
+      const rows = [...grouped.values()].sort((a, b) => a.start.localeCompare(b.start));
+      return rows.map((row, index) => {
+        const nominalEnd = addMonthsISO(row.start, 1);
+        const nextStart = rows[index + 1] ? rows[index + 1].start : '';
+        const endExclusive = nextStart && nextStart < nominalEnd ? nextStart : nominalEnd;
+        return Object.assign({}, row, {
+          endExclusive,
+          end: addDaysISO(endExclusive, -1)
+        });
+      }).filter(row => row.endExclusive && row.endExclusive > row.start);
+    },
+
+    _profileSoftwareRange(profile) {
+      if (!profile) return null;
+      const start = String(profile.softwareStartedAt || profile.createdAt || '').slice(0, 10);
+      if (!parseISODate(start)) return null;
+      const rawEnd = profile.softwareEndedAt || profile.deletedAt || '';
+      const end = parseISODate(rawEnd) ? String(rawEnd).slice(0, 10) : '';
+      return {
+        start,
+        end,
+        endExclusive: end ? addDaysISO(end, 1) : '9999-12-31'
+      };
+    },
+
+    /** Распределяет каждый фактический платёж за софт по account-days.
+     *  Так новый аккаунт посреди цикла получает только свою долю, а сумма
+     *  распределений по всем аккаунтам ровно равна реальному платежу. */
+    accountSoftwareCost(profileId) {
+      const found = this.getProfileOrArchived(profileId);
+      const profile = found ? found.profile : null;
+      const range = this._profileSoftwareRange(profile);
+      if (!profile || !range) return null;
+
+      const uniqueProfiles = new Map();
+      (this.state.archivedProfiles || []).forEach(item => item && item.id && uniqueProfiles.set(item.id, item));
+      // При редком конфликте archive-vs-edit один id может временно оказаться
+      // в обоих массивах. Активная карточка приоритетнее и считается один раз.
+      (this.state.profiles || []).forEach(item => item && item.id && uniqueProfiles.set(item.id, item));
+      const pool = [...uniqueProfiles.values()]
+        .map(item => ({ profile: item, range: this._profileSoftwareRange(item) }))
+        .filter(item => item.range);
+
+      const breakdown = this.accountSoftwareCycles().map(cycle => {
+        const totalAccountDays = pool.reduce((sum, item) => sum + overlapDaysISO(
+          item.range.start,
+          item.range.endExclusive,
+          cycle.start,
+          cycle.endExclusive
+        ), 0);
+        const accountDays = overlapDaysISO(
+          range.start,
+          range.endExclusive,
+          cycle.start,
+          cycle.endExclusive
+        );
+        const allocated = totalAccountDays > 0
+          ? cycle.amount * accountDays / totalAccountDays
+          : 0;
+        return Object.assign({}, cycle, { totalAccountDays, accountDays, allocated });
+      }).filter(row => row.accountDays > 0);
+
+      const effectiveEnd = range.end || todayISO();
+      const startDay = isoDayNumber(range.start);
+      const endDay = isoDayNumber(effectiveEnd);
+      const daysInSoftware = startDay == null || endDay == null
+        ? 0
+        : Math.max(0, endDay - startDay + 1);
+      const softwareCost = breakdown.reduce((sum, row) => sum + row.allocated, 0);
+      const phoneCost = (this.state.expenses || [])
+        .filter(item => item && item.source === 'account_phone_auto' && item.profileId === profileId)
+        .reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+
+      return {
+        profileId,
+        start: range.start,
+        end: range.end,
+        daysInSoftware,
+        paidPeriods: breakdown.length,
+        paidThrough: breakdown.length ? breakdown[breakdown.length - 1].end : '',
+        softwareCost,
+        phoneCost,
+        trackedCost: softwareCost + phoneCost,
+        breakdown
+      };
+    },
     /**
      * Удаление аккаунта НЕ безвозвратно: мы архивируем снимок профиля, чтобы
      * сохранить память о:
@@ -1004,11 +1156,13 @@
     deleteProfile(id) {
       const profile = this.state.profiles.find(x => x.id === id);
       if (!profile) return;
+      const archivedAt = todayISO();
       this.state.archivedProfiles = this.state.archivedProfiles || [];
       // Защита от повторной архивации одного и того же id
       if (!this.state.archivedProfiles.some(a => a.id === id)) {
         this.state.archivedProfiles.push(Object.assign({}, profile, {
-          deletedAt: todayISO(),
+          deletedAt: archivedAt,
+          softwareEndedAt: archivedAt,
           archived: true
         }));
       }
@@ -2265,7 +2419,7 @@
   window.App = {
     Store, Modal, Counter, toast,
     fmtMoney, fmtDate, monthKey, monthLabel,
-    uid, todayISO, tomorrowISO, addDaysISO, daysBetweenISO, deriveStatusAction,
+    uid, todayISO, tomorrowISO, addDaysISO, addMonthsISO, daysBetweenISO, deriveStatusAction,
     SERVICES, EXPENSE_CATEGORIES, PERSONAL_CATEGORIES, PHONE_EXPENSE_AMOUNT, TARIFFS, TARIFF_NAMES,
     PROFILE_STATUSES, PERFORMERS, CITIES, cityFromCode,
     STATUS_SELECT, STATUS_CHOSEN, STATUS_READY

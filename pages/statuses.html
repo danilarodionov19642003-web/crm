@@ -30,6 +30,34 @@
     .acc-card__actions { display: flex; gap: 4px; }
     .acc-card__owner { font-size: 12px; color: var(--text-dim); }
     .acc-card__owner b { color: var(--text); font-weight: 600; }
+    .acc-cost {
+      display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px;
+      width: 100%; padding: 8px 0;
+      border: 0; border-top: 1px dashed var(--border); border-bottom: 1px dashed var(--border);
+      background: transparent; color: inherit; text-align: left; cursor: pointer;
+    }
+    .acc-cost:hover .acc-cost__value { color: var(--accent); }
+    .acc-cost__label { display:block; font-size:10px; color:var(--text-mute); text-transform:uppercase; }
+    .acc-cost__value { display:block; margin-top:2px; font-size:12px; font-weight:650; font-variant-numeric:tabular-nums; }
+    .cost-kpis { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin-bottom:16px; }
+    .cost-kpi { padding:10px 0; border-bottom:1px solid var(--border); }
+    .cost-kpi span { display:block; font-size:10px; color:var(--text-mute); text-transform:uppercase; }
+    .cost-kpi strong { display:block; margin-top:3px; font-size:17px; font-variant-numeric:tabular-nums; }
+    .cost-breakdown { display:flex; flex-direction:column; }
+    .cost-breakdown__row {
+      display:grid; grid-template-columns:1.25fr .8fr .75fr .8fr; gap:8px;
+      align-items:center; padding:8px 0; border-top:1px dashed var(--border); font-size:12px;
+    }
+    .cost-breakdown__row:first-child { border-top:0; }
+    .cost-breakdown__row--head { color:var(--text-mute); font-size:10px; text-transform:uppercase; }
+    @media (max-width: 520px) {
+      .acc-grid { grid-template-columns: minmax(0, 1fr); }
+      .acc-cost { grid-template-columns:repeat(2,minmax(0,1fr)); }
+      .acc-cost > span:last-child { grid-column:1/-1; }
+      .cost-kpis { grid-template-columns:1fr; gap:0; }
+      .cost-breakdown__row { grid-template-columns:1fr .7fr .7fr; }
+      .cost-breakdown__row > span:nth-child(3) { display:none; }
+    }
 
     /* Индикаторы заполненности регистрационных полей.
        Зелёный = заполнено, серый = пусто. Маленькие иконки в строку. */
@@ -496,6 +524,31 @@
       </div>
     </div>
   </div>
+
+  <!-- Модалка: стоимость содержания аккаунта -->
+  <div class="modal-backdrop" id="costModal">
+    <div class="modal" style="max-width:660px">
+      <div class="modal__header"><h3 id="costTitle">Содержание аккаунта</h3>
+        <button class="btn--icon" data-close><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+      </div>
+      <div class="modal__body">
+        <div class="cost-kpis" id="costKpis"></div>
+        <div class="field-row">
+          <div class="field"><label for="costStartedAt">В софте с</label><input type="date" id="costStartedAt" class="input"/></div>
+          <div class="field" id="costEndedWrap"><label for="costEndedAt">В софте до</label><input type="date" id="costEndedAt" class="input"/></div>
+        </div>
+        <div style="font-size:11px;color:var(--text-mute);margin:6px 0 16px">
+          Оплаты распределяются по дням присутствия аккаунта. Архивация окончательно останавливает начисление.
+        </div>
+        <div style="font-size:11px;text-transform:uppercase;color:var(--text-mute);margin-bottom:6px">Платёжные периоды</div>
+        <div class="cost-breakdown" id="costBreakdown"></div>
+      </div>
+      <div class="modal__footer">
+        <button class="btn btn--ghost" data-close>Закрыть</button>
+        <button class="btn btn--primary" id="costSave">Сохранить даты</button>
+      </div>
+    </div>
+  </div>
   <style>
     .reg-modal {
       max-width: 640px;
@@ -520,7 +573,7 @@
   </style>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260726b"></script>
+  <script src="../js/app.js?v=20260730a"></script>
   <script src="../js/supabase-client.js?v=20260726b"></script>
   <script src="../js/auth-gate.js?v=20260726a"></script>
   <script src="../js/cloud-sync.js?v=20260726b"></script>
@@ -533,7 +586,7 @@
   <script>
   document.addEventListener('DOMContentLoaded', () => {
     const {
-      Store, Modal, toast, fmtDate, todayISO, addDaysISO, deriveStatusAction,
+      Store, Modal, toast, fmtMoney, fmtDate, todayISO, addDaysISO, deriveStatusAction,
       PROFILE_STATUSES, PERFORMERS, cityFromCode,
       STATUS_SELECT, STATUS_CHOSEN
     } = window.App;
@@ -660,7 +713,7 @@
       });
       const archMode = filters.mode === 'arch';
       document.getElementById('archHint').textContent = archMode
-        ? '📦 Архив. Здесь хранятся удалённые аккаунты — данные сохранены для аналитики и истории. Можно восстановить или удалить навсегда.'
+        ? '📦 Архив. Начисление содержания остановлено датой архивации. Данные сохранены для аналитики и истории.'
         : '';
 
       const source = archMode ? arch : live;
@@ -783,12 +836,13 @@
         let headActions = '';
         if (archMode && isOwner) {
           headActions = `
-              <button class="btn btn--ghost btn--sm" data-act="restore" data-pid="${p.id}" title="Восстановить аккаунт">↩ Восстановить</button>
+              <button class="btn--icon" data-act="cost" data-pid="${p.id}" title="Содержание аккаунта">₽</button>
               <button class="btn--icon" data-act="purge" data-pid="${p.id}" title="Удалить навсегда (без отката)">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
               </button>`;
         } else if (!archMode && isOwner) {
           headActions = `
+              <button class="btn--icon" data-act="cost" data-pid="${p.id}" title="Содержание аккаунта">₽</button>
               <button class="btn btn--ghost btn--sm" data-act="reg" data-pid="${p.id}" title="Регистрация">🔐</button>
               <button class="btn btn--ghost btn--sm" data-act="addmen" data-pid="${p.id}" title="Добавить клиента">＋</button>
               <button class="btn--icon" data-act="archive" data-pid="${p.id}" title="Отправить в архив">
@@ -799,6 +853,13 @@
         const archMeta = archMode && p.deletedAt
           ? `<div class="arch-meta">📦 в архиве с ${escapeHtml(fmtDate(p.deletedAt))}</div>`
           : '';
+        const accountCost = isOwner ? Store.accountSoftwareCost(p.id) : null;
+        const costSummary = accountCost ? `
+          <button type="button" class="acc-cost" data-act="cost" data-pid="${p.id}" title="Открыть расчёт содержания">
+            <span><span class="acc-cost__label">В софте</span><span class="acc-cost__value">${accountCost.daysInSoftware} дн. · с ${escapeHtml(shortDate(accountCost.start))}</span></span>
+            <span><span class="acc-cost__label">Оплачено</span><span class="acc-cost__value">${accountCost.paidPeriods ? `${accountCost.paidPeriods} пер. · до ${escapeHtml(shortDate(accountCost.paidThrough))}` : 'нет периодов'}</span></span>
+            <span><span class="acc-cost__label">Содержание</span><span class="acc-cost__value">${escapeHtml(fmtMoney(accountCost.softwareCost))}</span></span>
+          </button>` : '';
 
         // ---- Inline IP-блок ----
         // Все IP-логи этого аккаунта (новые сверху). Для каждого считаем,
@@ -885,6 +946,7 @@
               </div>
             </div>
             ${ownerLine}
+            ${costSummary}
             ${regBadges}
             ${archMeta}
             ${innerBody}
@@ -894,11 +956,12 @@
       }).join('');
 
       // привязка кликов: активный режим
+      grid.querySelectorAll('[data-act="cost"]').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); openCost(b.dataset.pid); }));
       grid.querySelectorAll('[data-act="reg"]').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); openReg(b.dataset.pid); }));
       grid.querySelectorAll('[data-act="addmen"]').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); openAddMentor(b.dataset.pid); }));
       grid.querySelectorAll('[data-act="archive"]').forEach(b => b.addEventListener('click', e => {
         e.stopPropagation();
-        if (!confirmDelete('Отправить аккаунт в архив? Данные сохранятся (история, IP, номера) — можно будет восстановить из вкладки «Архив».')) return;
+        if (!confirmDelete('Отправить аккаунт в архив окончательно? Начисление содержания остановится сегодняшней датой. История, IP и номера сохранятся.')) return;
         const pid = b.dataset.pid;
         // accountReg сейчас НЕ удаляем — это часть данных, которые имеет смысл
         // сохранить в архиве (имя владельца, пароли). При окончательном удалении
@@ -908,13 +971,6 @@
         renderAll();
       }));
       // привязка кликов: архивный режим
-      grid.querySelectorAll('[data-act="restore"]').forEach(b => b.addEventListener('click', e => {
-        e.stopPropagation();
-        if (!confirm('Восстановить аккаунт из архива? Он снова появится в активных.')) return;
-        Store.restoreProfile(b.dataset.pid);
-        toast('Аккаунт восстановлен');
-        renderAll();
-      }));
       grid.querySelectorAll('[data-act="purge"]').forEach(b => b.addEventListener('click', e => {
         e.stopPropagation();
         const txt = 'УДАЛИТЬ НАВСЕГДА?\n\nЭто окончательное удаление. Регистрация (логины/пароли), статусы клиентов и привязки номеров к этому аккаунту исчезнут. Сами номера в разделе «Номера» останутся, но без привязки к аккаунту. История IP сохранится.\n\nОтменить нельзя.';
@@ -1388,6 +1444,67 @@
       if (window.ReviewsSync && window.ReviewsSync.recompute) window.ReviewsSync.recompute();
       Modal.close('chgStatusModal');
       toast('Клиент отвязан');
+      renderAll();
+    });
+
+    /* --- Содержание аккаунта --- */
+    let costPid = null;
+
+    function renderCostModal(profileId) {
+      const found = Store.getProfileOrArchived(profileId);
+      const cost = Store.accountSoftwareCost(profileId);
+      if (!found || !cost) return false;
+      const p = found.profile;
+      document.getElementById('costTitle').textContent = `Содержание · аккаунт ${p.code || '—'}`;
+      document.getElementById('costStartedAt').value = cost.start || '';
+      document.getElementById('costEndedAt').value = cost.end || '';
+      document.getElementById('costEndedWrap').style.display = found.archived ? '' : 'none';
+      document.getElementById('costKpis').innerHTML = `
+        <div class="cost-kpi"><span>В софте</span><strong>${cost.daysInSoftware} дн.</strong></div>
+        <div class="cost-kpi"><span>Оплачено</span><strong>${cost.paidPeriods} пер.</strong></div>
+        <div class="cost-kpi"><span>Содержание</span><strong style="color:var(--accent)">${escapeHtml(fmtMoney(cost.softwareCost))}</strong></div>`;
+
+      const rows = cost.breakdown.map(row => `
+        <div class="cost-breakdown__row">
+          <span>${escapeHtml(fmtDate(row.start))} — ${escapeHtml(fmtDate(row.end))}</span>
+          <span>${escapeHtml(fmtMoney(row.amount))}</span>
+          <span>${row.accountDays} дн.</span>
+          <span><strong>${escapeHtml(fmtMoney(row.allocated))}</strong></span>
+        </div>`).join('');
+      document.getElementById('costBreakdown').innerHTML = cost.breakdown.length ? `
+        <div class="cost-breakdown__row cost-breakdown__row--head">
+          <span>Период</span><span>Платёж</span><span>Дней</span><span>Доля</span>
+        </div>
+        ${rows}
+        <div style="display:flex;justify-content:space-between;gap:12px;padding-top:10px;border-top:1px solid var(--border);font-size:12px">
+          <span>Номер: <strong>${escapeHtml(fmtMoney(cost.phoneCost))}</strong></span>
+          <span>Софт + номер: <strong>${escapeHtml(fmtMoney(cost.trackedCost))}</strong></span>
+        </div>`
+        : `<div style="padding:14px 0;color:var(--text-mute);font-size:12px">Нет отмеченных оплат софта. В разделе «Финансы» включите флаг «софт» у нужного расхода.</div>`;
+      return true;
+    }
+
+    function openCost(profileId) {
+      if (!isOwner) { toast('Доступно только владельцу', 'error'); return; }
+      costPid = profileId;
+      if (!renderCostModal(profileId)) return;
+      Modal.open('costModal');
+    }
+
+    document.getElementById('costSave').addEventListener('click', () => {
+      if (!costPid) return;
+      const found = Store.getProfileOrArchived(costPid);
+      if (!found) return;
+      const start = document.getElementById('costStartedAt').value;
+      const end = document.getElementById('costEndedAt').value;
+      if (!start) { toast('Укажите дату добавления в софт', 'error'); return; }
+      if (found.archived && !end) { toast('Укажите дату удаления из софта', 'error'); return; }
+      if (found.archived && end < start) { toast('Дата удаления не может быть раньше даты добавления', 'error'); return; }
+      const patch = { softwareStartedAt: start };
+      if (found.archived) patch.softwareEndedAt = end;
+      Store.updateProfileOrArchived(costPid, patch);
+      Modal.close('costModal');
+      toast('Даты содержания обновлены');
       renderAll();
     });
 
