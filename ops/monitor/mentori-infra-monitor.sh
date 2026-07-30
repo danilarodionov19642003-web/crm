@@ -55,14 +55,16 @@ fi
 
 for service in mentori-db-backup.timer mentori-backup-telegram.timer \
   mentori-tg-bot.service mentori-tg-notifier.service \
-  mentori-receipts-telegram.timer; do
+  mentori-receipts-telegram.timer mentori-finance-events.timer \
+  mentori-finance-balance.timer; do
   if ! systemctl is-active --quiet "$service"; then
     add_problem "service_${service}" "🔴 Сервис не активен: ${service}"
   fi
 done
 
 for job in mentori-db-backup.service mentori-backup-telegram.service \
-  mentori-receipts-telegram.service; do
+  mentori-receipts-telegram.service mentori-finance-events.service \
+  mentori-finance-balance.service; do
   if systemctl is-failed --quiet "$job"; then
     add_problem "failed_${job}" "⛔ Задание завершилось ошибкой: ${job}"
   fi

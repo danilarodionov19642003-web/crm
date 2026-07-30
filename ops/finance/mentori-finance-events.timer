@@ -1,0 +1,12 @@
+[Unit]
+Description=Check Mentori CRM finances every minute
+
+[Timer]
+OnBootSec=1m
+OnUnitActiveSec=1m
+AccuracySec=10s
+Persistent=true
+Unit=mentori-finance-events.service
+
+[Install]
+WantedBy=timers.target

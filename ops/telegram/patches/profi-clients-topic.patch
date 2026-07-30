@@ -1,0 +1,48 @@
+--- a/backend/config.py
++++ b/backend/config.py
+@@ -86,0 +87,4 @@
++    # Форум-тема внутреннего чата для общего утреннего плана. Если не заданы,
++    # дайджест остаётся в личном чате владельца.
++    profi_clients_chat_id: int = 0
++    profi_clients_thread_id: int = 0
+--- a/backend/schedule_reminder.py
++++ b/backend/schedule_reminder.py
+@@ -198 +198,6 @@
+-async def _send_digest_chunks(bot: Bot, chat_id: int, text: str) -> None:
++async def _send_digest_chunks(
++    bot: Bot,
++    chat_id: int,
++    text: str,
++    message_thread_id: int | None = None,
++) -> None:
+@@ -200 +205,2 @@
+-        await bot.send_message(chat_id, chunk)
++        kwargs = {"message_thread_id": message_thread_id} if message_thread_id else {}
++        await bot.send_message(chat_id, chunk, **kwargs)
+@@ -209,0 +216 @@
++    message_thread_id: int | None = None,
+@@ -247 +254 @@
+-        await _send_digest_chunks(bot, owner_chat_id, text)
++        await _send_digest_chunks(bot, owner_chat_id, text, message_thread_id)
+@@ -952 +959,3 @@
+-                          manager_chats: dict[str, int] | None = None) -> tuple[int, int]:
++                          manager_chats: dict[str, int] | None = None,
++                          owner_thread_id: int | None = None,
++                          manager_skip_chat_id: int | None = None) -> tuple[int, int]:
+@@ -965 +974 @@
+-        status_due, status_tomorrow,
++        status_due, status_tomorrow, owner_thread_id,
+@@ -968 +977,2 @@
+-        if chat_id and chat_id != owner_chat_id:
++        skip_chat_id = manager_skip_chat_id or owner_chat_id
++        if chat_id and chat_id != skip_chat_id:
+@@ -1004,0 +1015,2 @@
++                    digest_chat_id = settings.profi_clients_chat_id or owner_id
++                    digest_thread_id = settings.profi_clients_thread_id or None
+@@ -1006 +1018,5 @@
+-                        bot, owner_id, manager_chats=manager_chats
++                        bot,
++                        digest_chat_id,
++                        manager_chats=manager_chats,
++                        owner_thread_id=digest_thread_id,
++                        manager_skip_chat_id=owner_id,

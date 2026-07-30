@@ -1,0 +1,11 @@
+[Unit]
+Description=Send the Mentori CRM balance every day at 23:00 Moscow time
+
+[Timer]
+OnCalendar=*-*-* 23:00:00 Europe/Moscow
+AccuracySec=10s
+Persistent=true
+Unit=mentori-finance-balance.service
+
+[Install]
+WantedBy=timers.target
