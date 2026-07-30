@@ -2260,11 +2260,15 @@
         profiEmail: '', cloudPassword: defaultCloudPassword, recoveryEmail: '',
         avitoPhone: '', avitoEmail: '', avitoPassword: '',
         twoGis: '', lat: '', lon: '', notes: '',
+        phoneAddedAt: '',
         createdAt: todayISO(), updatedAt: todayISO()
       }, patch);
       if (!String(rec.cloudPassword || '').trim()) rec.cloudPassword = defaultCloudPassword;
       rec.phone = this._normalizePhone(rec.phone);
       rec.avitoPhone = this._normalizePhone(rec.avitoPhone);
+      if (/^\d{11}$/.test(rec.phone) && !rec.phoneAddedAt) {
+        rec.phoneAddedAt = rec.createdAt || new Date().toISOString();
+      }
       return rec;
     },
     /** Создать или обновить регистрацию по profileId.
@@ -2286,6 +2290,11 @@
       // Авто-привязка номеров к разделу «Номера»
       const finalReg = (this.state.accountRegs || []).find(r => r.profileId === profileId);
       if (finalReg) {
+        if (!/^\d{11}$/.test(previousPhone)
+            && /^\d{11}$/.test(this._normalizePhone(finalReg.phone))
+            && !finalReg.phoneAddedAt) {
+          finalReg.phoneAddedAt = new Date().toISOString();
+        }
         this._ensurePhoneRecord(finalReg.phone,      profileId, { ownerName: finalReg.ownerName, city: finalReg.city, section: 'phone' });
         this._ensurePhoneRecord(finalReg.avitoPhone, profileId, { ownerName: finalReg.ownerName, city: finalReg.city, section: '🟢 Авито' });
       }
@@ -2296,6 +2305,27 @@
       );
       this.save();
       return { registration: finalReg, phoneExpense };
+    },
+
+    /** Дата первой покупки номера: точная дата телефона, иначе дата аккаунта. */
+    _accountPhoneExpenseDate(profileId, rawNumber) {
+      const number = this._normalizePhone(rawNumber);
+      const profile = (this.state.profiles || []).find(p => p.id === profileId)
+        || (this.state.archivedProfiles || []).find(p => p.id === profileId);
+      const reg = (this.state.accountRegs || []).find(r => r.profileId === profileId);
+      const phoneDates = (this.state.phones || [])
+        .filter(row => row && row.profileId === profileId
+          && (!number || this._normalizePhone(row.number) === number))
+        .map(row => String(row.createdAt || row.date || '').slice(0, 10))
+        .filter(parseISODate)
+        .sort();
+      const candidates = [
+        String(reg && reg.phoneAddedAt || '').slice(0, 10),
+        phoneDates[0] || '',
+        String(profile && profile.createdAt || '').slice(0, 10),
+        String(reg && reg.createdAt || '').slice(0, 10)
+      ];
+      return candidates.find(parseISODate) || todayISO();
     },
 
     /** Одна карточка аккаунта = максимум один бизнес-расход 99 ₽.
@@ -2326,15 +2356,11 @@
         return null;
       }
 
-      const numberAlreadyCharged = expenses.some(item => item
-        && item.source === 'account_phone_auto'
-        && this._normalizePhone(item.phoneNumber) === number);
-      if (numberAlreadyCharged) return null;
-
       const safeProfileId = String(profileId || '').replace(/[^a-zA-Z0-9_-]/g, '');
+      const expenseDate = this._accountPhoneExpenseDate(profileId, number);
       const item = {
         id: `phone-cost-account-${safeProfileId || uid()}`,
-        date: todayISO(),
+        date: expenseDate,
         category: 'Реклама - Номера',
         amount: PHONE_EXPENSE_AMOUNT,
         comment,
@@ -2342,10 +2368,122 @@
         source: 'account_phone_auto',
         phoneNumber: number,
         profileId,
-        createdAt: new Date().toISOString()
+        createdAt: `${expenseDate}T12:00:00.000Z`
       };
       expenses.push(item);
       return item;
+    },
+
+    /** Перестраивает исторические расходы: ровно 99 ₽ на каждую карточку.
+     *  Непривязанные ручные строки удаляются, активные и архивные аккаунты
+     *  учитываются одинаково. Повторный запуск не меняет результат. */
+    reconcileAccountPhoneExpenses({ save = true } = {}) {
+      const profiles = new Map();
+      (this.state.archivedProfiles || []).forEach(profile => {
+        if (profile && profile.id) profiles.set(profile.id, profile);
+      });
+      (this.state.profiles || []).forEach(profile => {
+        if (profile && profile.id) profiles.set(profile.id, profile);
+      });
+
+      const oldExpenses = this.state.expenses || [];
+      const oldNumberExpenses = oldExpenses.filter(item => item
+        && !item.personal
+        && item.category === 'Реклама - Номера');
+      const existingByProfile = new Map();
+      oldNumberExpenses.forEach(item => {
+        if (!item.profileId) return;
+        const current = existingByProfile.get(item.profileId);
+        if (!current || (item.source === 'account_phone_auto' && current.source !== 'account_phone_auto')) {
+          existingByProfile.set(item.profileId, item);
+        }
+      });
+
+      const regs = new Map((this.state.accountRegs || [])
+        .filter(row => row && row.profileId)
+        .map(row => [row.profileId, row]));
+      const phonesByProfile = new Map();
+      (this.state.phones || []).forEach(row => {
+        if (!row || !row.profileId || !/^\d{11}$/.test(this._normalizePhone(row.number))) return;
+        const list = phonesByProfile.get(row.profileId) || [];
+        list.push(row);
+        phonesByProfile.set(row.profileId, list);
+      });
+
+      let withoutRecordedPhone = 0;
+      let exactPhoneDates = 0;
+      let profileFallbackDates = 0;
+      const rebuilt = [];
+      const byMonth = {};
+
+      profiles.forEach((profile, profileId) => {
+        const reg = regs.get(profileId) || null;
+        const linkedPhones = phonesByProfile.get(profileId) || [];
+        let number = this._normalizePhone(reg && reg.phone);
+        if (!/^\d{11}$/.test(number)) {
+          const preferred = linkedPhones.find(row => String(row.section || '').toLowerCase() === 'phone')
+            || linkedPhones.find(row => !String(row.section || '').toLowerCase().includes('авито'));
+          number = preferred ? this._normalizePhone(preferred.number) : '';
+        }
+        if (!/^\d{11}$/.test(number)) {
+          number = '';
+          withoutRecordedPhone += 1;
+        }
+
+        const exactDates = [
+          String(reg && reg.phoneAddedAt || '').slice(0, 10),
+          ...linkedPhones
+            .filter(row => !number || this._normalizePhone(row.number) === number)
+            .map(row => String(row.createdAt || row.date || '').slice(0, 10))
+        ].filter(parseISODate).sort();
+        const profileDate = String(profile.createdAt || '').slice(0, 10);
+        const regDate = String(reg && reg.createdAt || '').slice(0, 10);
+        const date = exactDates[0]
+          || (parseISODate(profileDate) ? profileDate : '')
+          || (parseISODate(regDate) ? regDate : '')
+          || todayISO();
+        if (exactDates.length) exactPhoneDates += 1;
+        else profileFallbackDates += 1;
+        if (reg && number && !reg.phoneAddedAt) reg.phoneAddedAt = `${date}T12:00:00.000Z`;
+
+        const existing = existingByProfile.get(profileId) || {};
+        const safeProfileId = String(profileId).replace(/[^a-zA-Z0-9_-]/g, '');
+        const profileCode = String(profile.code || '').trim();
+        const comment = number
+          ? `Номер ${number}${profileCode ? ` · аккаунт ${profileCode}` : ''}`
+          : `Номер аккаунта${profileCode ? ` ${profileCode}` : ''}`;
+        rebuilt.push({
+          id: existing.id || `phone-cost-account-${safeProfileId || uid()}`,
+          date,
+          category: 'Реклама - Номера',
+          amount: PHONE_EXPENSE_AMOUNT,
+          comment,
+          personal: false,
+          source: 'account_phone_auto',
+          phoneNumber: number,
+          profileId,
+          createdAt: `${date}T12:00:00.000Z`
+        });
+        const month = date.slice(0, 7);
+        byMonth[month] = (byMonth[month] || 0) + PHONE_EXPENSE_AMOUNT;
+      });
+
+      const unlinked = oldNumberExpenses.filter(item => !item.profileId);
+      const untouched = oldExpenses.filter(item => item
+        && (item.personal || item.category !== 'Реклама - Номера'));
+      this.state.expenses = untouched.concat(rebuilt);
+      if (save) this.save();
+      return {
+        profiles: profiles.size,
+        expenses: rebuilt.length,
+        total: rebuilt.length * PHONE_EXPENSE_AMOUNT,
+        removedUnlinked: unlinked.length,
+        removedUnlinkedTotal: unlinked.reduce((sum, item) => sum + (Number(item.amount) || 0), 0),
+        exactPhoneDates,
+        profileFallbackDates,
+        withoutRecordedPhone,
+        byMonth
+      };
     },
 
     /** Создать запись в state.phones, если для пары (number, profileId) её ещё нет.

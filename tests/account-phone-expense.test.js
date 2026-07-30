@@ -83,8 +83,8 @@ assert.equal(result.phoneExpense, null, 'повторное сохранение
 assert.equal(Store.state.expenses.length, 1);
 
 result = Store.upsertAccountReg('profile-2', { phone: '89991112233' });
-assert.equal(result.phoneExpense, null, 'повторное использование того же номера не является новой покупкой');
-assert.equal(Store.state.expenses.length, 1);
+assert.ok(result.phoneExpense, 'каждая карточка аккаунта должна получить собственный расход');
+assert.equal(Store.state.expenses.length, 2);
 
 Store.state.expenses.push({
   ...Store.state.expenses[0],
@@ -92,17 +92,17 @@ Store.state.expenses.push({
 });
 result = Store.upsertAccountReg('profile-1', { phone: '89992223344' });
 assert.equal(result.phoneExpense, null, 'замена номера не должна создавать новый расход');
-assert.equal(Store.state.expenses.length, 1);
+assert.equal(Store.state.expenses.length, 2);
 assert.equal(Store.state.expenses[0].phoneNumber, '89992223344');
 assert.equal(Store.state.expenses[0].comment, 'Номер 89992223344 · аккаунт 2-1');
 
 result = Store.upsertAccountReg('profile-1', { phone: '', avitoPhone: '89993334455' });
 assert.equal(result.phoneExpense, null, 'номер Авито не должен создавать расход основного номера');
-assert.equal(Store.state.expenses.length, 1);
+assert.equal(Store.state.expenses.length, 2);
 
 result = Store.upsertAccountReg('profile-1', { phone: '12345' });
 assert.equal(result.phoneExpense, null, 'неполный номер не должен создавать расход');
-assert.equal(Store.state.expenses.length, 1);
+assert.equal(Store.state.expenses.length, 2);
 
 Store.state.archivedProfiles.push({ id: 'archived-profile', code: '9-9', archived: true });
 Store.state.accountRegs.push({
@@ -135,5 +135,65 @@ Store.state.profiles.push({ id: 'source-17-2', code: '17-2' });
 Store.state.accountRegs.push({ id: 'reg-17-2', profileId: 'source-17-2', cloudPassword: 'preferred-17-2-password' });
 assert.equal(Store.getDefaultCloudPassword(), 'preferred-17-2-password',
   'пароль аккаунта 17-2 должен иметь приоритет над самым частым');
+
+Store.state = {
+  profiles: [
+    { id: 'live', code: '3-1', createdAt: '2026-06-01' },
+    { id: 'linked-only', code: '3-2', createdAt: '2026-03-01' }
+  ],
+  archivedProfiles: [
+    { id: 'archived', code: '2-1', createdAt: '2026-05-01', archived: true },
+    { id: 'no-phone', code: '2-2', createdAt: '2026-04-01', archived: true }
+  ],
+  accountRegs: [
+    { id: 'reg-live', profileId: 'live', phone: '89990000001', createdAt: '2026-06-01' },
+    { id: 'reg-archived', profileId: 'archived', phone: '89990000002', createdAt: '2026-05-03' }
+  ],
+  phones: [
+    { id: 'phone-live', profileId: 'live', number: '89990000001', section: 'phone', createdAt: '2026-06-03' },
+    { id: 'phone-linked', profileId: 'linked-only', number: '89990000003', section: 'phone', createdAt: '2026-03-02' }
+  ],
+  expenses: [
+    { id: 'manual-1', date: '2026-01-01', category: 'Реклама - Номера', amount: 50, source: 'crm' },
+    { id: 'manual-2', date: '2026-02-01', category: 'Реклама - Номера', amount: 99, source: 'crm' },
+    { id: 'live-old', date: '2026-07-01', category: 'Реклама - Номера', amount: 100,
+      source: 'account_phone_auto', profileId: 'live', phoneNumber: '89990000001' },
+    { id: 'live-duplicate', date: '2026-07-02', category: 'Реклама - Номера', amount: 99,
+      source: 'account_phone_auto', profileId: 'live', phoneNumber: '89990000001' },
+    { id: 'other', date: '2026-02-01', category: 'Прочее', amount: 500 }
+  ]
+};
+
+const repair = Store.reconcileAccountPhoneExpenses({ save: false });
+assert.deepEqual(JSON.parse(JSON.stringify(repair)), {
+  profiles: 4,
+  expenses: 4,
+  total: 396,
+  removedUnlinked: 2,
+  removedUnlinkedTotal: 149,
+  exactPhoneDates: 2,
+  profileFallbackDates: 2,
+  withoutRecordedPhone: 1,
+  byMonth: {
+    '2026-05': 99,
+    '2026-04': 99,
+    '2026-06': 99,
+    '2026-03': 99
+  }
+});
+const repairedPhoneExpenses = Store.state.expenses.filter(row => row.category === 'Реклама - Номера');
+assert.equal(repairedPhoneExpenses.length, 4);
+assert.equal(repairedPhoneExpenses.reduce((sum, row) => sum + row.amount, 0), 396);
+assert.equal(Store.state.expenses.some(row => row.id === 'manual-1' || row.id === 'manual-2'), false);
+assert.equal(Store.state.expenses.some(row => row.id === 'other'), true);
+assert.equal(repairedPhoneExpenses.find(row => row.profileId === 'live').date, '2026-06-03');
+assert.equal(repairedPhoneExpenses.find(row => row.profileId === 'archived').date, '2026-05-01');
+assert.equal(repairedPhoneExpenses.find(row => row.profileId === 'linked-only').date, '2026-03-02');
+assert.equal(repairedPhoneExpenses.find(row => row.profileId === 'no-phone').date, '2026-04-01');
+assert.equal(repairedPhoneExpenses.find(row => row.profileId === 'no-phone').phoneNumber, '');
+
+const once = JSON.stringify(Store.state);
+Store.reconcileAccountPhoneExpenses({ save: false });
+assert.equal(JSON.stringify(Store.state), once, 'повторная реконструкция должна быть идемпотентной');
 
 console.log('account phone expense: OK');
