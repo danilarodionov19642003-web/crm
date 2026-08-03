@@ -73,7 +73,8 @@ const clientsHtml = fs.readFileSync(path.join(root, 'pages/clients.html'), 'utf8
 const statusesHtml = fs.readFileSync(path.join(root, 'pages/statuses.html'), 'utf8');
 assert.match(clientsHtml, /id="mCodeFeedback"/);
 assert.match(clientsHtml, /mCodeInput\.addEventListener\('input', validateNewClientCode\)/);
-assert.match(statusesHtml, /id="mnCodeFeedback"/);
-assert.match(statusesHtml, /mnCodeInput\.addEventListener\('input', validateNewMentorCode\)/);
+assert.doesNotMatch(statusesHtml, /id="btnNewMentor"/);
+assert.doesNotMatch(statusesHtml, /id="mnModal"/);
+assert.doesNotMatch(statusesHtml, /validateNewMentorCode/);
 
 console.log('client code uniqueness: OK');

@@ -1605,22 +1605,24 @@
         const onlinePayment = o.payment_provider === 'rollypay';
         const manualTransfer = o.payment_method === 'card_transfer';
         const onlinePaid = o.payment_status === 'paid';
-        const onlineActive = onlinePayment && ['initiating', 'created', 'processing'].includes(o.payment_status);
+        const onlineCanceled = ['canceled', 'cancelled'].includes(o.payment_status) || o.status === 'rejected';
         const canConfirm = o.status === 'new' && (
           (manualTransfer && !!o.receipt_url) ||
           (o.order_type !== 'multi_order' && (!onlinePayment || onlinePaid))
         );
-        const canReject = o.status === 'new' && !onlineActive && !onlinePaid;
+        const canReject = o.status === 'new' && !onlinePayment;
+        const canCancelOnline = o.status === 'new' && onlinePayment && !onlinePaid && !onlineCanceled;
         const canDelete = !onlinePayment && !(manualTransfer && o.status === 'confirmed');
         const paymentState = manualTransfer
           ? `<div style="font-size:12px;margin-top:4px;color:var(--text-mute)">🧾 Перевод по реквизитам${Number(o.discount_amount) > 0 ? ` · скидка ${Number(o.discount_amount).toLocaleString('ru-RU')} ₽` : ''}</div>`
           : onlinePayment
-          ? `<div style="font-size:12px;margin-top:4px;color:${onlinePaid ? 'var(--green)' : 'var(--text-mute)'}">${onlinePaid ? '✅ Онлайн-оплата получена' : '⏳ Ожидает онлайн-оплату'}</div>`
+          ? `<div style="font-size:12px;margin-top:4px;color:${onlinePaid ? 'var(--green)' : onlineCanceled ? 'var(--red)' : 'var(--text-mute)'}">${onlinePaid ? '✅ Онлайн-оплата получена' : onlineCanceled ? 'Отменена' : '⏳ Ожидает онлайн-оплату'}</div>`
           : '';
-        const actions = `<div style="display:flex;gap:8px;margin-top:10px">
+        const actions = `<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
             ${canConfirm ? `<button class="btn btn--primary btn--sm" data-confirm="${o.id}">✓ Подтвердить</button>` : ''}
             ${canReject ? `
             <button class="btn btn--ghost btn--sm" data-reject="${o.id}" style="color:var(--red)">Отклонить</button>` : ''}
+            ${canCancelOnline ? `<button class="btn btn--ghost btn--sm" data-cancel-online="${o.id}" style="color:var(--red)">Отменить</button>` : ''}
             ${canDelete ? `<button class="btn btn--ghost btn--sm" data-del="${o.id}" style="color:var(--text-mute);margin-left:auto" title="${o.status === 'confirmed' ? 'Отменить заказ и все начисления' : 'Удалить заявку'}">🗑</button>` : ''}
           </div>`;
         return `
@@ -1649,6 +1651,7 @@
       }).join('');
       wrap.querySelectorAll('[data-confirm]').forEach(b => b.addEventListener('click', () => confirmOrder(Number(b.dataset.confirm))));
       wrap.querySelectorAll('[data-reject]').forEach(b => b.addEventListener('click', () => rejectOrder(Number(b.dataset.reject))));
+      wrap.querySelectorAll('[data-cancel-online]').forEach(b => b.addEventListener('click', () => cancelOnlineOrder(Number(b.dataset.cancelOnline))));
       wrap.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => deleteOrder(Number(b.dataset.del))));
       wrap.querySelectorAll('[data-receipt-ref]').forEach(button => button.addEventListener('click', async () => {
         button.disabled = true;
@@ -1656,6 +1659,42 @@
         catch (_) { toast('Не удалось открыть чек', 'error'); }
         finally { button.disabled = false; }
       }));
+    }
+    const _cancelingOnlineOrders = new Set();
+    async function cancelOnlineOrder(id) {
+      if (_cancelingOnlineOrders.has(id)) return;
+      const order = _ordersCache.find(x => x.id === id);
+      if (!order || order.status !== 'new') return;
+      if (!confirm('Отменить эту неоплаченную заявку? Она не будет начислена. Старую ссылку оплаты после отмены использовать нельзя.')) return;
+      _cancelingOnlineOrders.add(id);
+      try {
+        const response = await fetch(`${PAYMENTS_API}/orders/cancel`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${_sbToken()}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ client_order_id: Number(id) })
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          toast(data.detail || 'Не удалось отменить заявку', 'error');
+          await refreshOrders();
+          renderOrdersList();
+          return;
+        }
+        order.status = 'rejected';
+        order.payment_status = 'canceled';
+        order.payment_url = null;
+        updateOrdersBadge();
+        renderOrdersList();
+        toast('Заявка отменена', 'success');
+      } catch (error) {
+        console.warn('[orders] online cancel failed', error);
+        toast('Не удалось отменить заявку', 'error');
+      } finally {
+        _cancelingOnlineOrders.delete(id);
+      }
     }
     const _deletingOrders = new Set();
     async function deleteOrder(id) {

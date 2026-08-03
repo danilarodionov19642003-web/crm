@@ -49,21 +49,12 @@
       flex: 1; height: 1px; background: linear-gradient(to right, var(--border), transparent);
     }
     .group-finance  .group-title__dot { background: #ff7a00; box-shadow: 0 0 0 4px rgba(255,122,0,0.15); }
-    .group-mailer   .group-title__dot { background: #3b82f6; box-shadow: 0 0 0 4px rgba(59,130,246,0.15); }
 
     /* Лёгкий цветной хайлайт фона для карточек каждой группы */
     .group-finance .cards--compact .card--compact {
       background: linear-gradient(180deg, rgba(255,122,0,0.04), rgba(255,122,0,0) 80%), var(--bg-elev);
       border-color: rgba(255,122,0,0.18);
     }
-    .group-mailer  .cards--compact .card--compact {
-      background: linear-gradient(180deg, rgba(59,130,246,0.05), rgba(59,130,246,0) 80%), var(--bg-elev);
-      border-color: rgba(59,130,246,0.18);
-    }
-
-    .accounts-row { display: flex; gap: 6px; flex-wrap: wrap; padding: 14px 18px 18px; }
-    .accounts-row .badge { font-size: 12px; padding: 6px 12px; border-radius: 999px; }
-
     @media (max-width: 1100px) {
       .cards--compact { grid-template-columns: repeat(3, 1fr); }
     }
@@ -139,47 +130,6 @@
           </div>
         </div>
 
-        <!-- ════════════════════════ РАССЫЛЬЩИК ════════════════════════════ -->
-        <div class="group-mailer">
-          <div class="group-title">
-            <span class="group-title__dot"></span>
-            📡 Telegram-рассыльщик
-            <span id="botStatsStatus" class="badge badge--gray" style="font-weight:400; text-transform:none; letter-spacing:normal">—</span>
-            <span class="group-title__line"></span>
-          </div>
-
-          <section class="cards cards--compact" id="botKpiCards">
-            <div class="card card--compact"><div class="card__label">…</div></div>
-          </section>
-
-          <div class="grid-2" style="grid-template-columns: 1fr 1fr">
-            <div class="panel">
-              <div class="panel__header">
-                <h3>Заявки из @MentoriTG_bot</h3>
-              </div>
-              <div class="table-wrap">
-                <table class="table">
-                  <thead>
-                    <tr>
-                      <th>Дата</th>
-                      <th>Имя</th>
-                      <th>Услуга</th>
-                      <th>Статус</th>
-                    </tr>
-                  </thead>
-                  <tbody id="botOrdersRows"></tbody>
-                </table>
-              </div>
-            </div>
-
-            <div class="panel">
-              <div class="panel__header">
-                <h3>Аккаунты рассыльщика</h3>
-              </div>
-              <div class="accounts-row" id="botAccountsBadges"></div>
-            </div>
-          </div>
-        </div>
       </main>
     </div>
   </div>
@@ -193,14 +143,13 @@
   <script src="../js/accounts-sync.js"></script>
   <script src="../js/reviews-sync.js?v=20260717a"></script>
   <script src="../js/schedule-apply.js?v=20260522b"></script>
-  <script src="../js/bot-stats.js"></script>
   <script src="../components/sidebar.js"></script>
   <script src="../components/header.js"></script>
   <script src="../components/table.js"></script>
 
   <script>
   /* ========================================================================
-     Compact-дашборд: финансы за месяц + рассыльщик + график + подписки.
+     Compact-дашборд: финансы за месяц + график + подписки.
      Никаких «всё время», «сотрудники», «последние доходы», «должники» —
      эти таблицы есть на своих страницах, главный экран не для них.
      ======================================================================== */

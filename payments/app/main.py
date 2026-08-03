@@ -66,6 +66,10 @@ class ManualConfirmBody(BaseModel):
     client_order_id: int = Field(gt=0)
 
 
+class CancelOrderBody(BaseModel):
+    client_order_id: int = Field(gt=0)
+
+
 def db() -> psycopg.Connection:
     return psycopg.connect(DATABASE_URL, row_factory=dict_row)
 
@@ -770,6 +774,60 @@ async def confirm_manual_transfer(
         }
 
 
+@app.post("/orders/cancel")
+async def cancel_online_order(
+    body: CancelOrderBody,
+    user: dict[str, Any] = Depends(current_user),
+):
+    if not is_owner(user):
+        raise HTTPException(status_code=403, detail="Отмена доступна только владельцу")
+
+    with db() as conn:
+        transactions = conn.execute(
+            """
+            select * from public.payment_transactions
+            where client_order_id=%s
+            order by id for update
+            """,
+            (body.client_order_id,),
+        ).fetchall()
+        order = conn.execute(
+            "select * from public.client_orders where id=%s for update",
+            (body.client_order_id,),
+        ).fetchone()
+        if not order:
+            raise HTTPException(status_code=404, detail="Заявка не найдена")
+        if order.get("payment_provider") != "rollypay":
+            raise HTTPException(status_code=409, detail="Это не заявка на онлайн-оплату")
+        if order.get("status") == "rejected" and order.get("payment_status") == "canceled":
+            return {"ok": True, "already_canceled": True}
+        if order.get("status") != "new":
+            raise HTTPException(status_code=409, detail="Можно отменить только заявку на проверке")
+        if order.get("payment_status") == "paid" or any(
+            tx.get("status") == "paid" or tx.get("business_applied_at")
+            for tx in transactions
+        ):
+            raise HTTPException(status_code=409, detail="Оплаченную заявку отменить нельзя")
+
+        conn.execute(
+            """
+            update public.payment_transactions
+            set status='canceled', pay_url=null, apply_note='canceled_by_owner', updated_at=now()
+            where client_order_id=%s and business_applied_at is null and status <> 'paid'
+            """,
+            (body.client_order_id,),
+        )
+        conn.execute(
+            """
+            update public.client_orders
+            set status='rejected', payment_status='canceled', payment_url=null
+            where id=%s
+            """,
+            (body.client_order_id,),
+        )
+        return {"ok": True, "status": "rejected", "payment_status": "canceled"}
+
+
 def refresh_snapshot(conn: psycopg.Connection, email: str, state: dict[str, Any]) -> None:
     row = conn.execute(
         "select payload from public.client_snapshots where lower(email)=lower(%s) for update",
@@ -941,6 +999,18 @@ def apply_provider_status(provider: dict[str, Any]) -> dict[str, Any]:
         ).fetchone()
         if not order:
             raise PaymentApplyError("client order not found")
+        if order.get("status") == "rejected":
+            conn.execute(
+                """
+                update public.payment_transactions
+                set requires_manual_review=true, apply_note='paid_after_order_cancelled'
+                where id=%s
+                """,
+                (tx["id"],),
+            )
+            notify_paid_order(conn, order, tx["amount"], manual_review=True)
+            log.error("Canceled order was paid and requires manual review: tx=%s", tx["id"])
+            return {"ok": True, "status": status, "applied": False, "manual_review": True}
         if order.get("status") == "confirmed":
             conn.execute(
                 "update public.payment_transactions set business_applied_at=now(), apply_note='order_already_confirmed' where id=%s",

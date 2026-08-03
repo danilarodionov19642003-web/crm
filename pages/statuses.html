@@ -18,6 +18,43 @@
       transition: border-color .15s ease;
     }
     .acc-card:hover { border-color: var(--border-strong); }
+    .acc-card--add {
+      min-height: 190px;
+      align-items: center;
+      justify-content: center;
+      border: 2px dashed var(--border-strong);
+      background: transparent;
+      color: var(--text-dim);
+      font: inherit;
+      text-align: center;
+      cursor: pointer;
+    }
+    .acc-card--add:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: rgba(255, 122, 0, .04);
+    }
+    .acc-card--add svg { width: 28px; height: 28px; }
+    .acc-card--add strong { font-size: 14px; }
+    .accounts-jump {
+      position: fixed;
+      right: 20px;
+      bottom: 24px;
+      z-index: 30;
+      width: 44px;
+      height: 44px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--border-strong);
+      border-radius: 8px;
+      background: var(--bg-elev);
+      color: var(--text);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, .18);
+      cursor: pointer;
+    }
+    .accounts-jump:hover { border-color: var(--accent); color: var(--accent); }
+    .accounts-jump[hidden] { display: none; }
     .acc-card__head {
       display: flex; align-items: center; justify-content: space-between; gap: 8px;
       padding-bottom: 8px; border-bottom: 1px solid var(--border);
@@ -52,6 +89,8 @@
     .cost-breakdown__row--head { color:var(--text-mute); font-size:10px; text-transform:uppercase; }
     @media (max-width: 520px) {
       .acc-grid { grid-template-columns: minmax(0, 1fr); }
+      .acc-card--add { min-height: 150px; }
+      .accounts-jump { right: 14px; bottom: 16px; }
       .acc-cost { grid-template-columns:repeat(2,minmax(0,1fr)); }
       .acc-cost > span:last-child { grid-column:1/-1; }
       .cost-kpis { grid-template-columns:1fr; gap:0; }
@@ -326,7 +365,6 @@
           </div>
           <div style="display:flex; gap:8px" data-owner-only>
             <button class="btn btn--ghost" id="btnNewAcc">+ Аккаунт</button>
-            <button class="btn btn--ghost" id="btnNewMentor">+ Клиент</button>
           </div>
         </div>
 
@@ -361,6 +399,13 @@
         </div>
 
         <div class="acc-grid" id="accGrid"></div>
+        <button type="button" class="accounts-jump" id="btnScrollAccountsEnd" data-owner-only
+                title="К последнему аккаунту" aria-label="Перейти к последнему аккаунту">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M6 9l6 6 6-6"/>
+            <path d="M6 4l6 6 6-6"/>
+          </svg>
+        </button>
 
         <details style="margin-top:32px" id="mnSection" data-owner-only>
           <summary style="cursor:pointer;font-weight:600;color:var(--text-dim);padding:10px 0">Управление клиентами (a-коды)</summary>
@@ -402,30 +447,6 @@
       <div class="modal__footer">
         <button class="btn btn--ghost" data-close>Отмена</button>
         <button class="btn btn--primary" id="accSave">Создать</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Модалка: новый клиент -->
-  <div class="modal-backdrop" id="mnModal">
-    <div class="modal" style="max-width:480px">
-      <div class="modal__header"><h3>Новый клиент</h3>
-        <button class="btn--icon" data-close><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
-      </div>
-      <div class="modal__body">
-        <div class="field-row">
-          <div class="field">
-            <label>Код (a21…)</label>
-            <input type="text" id="mnCode" class="input" aria-describedby="mnCodeFeedback"/>
-            <div id="mnCodeFeedback" class="field-validation" aria-live="polite"></div>
-          </div>
-          <div class="field"><label>Имя</label><input type="text" id="mnName" class="input"/></div>
-        </div>
-        <div class="field"><label>Заметки</label><input type="text" id="mnNotes" class="input"/></div>
-      </div>
-      <div class="modal__footer">
-        <button class="btn btn--ghost" data-close>Отмена</button>
-        <button class="btn btn--primary" id="mnSave">Сохранить</button>
       </div>
     </div>
   </div>
@@ -757,9 +778,21 @@
       });
 
       const grid = document.getElementById('accGrid');
+      const canAddAccount = !archMode && isOwner;
+      const addAccountCard = canAddAccount ? `
+        <button type="button" class="acc-card acc-card--add" id="addAccountCard" data-act="new-account">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <path d="M12 5v14M5 12h14"/>
+          </svg>
+          <strong>Добавить аккаунт</strong>
+        </button>` : '';
+      const jumpButton = document.getElementById('btnScrollAccountsEnd');
+      if (jumpButton) jumpButton.hidden = !canAddAccount;
       if (filtered.length === 0) {
         const msg = archMode ? 'Архив пуст.' : 'Нет аккаунтов под фильтр.';
-        grid.innerHTML = `<div class="empty" style="grid-column:1/-1;padding:40px;text-align:center;color:var(--text-mute)">${msg}</div>`;
+        grid.innerHTML = `<div class="empty" style="grid-column:1/-1;padding:40px;text-align:center;color:var(--text-mute)">${msg}</div>${addAccountCard}`;
+        const addCard = grid.querySelector('[data-act="new-account"]');
+        if (addCard) addCard.addEventListener('click', openNewAccountModal);
         return;
       }
 
@@ -957,9 +990,11 @@
             ${ipBlock}
           </div>
         `;
-      }).join('');
+      }).join('') + addAccountCard;
 
       // привязка кликов: активный режим
+      const addCard = grid.querySelector('[data-act="new-account"]');
+      if (addCard) addCard.addEventListener('click', openNewAccountModal);
       grid.querySelectorAll('[data-act="cost"]').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); openCost(b.dataset.pid); }));
       grid.querySelectorAll('[data-act="reg"]').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); openReg(b.dataset.pid); }));
       grid.querySelectorAll('[data-act="addmen"]').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); openAddMentor(b.dataset.pid); }));
@@ -1112,11 +1147,16 @@
        ==================================================================== */
 
     /* --- Новый аккаунт --- */
-    document.getElementById('btnNewAcc').addEventListener('click', () => {
+    function openNewAccountModal() {
       document.getElementById('accCode').value = '';
       document.getElementById('accCity').value = 'МСК';
       Modal.open('accModal');
       setTimeout(() => document.getElementById('accCode').focus(), 50);
+    }
+    document.getElementById('btnNewAcc').addEventListener('click', openNewAccountModal);
+    document.getElementById('btnScrollAccountsEnd').addEventListener('click', () => {
+      const target = document.getElementById('addAccountCard');
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'center' });
     });
     document.getElementById('accCode').addEventListener('input', e => {
       document.getElementById('accCity').value = cityFromCode(e.target.value);
@@ -1129,62 +1169,6 @@
       Store.addProfile({ code, city });
       Modal.close('accModal');
       toast('Аккаунт создан');
-      renderAll();
-    });
-
-    /* --- Новый клиент --- */
-    const mnCodeInput = document.getElementById('mnCode');
-    const mnCodeFeedback = document.getElementById('mnCodeFeedback');
-    const mnSaveButton = document.getElementById('mnSave');
-
-    function describeMentorCodeOwner(owner) {
-      if (!owner || !owner.record) return 'существующая анкета';
-      const code = String(owner.record.code || '').trim().toUpperCase();
-      const name = String(owner.record.name || '').trim();
-      return [code, name].filter(Boolean).join(' — ') || 'существующая анкета';
-    }
-
-    function validateNewMentorCode() {
-      const typedCode = mnCodeInput.value.trim();
-      const effectiveCode = typedCode || Store._nextMentorCode();
-      const owner = Store.findClientCodeOwner(effectiveCode);
-      mnCodeInput.classList.toggle('input--invalid', !!owner);
-      mnCodeInput.setAttribute('aria-invalid', owner ? 'true' : 'false');
-      mnCodeFeedback.className = `field-validation${owner
-        ? ' field-validation--error'
-        : ' field-validation--success'}`;
-      mnCodeFeedback.textContent = owner
-        ? `Этот код уже занят: ${describeMentorCodeOwner(owner)}`
-        : typedCode ? 'Код свободен' : `Будет присвоен код ${effectiveCode.toUpperCase()}`;
-      mnSaveButton.disabled = !!owner;
-      return !owner;
-    }
-
-    mnCodeInput.addEventListener('input', validateNewMentorCode);
-    mnCodeInput.addEventListener('blur', validateNewMentorCode);
-
-    document.getElementById('btnNewMentor').addEventListener('click', () => {
-      mnCodeInput.value = '';
-      mnCodeInput.placeholder = Store._nextMentorCode();
-      document.getElementById('mnName').value = '';
-      document.getElementById('mnNotes').value = '';
-      validateNewMentorCode();
-      Modal.open('mnModal');
-      setTimeout(() => document.getElementById('mnName').focus(), 50);
-    });
-    document.getElementById('mnSave').addEventListener('click', () => {
-      const name = document.getElementById('mnName').value.trim();
-      if (!name) { toast('Укажите имя', 'error'); return; }
-      if (!validateNewMentorCode()) { toast('Выберите свободный код клиента', 'error'); return; }
-      const code = mnCodeInput.value.trim() || Store._nextMentorCode();
-      const created = Store.addMentor({ code, name, notes: document.getElementById('mnNotes').value.trim() });
-      if (!created) {
-        validateNewMentorCode();
-        toast('Этот код уже занят. Выберите другой', 'error');
-        return;
-      }
-      Modal.close('mnModal');
-      toast('Клиент добавлен');
       renderAll();
     });
 
