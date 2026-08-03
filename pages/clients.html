@@ -188,7 +188,8 @@
           </div>
           <div class="field">
             <label for="mCode">Код</label>
-            <input type="text" id="mCode" class="input" placeholder="a22"/>
+            <input type="text" id="mCode" class="input" placeholder="a22" aria-describedby="mCodeFeedback"/>
+            <div id="mCodeFeedback" class="field-validation" aria-live="polite"></div>
           </div>
         </div>
         <div class="field">
@@ -1869,6 +1870,35 @@
     window.onGlobalSearch = (q) => { filters.q = q; document.getElementById('fSearch').value = q; render(); };
 
     /* ---- Модалка ---- */
+    const mCodeInput = document.getElementById('mCode');
+    const mCodeFeedback = document.getElementById('mCodeFeedback');
+    const mSaveButton = document.getElementById('mSave');
+
+    function describeCodeOwner(owner) {
+      if (!owner || !owner.record) return 'существующая анкета';
+      const code = String(owner.record.code || '').trim().toUpperCase();
+      const name = String(owner.record.name || '').trim();
+      return [code, name].filter(Boolean).join(' — ') || 'существующая анкета';
+    }
+
+    function validateNewClientCode() {
+      const value = mCodeInput.value.trim();
+      const owner = value ? Store.findClientCodeOwner(value) : null;
+      mCodeInput.classList.toggle('input--invalid', !!owner);
+      mCodeInput.setAttribute('aria-invalid', owner ? 'true' : 'false');
+      mCodeFeedback.className = `field-validation${owner
+        ? ' field-validation--error'
+        : value ? ' field-validation--success' : ''}`;
+      mCodeFeedback.textContent = owner
+        ? `Этот код уже занят: ${describeCodeOwner(owner)}`
+        : value ? 'Код свободен' : `Следующий код по порядку: ${Store._nextMentorCode().toUpperCase()}`;
+      mSaveButton.disabled = !!owner;
+      return !owner;
+    }
+
+    mCodeInput.addEventListener('input', validateNewClientCode);
+    mCodeInput.addEventListener('blur', validateNewClientCode);
+
     document.getElementById('btnAdd').addEventListener('click', () => {
       ['mName','mCode'].forEach(id => document.getElementById(id).value = '');
       ['mOrdered','mPaid','mTotal'].forEach(id => document.getElementById(id).value = '0');
@@ -1878,17 +1908,20 @@
       refreshAddTariffTotals(true);
       document.getElementById('mDate').value = todayISO();
       document.getElementById('mDeadline').value = '';
+      mCodeInput.placeholder = Store._nextMentorCode();
+      validateNewClientCode();
       Modal.open('addModal');
       setTimeout(() => document.getElementById('mName').focus(), 60);
     });
     document.getElementById('mSave').addEventListener('click', () => {
       const name = document.getElementById('mName').value.trim();
       if (!name) { toast('Укажите имя клиента', 'error'); return; }
+      if (!validateNewClientCode()) { toast('Выберите свободный код клиента', 'error'); return; }
       const paid = 0;
       document.getElementById('mPaid').value = '0';
       refreshAddTariffTotals(false);
       const total = Number(document.getElementById('mTotal').value) || 0;
-      Store.addClient({
+      const created = Store.addClient({
         name,
         code:     document.getElementById('mCode').value.trim(),
         platform: document.getElementById('mPlatform').value,
@@ -1902,6 +1935,11 @@
         deadline: document.getElementById('mDeadline').value,
         overdueDays: 0
       });
+      if (!created) {
+        validateNewClientCode();
+        toast('Этот код уже занят. Выберите другой', 'error');
+        return;
+      }
       Modal.close('addModal');
       toast('Клиент добавлен');
       render();

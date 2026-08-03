@@ -414,7 +414,11 @@
       </div>
       <div class="modal__body">
         <div class="field-row">
-          <div class="field"><label>Код (a21…)</label><input type="text" id="mnCode" class="input"/></div>
+          <div class="field">
+            <label>Код (a21…)</label>
+            <input type="text" id="mnCode" class="input" aria-describedby="mnCodeFeedback"/>
+            <div id="mnCodeFeedback" class="field-validation" aria-live="polite"></div>
+          </div>
           <div class="field"><label>Имя</label><input type="text" id="mnName" class="input"/></div>
         </div>
         <div class="field"><label>Заметки</label><input type="text" id="mnNotes" class="input"/></div>
@@ -1129,20 +1133,56 @@
     });
 
     /* --- Новый клиент --- */
+    const mnCodeInput = document.getElementById('mnCode');
+    const mnCodeFeedback = document.getElementById('mnCodeFeedback');
+    const mnSaveButton = document.getElementById('mnSave');
+
+    function describeMentorCodeOwner(owner) {
+      if (!owner || !owner.record) return 'существующая анкета';
+      const code = String(owner.record.code || '').trim().toUpperCase();
+      const name = String(owner.record.name || '').trim();
+      return [code, name].filter(Boolean).join(' — ') || 'существующая анкета';
+    }
+
+    function validateNewMentorCode() {
+      const typedCode = mnCodeInput.value.trim();
+      const effectiveCode = typedCode || Store._nextMentorCode();
+      const owner = Store.findClientCodeOwner(effectiveCode);
+      mnCodeInput.classList.toggle('input--invalid', !!owner);
+      mnCodeInput.setAttribute('aria-invalid', owner ? 'true' : 'false');
+      mnCodeFeedback.className = `field-validation${owner
+        ? ' field-validation--error'
+        : ' field-validation--success'}`;
+      mnCodeFeedback.textContent = owner
+        ? `Этот код уже занят: ${describeMentorCodeOwner(owner)}`
+        : typedCode ? 'Код свободен' : `Будет присвоен код ${effectiveCode.toUpperCase()}`;
+      mnSaveButton.disabled = !!owner;
+      return !owner;
+    }
+
+    mnCodeInput.addEventListener('input', validateNewMentorCode);
+    mnCodeInput.addEventListener('blur', validateNewMentorCode);
+
     document.getElementById('btnNewMentor').addEventListener('click', () => {
-      document.getElementById('mnCode').value = '';
-      document.getElementById('mnCode').placeholder = Store._nextMentorCode();
+      mnCodeInput.value = '';
+      mnCodeInput.placeholder = Store._nextMentorCode();
       document.getElementById('mnName').value = '';
       document.getElementById('mnNotes').value = '';
+      validateNewMentorCode();
       Modal.open('mnModal');
       setTimeout(() => document.getElementById('mnName').focus(), 50);
     });
     document.getElementById('mnSave').addEventListener('click', () => {
       const name = document.getElementById('mnName').value.trim();
       if (!name) { toast('Укажите имя', 'error'); return; }
-      const code = document.getElementById('mnCode').value.trim() || Store._nextMentorCode();
-      if ((Store.state.mentors || []).some(m => m.code === code.toLowerCase())) { toast('Такой код уже есть', 'error'); return; }
-      Store.addMentor({ code, name, notes: document.getElementById('mnNotes').value.trim() });
+      if (!validateNewMentorCode()) { toast('Выберите свободный код клиента', 'error'); return; }
+      const code = mnCodeInput.value.trim() || Store._nextMentorCode();
+      const created = Store.addMentor({ code, name, notes: document.getElementById('mnNotes').value.trim() });
+      if (!created) {
+        validateNewMentorCode();
+        toast('Этот код уже занят. Выберите другой', 'error');
+        return;
+      }
       Modal.close('mnModal');
       toast('Клиент добавлен');
       renderAll();

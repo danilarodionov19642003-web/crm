@@ -448,6 +448,22 @@ input, select, textarea { font-family: inherit; font-size: inherit; }
   transition: border-color .15s ease;
 }
 .input:focus, .select:focus { outline: none; border-color: var(--accent); }
+.input.input--invalid {
+  border-color: var(--red);
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, .12);
+}
+.field-validation {
+  min-height: 16px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--text-mute);
+}
+.field-validation--error { color: var(--red); }
+.field-validation--success { color: var(--green); }
+.btn:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
 
 /* --- Modal --- */
 .modal-backdrop {

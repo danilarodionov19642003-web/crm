@@ -148,7 +148,11 @@
     return '';
   }
   function normalizeClientCode(value) {
-    return String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '');
+    return String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/^а/, 'a')
+      .replace(/[\s\u2010-\u2015-]+/g, '');
   }
   function clientForStatusMentor(state, mentorId) {
     const mentor = (state.mentors || []).find(item => item.id === mentorId);
@@ -707,7 +711,23 @@
     },
 
     /* ---------- Clients ---------- */
+    findClientCodeOwner(value, options = {}) {
+      const code = normalizeClientCode(value);
+      if (!code) return null;
+      const excludeClientId = String(options.excludeClientId || '');
+      const excludeMentorId = String(options.excludeMentorId || '');
+      const client = (this.state.clients || []).find(item =>
+        String(item.id || '') !== excludeClientId && normalizeClientCode(item.code) === code
+      );
+      if (client) return { kind: 'client', record: client };
+      const mentor = (this.state.mentors || []).find(item =>
+        String(item.id || '') !== excludeMentorId && normalizeClientCode(item.code) === code
+      );
+      return mentor ? { kind: 'mentor', record: mentor } : null;
+    },
     addClient(rec) {
+      const requestedCode = String(rec && rec.code || '').trim();
+      if (requestedCode && this.findClientCodeOwner(requestedCode)) return null;
       const item = Object.assign({
         id: uid(),
         platform: '', name: '', code: '', tariff: '',
@@ -1075,14 +1095,16 @@
 
     /* ---------- Mentors (a1..aN — клиенты в новой модели) ---------- */
     addMentor(rec) {
+      const requestedCode = String(rec && rec.code || '').trim() || this._nextMentorCode();
+      if (this.findClientCodeOwner(requestedCode)) return null;
       const item = Object.assign({
         id: uid(),
-        code: this._nextMentorCode(),
+        code: requestedCode,
         name: '',
         notes: '',
         createdAt: todayISO()
       }, rec);
-      item.code = String(item.code || '').toLowerCase().trim();
+      item.code = normalizeClientCode(requestedCode);
       this.state.mentors.push(item);
       this.save();
       return item;
@@ -1105,8 +1127,8 @@
       this.save();
     },
     _nextMentorCode() {
-      const nums = (this.state.mentors || [])
-        .map(m => /^a(\d+)$/.exec(m.code || ''))
+      const nums = [...(this.state.mentors || []), ...(this.state.clients || [])]
+        .map(item => /^a(\d+)$/.exec(normalizeClientCode(item.code)))
         .filter(Boolean)
         .map(m => Number(m[1]));
       const next = (nums.length ? Math.max(...nums) : 0) + 1;
