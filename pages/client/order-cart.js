@@ -10,6 +10,24 @@
   const MAX_ITEM_QTY = 500;
   const MANUAL_TRANSFER_DISCOUNT = 300;
 
+  function validateQuantity(tariff, rawQty) {
+    const source = tariff || {};
+    if (source.unit !== 'per') return { valid: true, qty: Math.max(0, Number(source.qty) || 0) };
+    const minimum = Math.max(1, Number(source.qty) || 1);
+    const value = String(rawQty == null ? '' : rawQty).trim();
+    const qty = Number(value);
+    if (!value || !Number.isInteger(qty)) {
+      return { valid: false, qty: 0, minimum, message: `Укажите целое число от ${minimum}. Оплата недоступна.` };
+    }
+    if (qty < minimum) {
+      return { valid: false, qty, minimum, message: `Минимум ${minimum} отзывов. Оплата недоступна.` };
+    }
+    if (qty > MAX_ITEM_QTY) {
+      return { valid: false, qty, minimum, message: `Максимум ${MAX_ITEM_QTY} отзывов за один пакет.` };
+    }
+    return { valid: true, qty, minimum, message: '' };
+  }
+
   function priceItem(tariff, rawQty, cartPayFull) {
     const source = tariff || {};
     const price = Math.max(0, Number(source.price) || 0);
@@ -76,6 +94,7 @@
     MAX_NEW_ANKETAS,
     MAX_ITEM_QTY,
     MANUAL_TRANSFER_DISCOUNT,
+    validateQuantity,
     priceItem,
     summarize
   };

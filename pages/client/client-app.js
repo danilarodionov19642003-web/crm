@@ -885,7 +885,8 @@
           </label>
           <label class="cli-cart-control" data-order-qty-wrap hidden>
             <span>Количество отзывов</span>
-            <input type="number" class="cli-ord-input" data-order-qty min="1" max="500"/>
+            <input type="number" class="cli-ord-input" data-order-qty min="1" max="500" step="1" inputmode="numeric"/>
+            <small class="cli-cart-control__error" data-order-qty-error hidden></small>
           </label>
         </div>
         <label class="cli-cart-control">
@@ -972,39 +973,57 @@
     };
     const recalc = () => {
       const rows = [...list.querySelectorAll('[data-order-item]')];
-      const priced = rows.map(row => ({
-        row,
-        tariff: rowTariff(row),
-        qty: Number(row.querySelector('[data-order-qty]').value) || 0
-      }));
+      const priced = rows.map(row => {
+        const tariff = rowTariff(row);
+        const qtyWrap = row.querySelector('[data-order-qty-wrap]');
+        const qtyInput = row.querySelector('[data-order-qty]');
+        const tariffKey = `${tariff.id || tariff.name || ''}:${tariff.unit || ''}:${tariff.qty || ''}`;
+        const tariffChanged = qtyInput.dataset.tariffKey !== tariffKey;
+        qtyInput.dataset.tariffKey = tariffKey;
+        qtyWrap.hidden = tariff.unit !== 'per';
+        if (tariff.unit === 'per') {
+          qtyInput.min = Math.max(1, Number(tariff.qty) || 1);
+          if (tariffChanged) qtyInput.value = qtyInput.min;
+        }
+        return { row, tariff, qty: qtyInput.value };
+      });
       const summary = cart.summarize(
         priced,
         isCartFull(),
         isManualTransfer() ? (Number(payment.manualTransferDiscount) || cart.MANUAL_TRANSFER_DISCOUNT) : 0
       );
+      let hasInvalidQuantity = false;
       summary.items.forEach(entry => {
-        const qtyWrap = entry.row.querySelector('[data-order-qty-wrap]');
         const qtyInput = entry.row.querySelector('[data-order-qty]');
-        qtyWrap.hidden = entry.tariff.unit !== 'per';
-        if (entry.tariff.unit === 'per') {
-          qtyInput.min = Math.max(1, Number(entry.tariff.qty) || 1);
-          if (!Number(qtyInput.value) || Number(qtyInput.value) < Number(qtyInput.min)) qtyInput.value = qtyInput.min;
-        }
-        entry.row.querySelector('[data-order-item-sum]').textContent =
-          `Пакет: ${fmtMoney(entry.pricing.amount)} · сейчас ${fmtMoney(entry.pricing.prepayAmount)}`
-          + (entry.pricing.discountAmount ? ` · скидка ${fmtMoney(entry.pricing.discountAmount)}` : '')
-          + (entry.pricing.remainder ? ` · остаток ${fmtMoney(entry.pricing.remainder)}` : '');
+        const qtyError = entry.row.querySelector('[data-order-qty-error]');
+        const validation = cart.validateQuantity(entry.tariff, qtyInput.value);
+        const invalid = entry.tariff.unit === 'per' && !validation.valid;
+        hasInvalidQuantity = hasInvalidQuantity || invalid;
+        qtyInput.classList.toggle('is-invalid', invalid);
+        qtyInput.setAttribute('aria-invalid', invalid ? 'true' : 'false');
+        qtyError.hidden = !invalid;
+        qtyError.textContent = invalid ? validation.message : '';
+        entry.row.querySelector('[data-order-item-sum]').textContent = invalid
+          ? 'Укажите допустимое количество, чтобы рассчитать оплату.'
+          : `Пакет: ${fmtMoney(entry.pricing.amount)} · сейчас ${fmtMoney(entry.pricing.prepayAmount)}`
+            + (entry.pricing.discountAmount ? ` · скидка ${fmtMoney(entry.pricing.discountAmount)}` : '')
+            + (entry.pricing.remainder ? ` · остаток ${fmtMoney(entry.pricing.remainder)}` : '');
       });
       const amountEl = document.getElementById('ordAmount');
-      amountEl.innerHTML = `<span>Стоимость пакетов: ${fmtMoney(summary.baseAmount)}</span>`
-        + (summary.discount ? `<span class="cli-cart-discount">Скидка за перевод: −${fmtMoney(summary.discount)}</span>` : '')
-        + (summary.discount ? `<span>Стоимость со скидкой: ${fmtMoney(summary.amount)}</span>` : '')
-        + `<b>К оплате сейчас: ${fmtMoney(summary.prepayAmount)}</b>`
-        + (summary.remainder ? `<small>Остаток после выполнения: ${fmtMoney(summary.remainder)}</small>` : '');
+      amountEl.innerHTML = hasInvalidQuantity
+        ? '<b class="cli-cart-quantity-warning">Исправьте количество отзывов. Оплата пока недоступна.</b>'
+        : `<span>Стоимость пакетов: ${fmtMoney(summary.baseAmount)}</span>`
+          + (summary.discount ? `<span class="cli-cart-discount">Скидка за перевод: −${fmtMoney(summary.discount)}</span>` : '')
+          + (summary.discount ? `<span>Стоимость со скидкой: ${fmtMoney(summary.amount)}</span>` : '')
+          + `<b>К оплате сейчас: ${fmtMoney(summary.prepayAmount)}</b>`
+          + (summary.remainder ? `<small>Остаток после выполнения: ${fmtMoney(summary.remainder)}</small>` : '');
       const manualBlock = body.querySelector('[data-manual-payment]');
       if (manualBlock) manualBlock.hidden = !isManualTransfer();
       const submit = document.getElementById('ordSubmit');
-      if (submit) submit.textContent = isManualTransfer() ? 'Отправить чек на проверку' : 'Перейти к оплате';
+      if (submit) {
+        submit.textContent = isManualTransfer() ? 'Отправить чек на проверку' : 'Перейти к оплате';
+        submit.disabled = hasInvalidQuantity;
+      }
       rows.forEach((row, index) => {
         row.querySelector('[data-order-item-title]').textContent = `Пакет ${index + 1}`;
         row.querySelector('[data-order-remove]').hidden = rows.length === 1;
@@ -1161,6 +1180,14 @@
         return;
       }
       const pricing = cart.priceItem(tariff, Number(row.querySelector('[data-order-qty]').value) || 0, pay_full);
+      const quantityValidation = cart.validateQuantity(tariff, row.querySelector('[data-order-qty]').value);
+      if (!quantityValidation.valid) {
+        const qtyInput = row.querySelector('[data-order-qty]');
+        result.className = 'cli-ord-result is-err';
+        result.textContent = `Тариф «${tariff.name}»: ${quantityValidation.message}`;
+        qtyInput.focus();
+        return;
+      }
       const profileUrl = (row.querySelector('[data-order-profile-url]').value || '').trim();
       items.push({
         anketa_code,

@@ -23,6 +23,17 @@ assert.equal(result.prepayAmount, 26290);
 assert.equal(result.remainder, 0);
 assert.equal(result.items[1].pricing.qty, 20);
 
+assert.deepEqual(cart.validateQuantity(wholesale, 22), {
+  valid: true, qty: 22, minimum: 20, message: ''
+});
+assert.equal(cart.priceItem(wholesale, 22, false).amount, 19800);
+assert.equal(cart.priceItem(wholesale, 22, false).prepayAmount, 9900);
+assert.equal(cart.validateQuantity(wholesale, 19).valid, false);
+assert.match(cart.validateQuantity(wholesale, 19).message, /Минимум 20/);
+assert.equal(cart.validateQuantity(wholesale, '').valid, false);
+assert.equal(cart.validateQuantity(wholesale, 20.5).valid, false);
+assert.equal(cart.validateQuantity(wholesale, 501).valid, false);
+
 const express = { id: 'express', name: 'Экспресс', unit: 'package', qty: 3, price: 4800 };
 result = cart.summarize([{ tariff: express }], false, cart.MANUAL_TRANSFER_DISCOUNT);
 assert.equal(result.baseAmount, 4800);
