@@ -477,7 +477,14 @@
       const t = tariffByName(name);
       const paid = Number(client.paid) || 0;
       const patch = { tariff: name };
-      if (!t) return patch;
+      if (!t) {
+        const hasPayments = paid > 0 || Store.getPaymentsForClient(client.id).length > 0;
+        const hasWork = deriveDone(client) > 0 || accountsForClient(client).total > 0;
+        if (client.tariff && !hasPayments && !hasWork) {
+          return { tariff: '', ordered: 0, total: 0, remain: 0 };
+        }
+        return patch;
+      }
       const hasFinancialHistory = paid > 0
         || (Number(client.total) || 0) > 0
         || Store.getPaymentsForClient(client.id).length > 0;
