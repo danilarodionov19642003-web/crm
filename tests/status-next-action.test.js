@@ -79,13 +79,17 @@ assert.equal(chosenTask.daysInStatus, 36);
 assert.equal(chosenTask.daysOverdue, 6);
 assert.equal(chosenTask.targetStatus, STATUS_READY);
 
-Store.setProfileStatusDate(
-  'mentor-a21', 'profile-8-8', '2026-06-16', 'Данил', '2026-07-28', 'manual'
-);
+assert.equal(Store.setProfileStatusActionDate('status-a21', '2026-02-31'), null,
+  'несуществующая календарная дата не должна сохраняться');
+Store.setProfileStatusActionDate('status-a21', '2026-07-28');
 let changed = Store.getProfileStatus('mentor-a21', 'profile-8-8');
 assert.equal(changed.nextActionDate, '2026-07-28');
 assert.equal(changed.nextActionMode, 'manual');
 assert.equal(Store.getProfileStatusAction(changed, '2026-07-22').dueState, 'future');
+const rescheduledTask = Store.listProfileStatusActionTasks('2026-07-22')
+  .find(item => item.statusId === 'status-a21');
+assert.equal(rescheduledTask.date, '2026-07-28');
+assert.equal(rescheduledTask.actionMode, 'manual');
 
 Store.setProfileStatus(
   'mentor-a21', 'profile-8-8', STATUS_READY, '', '2026-07-22', 'Данил'
@@ -104,6 +108,12 @@ assert.match(statusesHtml, /deepLink\.get\('profileId'\)/, 'страница с�
 assert.match(tasksHtml, /Store\.listProfileStatusActionTasks\(todayISO\(\)\)/,
   'задачи по статусам должны вычисляться из profileStatuses');
 assert.match(tasksHtml, /statuses\.html\?profileId=/, 'системная задача должна вести к нужной карточке');
+assert.match(tasksHtml, /data-act="schedule-system"/, 'системную задачу можно запланировать на другой день');
+assert.match(tasksHtml, /id="statusScheduleModal"/, 'для переноса должна открываться отдельная форма с датой');
+assert.match(tasksHtml, /Store\.setProfileStatusActionDate/, 'перенос должен менять канонический срок статуса');
+assert.match(tasksHtml, /collectStatusActionsByDate/, 'задачи по статусам должны попадать в календарь');
+assert.match(tasksHtml, /sched-cell__task-count/, 'день календаря должен показывать число задач');
+assert.match(tasksHtml, /План отзывов и задач/, 'календарь должен явно показывать оба вида работы');
 assert.match(tasksHtml, /Сегодня и просроченные/,
   'просроченные действия не должны скрываться из основного списка');
 

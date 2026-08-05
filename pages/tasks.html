@@ -58,6 +58,15 @@
     .task-actions { display:flex; gap:6px; flex-shrink:0; }
     .task-actions button { padding: 4px 8px; font-size: 12px; }
     .task-open { padding:4px 9px; font-size:12px; text-decoration:none; white-space:nowrap; }
+    .task-schedule { white-space: nowrap; }
+    .task-schedule-context {
+      display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;
+      padding: 10px; border: 1px solid var(--border); border-radius: 10px;
+      background: var(--bg); margin-bottom: 14px;
+    }
+    .task-schedule-context__item { min-width: 0; }
+    .task-schedule-context__label { color: var(--text-mute); font-size: 10px; text-transform: uppercase; letter-spacing: .04em; }
+    .task-schedule-context__value { margin-top: 3px; font-size: 13px; overflow-wrap: anywhere; }
     .task-empty { padding:30px; text-align:center; color:var(--text-mute); }
     .task-group-title {
       font-size: 12px; text-transform: uppercase; letter-spacing: .05em;
@@ -140,12 +149,19 @@
       border-color: var(--accent, #ff7a00);
     }
     .sched-cell.has-plan { background: rgba(255,122,0,0.06); border-color: rgba(255,122,0,0.22); }
+    .sched-cell.has-task { border-color: rgba(168,85,247,0.38); box-shadow: inset 0 0 0 1px rgba(168,85,247,0.08); }
     .sched-cell__day { font-size: 12px; font-variant-numeric: tabular-nums; line-height: 1.1; }
     .sched-cell__count {
       position: absolute; top: 4px; right: 5px;
       background: rgba(255,122,0,0.18); color: var(--accent, #ff7a00);
       font-size: 10px; font-weight: 800; line-height: 1;
       padding: 3px 7px; border-radius: 999px;
+    }
+    .sched-cell__task-count {
+      position: absolute; bottom: 4px; right: 5px;
+      background: rgba(168,85,247,0.18); color: #c4b5fd;
+      font-size: 9px; font-weight: 800; line-height: 1;
+      padding: 3px 6px; border-radius: 999px;
     }
     .sched-cell__dots {
       position: absolute; bottom: 4px; left: 6px; right: 6px;
@@ -211,6 +227,13 @@
     .sched-row__resp[data-tone="mute"] { background: rgba(160,160,160,0.12); color: var(--text-mute); }
     .sched-row.is-done { background: rgba(34,197,94,0.07); }
     .sched-row.is-done .sched-row__name strong { color: #22c55e; }
+    .sched-row--task { border-color: rgba(168,85,247,0.26); }
+    .sched-row--task .sched-row__dot { border-radius: 3px; }
+    .sched-row__task-label {
+      font-size: 10px; font-weight: 700; color: #c4b5fd;
+      background: rgba(168,85,247,0.14); padding: 3px 8px; border-radius: 999px;
+      white-space: nowrap;
+    }
     .sched-empty-day {
       padding: 18px; text-align: center; color: var(--text-mute);
       font-size: 12px; font-style: italic;
@@ -219,6 +242,11 @@
     @media (max-width: 600px) {
       .sched-summary { grid-template-columns: repeat(2, 1fr); }
       .sched-cell { min-height: 54px; }
+      .task-card { grid-template-columns: auto 1fr; }
+      .task-actions { grid-column: 2; flex-wrap: wrap; }
+      .task-schedule-context { grid-template-columns: 1fr; }
+      .sched-row { flex-wrap: wrap; }
+      .sched-row__link { margin-left: 24px; }
     }
   </style>
 </head>
@@ -244,7 +272,7 @@
         <!-- ───── Агрегированный календарь по всем клиентам ───── -->
         <div class="sched-wrap" data-owner-only style="display:none">
           <div class="sched-head">
-            <h2>📅 План отзывов по всем клиентам</h2>
+            <h2>📅 План отзывов и задач</h2>
             <div class="spacer"></div>
             <button class="sched-nav-btn" id="schedPrev">‹</button>
             <div class="sched-month-label" id="schedMonth">—</div>
@@ -325,8 +353,31 @@
     </div>
   </div>
 
+  <!-- Перенос системной задачи, созданной сроком следующего статуса -->
+  <div class="modal-backdrop" id="statusScheduleModal">
+    <div class="modal" style="max-width:480px">
+      <div class="modal__header">
+        <h3>Запланировать задачу</h3>
+        <button class="btn--icon" data-close aria-label="Закрыть">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal__body">
+        <div class="task-schedule-context" id="statusScheduleContext"></div>
+        <div class="field">
+          <label for="statusScheduleDate">Когда выполнить</label>
+          <input type="date" id="statusScheduleDate" class="input"/>
+        </div>
+      </div>
+      <div class="modal__footer">
+        <button class="btn btn--ghost" data-close>Отмена</button>
+        <button class="btn btn--primary" id="statusScheduleSave">Запланировать</button>
+      </div>
+    </div>
+  </div>
+
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260730d"></script>
+  <script src="../js/app.js?v=20260805a"></script>
   <script src="../js/supabase-client.js?v=20260726b"></script>
   <script src="../js/auth-gate.js?v=20260726a"></script>
   <script src="../js/cloud-sync.js?v=20260726b"></script>
@@ -347,6 +398,7 @@
 
     const filters = { scope: 'today', manager: '', mentorId: '', q: '' };
     let editingId = null;
+    let schedulingStatusId = null;
 
     function escapeHtml(s) {
       return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -492,6 +544,9 @@
           });
         });
       }
+      list.querySelectorAll('button[data-act="schedule-system"]').forEach(btn => {
+        btn.addEventListener('click', () => openStatusSchedule(btn.dataset.statusId));
+      });
     }
 
     function taskHtml(t) {
@@ -509,6 +564,9 @@
       const openBtn = isSystem
         ? `<a class="btn btn--ghost task-open" href="statuses.html?profileId=${encodeURIComponent(t.profileId)}&mentorId=${encodeURIComponent(t.mentorId)}">Открыть →</a>`
         : '';
+      const scheduleBtn = isSystem
+        ? `<button class="btn btn--ghost task-schedule" data-act="schedule-system" data-status-id="${escapeHtml(t.statusId)}">📅 ${t.actionMode === 'manual' ? 'Перенести' : 'Запланировать'}</button>`
+        : '';
       const statusMeta = isSystem
         ? `<span class="task-pill task-pill--date">в статусе ${t.daysInStatus} дн.</span>`
         : '';
@@ -525,9 +583,63 @@
             </div>
             <div class="task-note">${escapeHtml(t.note || '— без описания —')}</div>
           </div>
-          <div class="task-actions">${openBtn}${editBtn}${delBtn}</div>
+          <div class="task-actions">${scheduleBtn}${openBtn}${editBtn}${delBtn}</div>
         </div>`;
     }
+
+    function openStatusSchedule(statusId) {
+      const task = Store.listProfileStatusActionTasks(todayISO())
+        .find(item => item.statusId === statusId);
+      if (!task) {
+        toast('Задача уже закрыта сменой статуса', 'error');
+        render();
+        return;
+      }
+      schedulingStatusId = statusId;
+      const mentor = mentorById(task.mentorId);
+      const profile = profileById(task.profileId);
+      const dateInput = document.getElementById('statusScheduleDate');
+      const initialDate = task.date && task.date >= todayISO() ? task.date : todayISO();
+      dateInput.min = todayISO();
+      dateInput.value = initialDate;
+      document.getElementById('statusScheduleContext').innerHTML = `
+        <div class="task-schedule-context__item">
+          <div class="task-schedule-context__label">Клиент</div>
+          <div class="task-schedule-context__value">${escapeHtml(mentorLabel(mentor))}</div>
+        </div>
+        <div class="task-schedule-context__item">
+          <div class="task-schedule-context__label">Аккаунт</div>
+          <div class="task-schedule-context__value">${escapeHtml(profileLabel(profile))}</div>
+        </div>
+        <div class="task-schedule-context__item" style="grid-column:1/-1">
+          <div class="task-schedule-context__label">Что сделать</div>
+          <div class="task-schedule-context__value">${escapeHtml(task.note)}</div>
+        </div>`;
+      Modal.open('statusScheduleModal');
+      setTimeout(() => dateInput.focus(), 50);
+    }
+
+    document.getElementById('statusScheduleSave').addEventListener('click', () => {
+      const date = document.getElementById('statusScheduleDate').value;
+      if (!date || date < todayISO()) {
+        toast('Выбери сегодняшнюю или будущую дату', 'error');
+        return;
+      }
+      const updated = Store.setProfileStatusActionDate(schedulingStatusId, date);
+      if (!updated) {
+        toast('Не удалось перенести задачу: статус уже изменён', 'error');
+        Modal.close('statusScheduleModal');
+        render();
+        return;
+      }
+      const parts = date.split('-').map(Number);
+      schedState.month = new Date(parts[0], parts[1] - 1, 1);
+      schedState.selected = date;
+      Modal.close('statusScheduleModal');
+      toast(`Задача запланирована на ${fmtDate(date)}`);
+      render();
+      renderSched();
+    });
 
     /* ---------- модалка ---------- */
     function openNew() {
@@ -707,6 +819,25 @@
       return map;
     }
 
+    /** Системные действия по статусам, перенесённые на конкретный день. */
+    function collectStatusActionsByDate() {
+      const map = new Map();
+      Store.listProfileStatusActionTasks(todayISO()).forEach(task => {
+        if (!task.date || !matchesManager(String(task.manager || '').trim())) return;
+        const mentor = mentorById(task.mentorId);
+        const profile = profileById(task.profileId);
+        if (!mentor || !profile) return;
+        if (!map.has(task.date)) map.set(task.date, []);
+        map.get(task.date).push({
+          ...task,
+          code: mentor.code || '',
+          name: mentor.name || '',
+          accountLabel: profileLabel(profile)
+        });
+      });
+      return map;
+    }
+
     /** Локальный аналог deriveDone из clients.html (для прогресс-подписи).
      *  Считается на лету по reviews+statuses, чтобы цифра была актуальной. */
     function deriveDoneLocal(c) {
@@ -751,20 +882,42 @@
       const months = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
       return `${months[d.getMonth()]} ${d.getFullYear()}`;
     }
+    function taskCountLabel(count) {
+      const n = Math.abs(Number(count) || 0);
+      const mod100 = n % 100;
+      const mod10 = n % 10;
+      const word = mod100 >= 11 && mod100 <= 14
+        ? 'задач'
+        : (mod10 === 1 ? 'задача' : (mod10 >= 2 && mod10 <= 4 ? 'задачи' : 'задач'));
+      return `${n} ${word}`;
+    }
 
-    function renderSchedSummary(byDate) {
+    function renderSchedSummary(byDate, actionsByDate) {
       const today = todayISO();
       const tomorrow = (() => { const d = new Date(); d.setDate(d.getDate()+1); return d.toISOString().slice(0,10); })();
       const weekEnd  = (() => { const d = new Date(); d.setDate(d.getDate()+7); return d.toISOString().slice(0,10); })();
       const monthEnd = (() => { const d = new Date(); d.setDate(d.getDate()+30); return d.toISOString().slice(0,10); })();
       function sumIn(from, to) {
-        let n = 0, clientsSet = new Set();
+        let reviews = 0, tasks = 0, clientsSet = new Set();
         byDate.forEach((rows, date) => {
           if (date >= from && date <= to) {
-            rows.forEach(r => { n += r.count; clientsSet.add(r.clientId); });
+            rows.forEach(r => { reviews += r.count; clientsSet.add(r.clientId); });
           }
         });
-        return { n, clients: clientsSet.size };
+        actionsByDate.forEach((rows, date) => {
+          if (date >= from && date <= to) {
+            tasks += rows.length;
+            rows.forEach(r => clientsSet.add(r.mentorId));
+          }
+        });
+        return { n: reviews + tasks, reviews, tasks, clients: clientsSet.size };
+      }
+      function statSub(value, empty = 'нет планов') {
+        if (!value.n) return empty;
+        const parts = [];
+        if (value.reviews) parts.push(`${value.reviews} откл.`);
+        if (value.tasks) parts.push(taskCountLabel(value.tasks));
+        return parts.join(' · ');
       }
       const tdy = sumIn(today, today);
       const tmr = sumIn(tomorrow, tomorrow);
@@ -774,27 +927,27 @@
         <div class="sched-stat sched-stat--today">
           <div class="sched-stat__label">Сегодня</div>
           <div class="sched-stat__value">${tdy.n}</div>
-          <div class="sched-stat__sub">${tdy.clients ? tdy.clients + ' клиент' + (tdy.clients === 1 ? '' : (tdy.clients < 5 ? 'а' : 'ов')) : 'нет планов'}</div>
+          <div class="sched-stat__sub">${statSub(tdy)}</div>
         </div>
         <div class="sched-stat">
           <div class="sched-stat__label">Завтра</div>
           <div class="sched-stat__value">${tmr.n}</div>
-          <div class="sched-stat__sub">${tmr.clients ? tmr.clients + ' клиент' + (tmr.clients === 1 ? '' : (tmr.clients < 5 ? 'а' : 'ов')) : '—'}</div>
+          <div class="sched-stat__sub">${statSub(tmr, '—')}</div>
         </div>
         <div class="sched-stat">
           <div class="sched-stat__label">Неделя</div>
           <div class="sched-stat__value">${wk.n}</div>
-          <div class="sched-stat__sub">${wk.clients} клиент${wk.clients === 1 ? '' : (wk.clients < 5 ? 'а' : 'ов')}</div>
+          <div class="sched-stat__sub">${statSub(wk, '—')}</div>
         </div>
         <div class="sched-stat">
           <div class="sched-stat__label">30 дней</div>
           <div class="sched-stat__value">${mo.n}</div>
-          <div class="sched-stat__sub">${mo.clients} клиент${mo.clients === 1 ? '' : (mo.clients < 5 ? 'а' : 'ов')}</div>
+          <div class="sched-stat__sub">${statSub(mo, '—')}</div>
         </div>
       `;
     }
 
-    function renderSchedGrid(byDate) {
+    function renderSchedGrid(byDate, actionsByDate) {
       const m = schedState.month;
       const y = m.getFullYear(), mm = m.getMonth();
       const first = new Date(y, mm, 1);
@@ -809,19 +962,22 @@
         const iso = `${y}-${String(mm+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
         const rows = byDate.get(iso) || [];
         const total = rows.reduce((s, r) => s + r.count, 0);
+        const taskTotal = (actionsByDate.get(iso) || []).length;
         const uniqColors = [...new Set(rows.map(r => r.color))].slice(0, 5);
         const dots = uniqColors.map(c => `<span class="sched-cell__dot" style="background:${c}"></span>`).join('');
         const cls = [
           'sched-cell',
           iso === today ? 'is-today' : '',
           iso === schedState.selected ? 'is-selected' : '',
-          total > 0 ? 'has-plan' : ''
+          total > 0 ? 'has-plan' : '',
+          taskTotal > 0 ? 'has-task' : ''
         ].filter(Boolean).join(' ');
         cells.push(`
           <button class="${cls}" data-iso="${iso}">
             ${total > 0 ? `<span class="sched-cell__count">${total}</span>` : ''}
             <span class="sched-cell__day">${d}</span>
             ${dots ? `<span class="sched-cell__dots">${dots}</span>` : ''}
+            ${taskTotal > 0 ? `<span class="sched-cell__task-count">✓ ${taskTotal}</span>` : ''}
           </button>
         `);
       }
@@ -838,17 +994,21 @@
       });
     }
 
-    function renderSchedDayDetail(byDate) {
+    function renderSchedDayDetail(byDate, actionsByDate) {
       const rawRows = byDate.get(schedState.selected) || [];
+      const actionRows = actionsByDate.get(schedState.selected) || [];
       // Обогащаем каждую строку работой из «Аккаунтов» за этот день
       const rows = rawRows.map(r => ({ ...r, work: accountWorkOnDate(r.code, schedState.selected) }));
       const totalCount = rows.reduce((s, r) => s + r.count, 0);
       const doneN = rows.filter(r => r.work.length).length;
-      const meta = rows.length
-        ? `${rows.length} клиент${rows.length === 1 ? '' : (rows.length < 5 ? 'а' : 'ов')} · ${totalCount} отзыв${totalCount === 1 ? '' : (totalCount < 5 ? 'а' : 'ов')} · <span style="color:#22c55e">✓ сделано ${doneN}/${rows.length}</span>`
-        : 'нет планов';
-      const body = rows.length
-        ? rows.map(r => {
+      const metaParts = [];
+      if (rows.length) {
+        metaParts.push(`${totalCount} откл.`);
+        metaParts.push(`<span style="color:#22c55e">✓ сделано ${doneN}/${rows.length}</span>`);
+      }
+      if (actionRows.length) metaParts.push(taskCountLabel(actionRows.length));
+      const meta = metaParts.length ? metaParts.join(' · ') : 'нет планов';
+      const reviewBody = rows.map(r => {
             const left = Math.max(0, r.ordered - r.done);
             const isDone = r.work.length > 0;
             const workBadge = isDone
@@ -888,7 +1048,22 @@
                 <a class="sched-row__link" href="clients.html?focus=${encodeURIComponent(r.clientId)}">График →</a>
               </div>
             `;
-          }).join('')
+          }).join('');
+      const actionBody = actionRows.map(task => `
+        <div class="sched-row sched-row--task">
+          <span class="sched-row__dot" style="background:#a855f7"></span>
+          <div class="sched-row__name">
+            <strong>${escapeHtml(task.code || '')}</strong>
+            ${task.name ? ` · ${escapeHtml(task.name)}` : ''}
+            <span class="sched-row__progress">${escapeHtml(task.manager || 'не назначен')} · ${escapeHtml(task.accountLabel)} · ${escapeHtml(task.note)}</span>
+          </div>
+          <span class="sched-row__task-label">СТАТУС</span>
+          <button class="sched-row__link" type="button" data-calendar-schedule-status="${escapeHtml(task.statusId)}">Перенести</button>
+          <a class="sched-row__link" href="statuses.html?profileId=${encodeURIComponent(task.profileId)}&mentorId=${encodeURIComponent(task.mentorId)}">Открыть →</a>
+        </div>
+      `).join('');
+      const body = reviewBody || actionBody
+        ? reviewBody + actionBody
         : `<div class="sched-empty-day">На этот день ничего не запланировано.</div>`;
       document.getElementById('schedDayDetail').innerHTML = `
         <div class="sched-day-detail__title">
@@ -897,15 +1072,19 @@
         </div>
         ${body}
       `;
+      document.querySelectorAll('[data-calendar-schedule-status]').forEach(btn => {
+        btn.addEventListener('click', () => openStatusSchedule(btn.dataset.calendarScheduleStatus));
+      });
     }
 
     async function renderSched() {
       const byDate = collectScheduleByDate();
-      renderSchedSummary(byDate);
-      renderSchedGrid(byDate);
-      renderSchedDayDetail(byDate);
+      const actionsByDate = collectStatusActionsByDate();
+      renderSchedSummary(byDate, actionsByDate);
+      renderSchedGrid(byDate, actionsByDate);
+      renderSchedDayDetail(byDate, actionsByDate);
       // ответы клиентов подтягиваем в фоне и перерендерим список дня
-      loadScheduleResponses().then(() => renderSchedDayDetail(byDate));
+      loadScheduleResponses().then(() => renderSchedDayDetail(byDate, actionsByDate));
     }
 
     document.getElementById('schedPrev').addEventListener('click', () => {

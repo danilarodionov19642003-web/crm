@@ -1694,6 +1694,25 @@
       return deriveStatusAction(rec, this.state, today);
     },
 
+    /** Перенести системную задачу статуса на выбранный день.
+     *  Меняется канонический nextActionDate в profileStatuses, поэтому один
+     *  срок одновременно используют список задач, календарь и напоминания. */
+    setProfileStatusActionDate(statusId, date) {
+      const safeDate = String(date || '').slice(0, 10);
+      const parsedDate = parseISODate(safeDate);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(safeDate) || !parsedDate || _iso(parsedDate) !== safeDate) return null;
+      const rec = (this.state.profileStatuses || []).find(item => item.id === statusId);
+      if (!rec) return null;
+      const targetStatus = statusActionTarget(rec.status);
+      if (!targetStatus) return null;
+      rec.nextActionDate = safeDate;
+      rec.nextActionStatus = targetStatus;
+      rec.nextActionMode = 'manual';
+      rec.updatedAt = new Date().toISOString();
+      this.save();
+      return rec;
+    },
+
     /** Системные задачи, вычисленные из profileStatuses. Они не копируются
      *  в dailyTasks и закрываются только реальной сменой статуса. */
     listProfileStatusActionTasks(today = todayISO()) {
@@ -1720,6 +1739,7 @@
           daysInStatus: action.daysInStatus,
           daysOverdue: action.daysOverdue,
           dueState: action.dueState,
+          actionMode: action.mode,
           manager: String((client && client.manager) || '').trim(),
           accountCode: profile.code || '',
           accountOwner: (registration && registration.ownerName) || ''
