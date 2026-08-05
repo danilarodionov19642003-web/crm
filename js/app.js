@@ -306,6 +306,7 @@
         legal:     { label: 'Юридические услуги', daysToPublish: 7  },
         other:     { label: 'Другое',  daysToPublish: 5  },
       };
+      this._migrateSeparatedTaskPlanDate();
       this._migrateNormalizePhones();
       this._migrateRenameDialogStatus();
       // Бэкфилл менторов из клиентов: если клиент был создан на странице
@@ -401,6 +402,34 @@
       if (changed) {
         try { localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state)); } catch (_) {}
       }
+    },
+
+    /** Исправляет записи, созданные короткоживущей версией планировщика,
+     *  которая записывала рабочую дату поверх исходного nextActionDate.
+     *  updatedAt у profileStatuses выставляла только та версия, поэтому
+     *  обычные ручные сроки из карточки аккаунта миграция не затрагивает. */
+    _migrateSeparatedTaskPlanDate() {
+      let changed = 0;
+      (this.state.profileStatuses || []).forEach(rec => {
+        if (rec.taskPlanSchema === 'separate-v1' || rec.plannedActionDate || !rec.updatedAt || rec.nextActionMode !== 'manual') return;
+        const plannedDate = String(rec.nextActionDate || '').slice(0, 10);
+        const targetStatus = statusActionTarget(rec.status);
+        if (!targetStatus || !/^\d{4}-\d{2}-\d{2}$/.test(plannedDate)) return;
+        rec.plannedActionDate = plannedDate;
+        rec.nextActionDate = addDaysISO(
+          rec.date || todayISO(),
+          statusActionDefaultDays(rec, this.state)
+        );
+        rec.nextActionStatus = targetStatus;
+        rec.nextActionMode = 'auto';
+        rec.taskPlanSchema = 'separate-v1';
+        rec.taskPlanMigration = '20260805-separated-dates';
+        changed++;
+      });
+      if (changed) {
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state)); } catch (_) {}
+      }
+      return changed;
     },
 
     save() {
@@ -1556,7 +1585,8 @@
           status: rec.status,
           comment: rec.comment || '',
           nextActionDate: rec.nextActionDate || '',
-          nextActionStatus: rec.nextActionStatus || statusActionTarget(rec.status)
+          nextActionStatus: rec.nextActionStatus || statusActionTarget(rec.status),
+          plannedActionDate: rec.plannedActionDate || ''
         });
         rec.status = status;
         rec.comment = comment;
@@ -1577,6 +1607,7 @@
       }
       this._syncProfileStatusAction(rec, {
         reset: isNew || oldStatus !== status,
+        clearTaskPlan: isNew || oldStatus !== status,
         nextActionDate,
         nextActionMode
       });
@@ -1593,10 +1624,12 @@
     _syncProfileStatusAction(rec, options = {}) {
       if (!rec) return;
       const targetStatus = statusActionTarget(rec.status);
+      if (options.clearTaskPlan) delete rec.plannedActionDate;
       if (!targetStatus) {
         delete rec.nextActionDate;
         delete rec.nextActionStatus;
         delete rec.nextActionMode;
+        delete rec.plannedActionDate;
         return;
       }
       const hasExplicitDate = options.nextActionDate !== undefined;
@@ -1694,10 +1727,10 @@
       return deriveStatusAction(rec, this.state, today);
     },
 
-    /** Перенести системную задачу статуса на выбранный день.
-     *  Меняется канонический nextActionDate в profileStatuses, поэтому один
-     *  срок одновременно используют список задач, календарь и напоминания. */
-    setProfileStatusActionDate(statusId, date) {
+    /** Запланировать работу над просроченным статусом на выбранный день.
+     *  Исходный nextActionDate не меняется: он продолжает показывать реальный
+     *  срок и просрочку. plannedActionDate используется только календарём. */
+    setProfileStatusTaskDate(statusId, date) {
       const safeDate = String(date || '').slice(0, 10);
       const parsedDate = parseISODate(safeDate);
       if (!/^\d{4}-\d{2}-\d{2}$/.test(safeDate) || !parsedDate || _iso(parsedDate) !== safeDate) return null;
@@ -1705,12 +1738,16 @@
       if (!rec) return null;
       const targetStatus = statusActionTarget(rec.status);
       if (!targetStatus) return null;
-      rec.nextActionDate = safeDate;
-      rec.nextActionStatus = targetStatus;
-      rec.nextActionMode = 'manual';
+      rec.plannedActionDate = safeDate;
+      rec.taskPlanSchema = 'separate-v1';
       rec.updatedAt = new Date().toISOString();
       this.save();
       return rec;
+    },
+
+    // Совместимость с уже опубликованной страницей задач предыдущей версии.
+    setProfileStatusActionDate(statusId, date) {
+      return this.setProfileStatusTaskDate(statusId, date);
     },
 
     /** Системные задачи, вычисленные из profileStatuses. Они не копируются
@@ -1740,6 +1777,7 @@
           daysOverdue: action.daysOverdue,
           dueState: action.dueState,
           actionMode: action.mode,
+          plannedDate: String(rec.plannedActionDate || '').slice(0, 10),
           manager: String((client && client.manager) || '').trim(),
           accountCode: profile.code || '',
           accountOwner: (registration && registration.ownerName) || ''

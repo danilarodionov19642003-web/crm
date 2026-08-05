@@ -54,6 +54,7 @@
     .task-pill--date   { background: rgba(255,255,255,0.04); color: var(--text-mute); }
     .task-pill--overdue{ background: rgba(239,68,68,0.15); color: var(--red); }
     .task-pill--today  { background: rgba(34,197,94,0.18); color: #4ade80; }
+    .task-pill--planned{ background: rgba(168,85,247,0.15); color: #c4b5fd; }
     .task-note { color: var(--text); font-size: 14px; line-height: 1.4; word-break: break-word; }
     .task-actions { display:flex; gap:6px; flex-shrink:0; }
     .task-actions button { padding: 4px 8px; font-size: 12px; }
@@ -377,7 +378,7 @@
   </div>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260805a"></script>
+  <script src="../js/app.js?v=20260805b"></script>
   <script src="../js/supabase-client.js?v=20260726b"></script>
   <script src="../js/auth-gate.js?v=20260726a"></script>
   <script src="../js/cloud-sync.js?v=20260726b"></script>
@@ -565,10 +566,13 @@
         ? `<a class="btn btn--ghost task-open" href="statuses.html?profileId=${encodeURIComponent(t.profileId)}&mentorId=${encodeURIComponent(t.mentorId)}">Открыть →</a>`
         : '';
       const scheduleBtn = isSystem
-        ? `<button class="btn btn--ghost task-schedule" data-act="schedule-system" data-status-id="${escapeHtml(t.statusId)}">📅 ${t.actionMode === 'manual' ? 'Перенести' : 'Запланировать'}</button>`
+        ? `<button class="btn btn--ghost task-schedule" data-act="schedule-system" data-status-id="${escapeHtml(t.statusId)}">📅 ${t.plannedDate ? 'Перепланировать' : 'Запланировать'}</button>`
         : '';
       const statusMeta = isSystem
         ? `<span class="task-pill task-pill--date">в статусе ${t.daysInStatus} дн.</span>`
+        : '';
+      const planMeta = isSystem && t.plannedDate
+        ? `<span class="task-pill task-pill--planned">план: ${escapeHtml(fmtDate(t.plannedDate))}</span>`
         : '';
       return `
         <div class="task-card${t.done ? ' done' : ''}${isSystem ? ' task-card--system' : ''}">
@@ -580,6 +584,7 @@
               <span class="task-pill task-pill--manager">${escapeHtml(manager || 'не назначен')}</span>
               ${accBlock}
               ${statusMeta}
+              ${planMeta}
             </div>
             <div class="task-note">${escapeHtml(t.note || '— без описания —')}</div>
           </div>
@@ -599,7 +604,9 @@
       const mentor = mentorById(task.mentorId);
       const profile = profileById(task.profileId);
       const dateInput = document.getElementById('statusScheduleDate');
-      const initialDate = task.date && task.date >= todayISO() ? task.date : todayISO();
+      const initialDate = task.plannedDate && task.plannedDate >= todayISO()
+        ? task.plannedDate
+        : todayISO();
       dateInput.min = todayISO();
       dateInput.value = initialDate;
       document.getElementById('statusScheduleContext').innerHTML = `
@@ -610,6 +617,10 @@
         <div class="task-schedule-context__item">
           <div class="task-schedule-context__label">Аккаунт</div>
           <div class="task-schedule-context__value">${escapeHtml(profileLabel(profile))}</div>
+        </div>
+        <div class="task-schedule-context__item" style="grid-column:1/-1">
+          <div class="task-schedule-context__label">Исходный срок</div>
+          <div class="task-schedule-context__value">${escapeHtml(fmtDate(task.date))}${task.dueState === 'overdue' ? ' · просрочено' : ''}</div>
         </div>
         <div class="task-schedule-context__item" style="grid-column:1/-1">
           <div class="task-schedule-context__label">Что сделать</div>
@@ -625,7 +636,7 @@
         toast('Выбери сегодняшнюю или будущую дату', 'error');
         return;
       }
-      const updated = Store.setProfileStatusActionDate(schedulingStatusId, date);
+      const updated = Store.setProfileStatusTaskDate(schedulingStatusId, date);
       if (!updated) {
         toast('Не удалось перенести задачу: статус уже изменён', 'error');
         Modal.close('statusScheduleModal');
@@ -819,16 +830,16 @@
       return map;
     }
 
-    /** Системные действия по статусам, перенесённые на конкретный день. */
+    /** Только вручную запланированные системные действия по статусам. */
     function collectStatusActionsByDate() {
       const map = new Map();
       Store.listProfileStatusActionTasks(todayISO()).forEach(task => {
-        if (!task.date || !matchesManager(String(task.manager || '').trim())) return;
+        if (!task.plannedDate || !matchesManager(String(task.manager || '').trim())) return;
         const mentor = mentorById(task.mentorId);
         const profile = profileById(task.profileId);
         if (!mentor || !profile) return;
-        if (!map.has(task.date)) map.set(task.date, []);
-        map.get(task.date).push({
+        if (!map.has(task.plannedDate)) map.set(task.plannedDate, []);
+        map.get(task.plannedDate).push({
           ...task,
           code: mentor.code || '',
           name: mentor.name || '',
@@ -1055,7 +1066,7 @@
           <div class="sched-row__name">
             <strong>${escapeHtml(task.code || '')}</strong>
             ${task.name ? ` · ${escapeHtml(task.name)}` : ''}
-            <span class="sched-row__progress">${escapeHtml(task.manager || 'не назначен')} · ${escapeHtml(task.accountLabel)} · ${escapeHtml(task.note)}</span>
+            <span class="sched-row__progress">${escapeHtml(task.manager || 'не назначен')} · ${escapeHtml(task.accountLabel)} · срок ${escapeHtml(fmtDate(task.date))} · ${escapeHtml(task.note)}</span>
           </div>
           <span class="sched-row__task-label">СТАТУС</span>
           <button class="sched-row__link" type="button" data-calendar-schedule-status="${escapeHtml(task.statusId)}">Перенести</button>

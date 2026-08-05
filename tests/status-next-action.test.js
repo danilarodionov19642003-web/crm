@@ -79,23 +79,42 @@ assert.equal(chosenTask.daysInStatus, 36);
 assert.equal(chosenTask.daysOverdue, 6);
 assert.equal(chosenTask.targetStatus, STATUS_READY);
 
-assert.equal(Store.setProfileStatusActionDate('status-a21', '2026-02-31'), null,
+const legacyScheduled = Store.getProfileStatus('mentor-a10', 'profile-8-2');
+legacyScheduled.nextActionDate = '2026-08-01';
+legacyScheduled.nextActionMode = 'manual';
+legacyScheduled.updatedAt = '2026-08-05T00:00:00.000Z';
+assert.equal(Store._migrateSeparatedTaskPlanDate(), 1,
+  'дата из короткоживущей версии планировщика должна быть безопасно разделена');
+assert.equal(legacyScheduled.nextActionDate, '2026-05-27', 'исходный срок восстанавливается по статусу');
+assert.equal(legacyScheduled.plannedActionDate, '2026-08-01', 'выбранный рабочий день сохраняется');
+assert.equal(legacyScheduled.taskPlanSchema, 'separate-v1');
+delete legacyScheduled.plannedActionDate;
+legacyScheduled.nextActionDate = '2026-08-10';
+legacyScheduled.nextActionMode = 'manual';
+assert.equal(Store._migrateSeparatedTaskPlanDate(), 0,
+  'последующие ручные сроки не должны ошибочно считаться старым планированием');
+assert.equal(legacyScheduled.nextActionDate, '2026-08-10');
+
+assert.equal(Store.setProfileStatusTaskDate('status-a21', '2026-02-31'), null,
   'несуществующая календарная дата не должна сохраняться');
-Store.setProfileStatusActionDate('status-a21', '2026-07-28');
+Store.setProfileStatusTaskDate('status-a21', '2026-07-28');
 let changed = Store.getProfileStatus('mentor-a21', 'profile-8-8');
-assert.equal(changed.nextActionDate, '2026-07-28');
-assert.equal(changed.nextActionMode, 'manual');
-assert.equal(Store.getProfileStatusAction(changed, '2026-07-22').dueState, 'future');
+assert.equal(changed.nextActionDate, undefined, 'планирование не должно менять исходный срок статуса');
+assert.equal(changed.plannedActionDate, '2026-07-28');
+assert.equal(Store.getProfileStatusAction(changed, '2026-07-22').date, '2026-07-16');
+assert.equal(Store.getProfileStatusAction(changed, '2026-07-22').dueState, 'overdue');
 const rescheduledTask = Store.listProfileStatusActionTasks('2026-07-22')
   .find(item => item.statusId === 'status-a21');
-assert.equal(rescheduledTask.date, '2026-07-28');
-assert.equal(rescheduledTask.actionMode, 'manual');
+assert.equal(rescheduledTask.date, '2026-07-16', 'просрочка остаётся на исходной дате');
+assert.equal(rescheduledTask.plannedDate, '2026-07-28', 'рабочий план хранится отдельно');
 
 Store.setProfileStatus(
   'mentor-a21', 'profile-8-8', STATUS_READY, '', '2026-07-22', 'Данил'
 );
 changed = Store.getProfileStatus('mentor-a21', 'profile-8-8');
 assert.equal(changed.nextActionDate, undefined, 'при выполнении срок удаляется из текущего статуса');
+assert.equal(changed.plannedActionDate, undefined, 'при смене статуса задача удаляется из рабочего плана');
+assert.equal(changed.history[0].plannedActionDate, '2026-07-28', 'прошлый план сохраняется в истории статуса');
 assert.equal(Store.getProfileStatusAction(changed, '2026-07-22'), null);
 assert.equal(Store.listProfileStatusActionTasks('2026-07-22').some(item => item.statusId === 'status-a21'), false,
   'системная задача закрывается реальной сменой статуса');
@@ -110,7 +129,8 @@ assert.match(tasksHtml, /Store\.listProfileStatusActionTasks\(todayISO\(\)\)/,
 assert.match(tasksHtml, /statuses\.html\?profileId=/, 'системная задача должна вести к нужной карточке');
 assert.match(tasksHtml, /data-act="schedule-system"/, 'системную задачу можно запланировать на другой день');
 assert.match(tasksHtml, /id="statusScheduleModal"/, 'для переноса должна открываться отдельная форма с датой');
-assert.match(tasksHtml, /Store\.setProfileStatusActionDate/, 'перенос должен менять канонический срок статуса');
+assert.match(tasksHtml, /Store\.setProfileStatusTaskDate/, 'планирование должно менять отдельную рабочую дату');
+assert.match(tasksHtml, /task\.plannedDate/, 'календарь должен использовать рабочую дату, а не срок статуса');
 assert.match(tasksHtml, /collectStatusActionsByDate/, 'задачи по статусам должны попадать в календарь');
 assert.match(tasksHtml, /sched-cell__task-count/, 'день календаря должен показывать число задач');
 assert.match(tasksHtml, /План отзывов и задач/, 'календарь должен явно показывать оба вида работы');
