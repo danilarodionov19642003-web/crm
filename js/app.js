@@ -912,6 +912,7 @@
         ratePerReview: 300,
         reviewsDone: 0,             // авто-считается reviews-sync.js
         paid: 0,
+        advanceDebt: 0,             // долг сотрудника перед компанией
         status: 'active',
         hired: tomorrowISO(),
         payments: []
@@ -941,23 +942,37 @@
       const p = Object.assign({ id: uid(), date: todayISO(), amount: 0, note: '' }, payment);
       p.amount = Math.max(0, Number(p.amount) || 0);
       if (p.amount <= 0) return null;
+      const debtBefore = Math.max(0, Number(e.advanceDebt) || 0);
+      p.debtOffset = Math.min(
+        p.amount,
+        debtBefore,
+        Math.max(0, Number(p.debtOffset) || 0)
+      );
+      p.debtCreated = Math.max(0, Number(p.debtCreated) || 0);
+      p.cashAmount = Object.prototype.hasOwnProperty.call(p, 'cashAmount')
+        ? Math.max(0, Number(p.cashAmount) || 0)
+        : Math.max(0, p.amount - p.debtOffset);
       e.payments.push(p);
       e.paid = (e.paid || 0) + p.amount;
+      e.advanceDebt = Math.max(0, debtBefore - p.debtOffset + p.debtCreated);
       this.state.expenses ??= [];
       const expenseId = `employee-payment-${p.id}`;
-      if (!this.state.expenses.some(x => x.id === expenseId)) {
-        this.state.expenses.push({
+      if (p.cashAmount > 0 && !this.state.expenses.some(x => x.id === expenseId)) {
+        const expense = {
           id: expenseId,
           date: p.date || todayISO(),
           category: 'Зарплаты',
-          amount: p.amount,
+          amount: p.cashAmount,
           comment: `ЗП сотруднику ${e.name || '—'}${p.note ? ` · ${p.note}` : ''}`,
           personal: false,
           source: 'employee_payment',
           employeeId: e.id,
           employeePaymentId: p.id,
           createdAt: new Date().toISOString()
-        });
+        };
+        if (p.cashAmount !== p.amount) expense.grossAmount = p.amount;
+        if (p.debtOffset > 0) expense.debtOffset = p.debtOffset;
+        this.state.expenses.push(expense);
       }
       this.save();
       return p;
@@ -967,8 +982,15 @@
       if (!e) return false;
       const payment = (e.payments || []).find(p => p.id === paymentId);
       if (!payment) return false;
+      if (payment.locked === true) return false;
       e.payments = (e.payments || []).filter(p => p.id !== paymentId);
       e.paid = Math.max(0, (Number(e.paid) || 0) - (Number(payment.amount) || 0));
+      e.advanceDebt = Math.max(
+        0,
+        (Number(e.advanceDebt) || 0)
+          + (Number(payment.debtOffset) || 0)
+          - (Number(payment.debtCreated) || 0)
+      );
       this.state.expenses = (this.state.expenses || []).filter(x =>
         x.id !== `employee-payment-${paymentId}` && x.employeePaymentId !== paymentId
       );

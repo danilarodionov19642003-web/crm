@@ -86,6 +86,42 @@ assert.equal(Store.deletePayment(ilya.id, 'ilya-pay-1'), true);
 assert.equal(ilya.paid, 0, 'удаление выплаты должно откатить выплаченную сумму');
 assert.equal(Store.state.expenses.length, 0, 'связанный расход должен удалиться вместе с выплатой');
 
+ilya.advanceDebt = 5620;
+const splitPayment = Store.addPayment(ilya.id, {
+  id: 'ilya-split-pay-1',
+  date: '2026-08-31',
+  amount: 3000,
+  cashAmount: 1500,
+  debtOffset: 1500,
+  note: '50% в погашение долга'
+});
+assert.equal(splitPayment.cashAmount, 1500, 'в кассу должна попадать только сумма на руки');
+assert.equal(splitPayment.debtOffset, 1500, 'половина выплаты должна погашать долг сотрудника');
+assert.equal(ilya.paid, 3000, 'вся начисленная зарплата должна считаться закрытой');
+assert.equal(ilya.advanceDebt, 4120, 'долг сотрудника должен уменьшаться на удержание');
+assert.deepEqual(
+  JSON.parse(JSON.stringify(Store.state.expenses[0])),
+  {
+    id: 'employee-payment-ilya-split-pay-1',
+    date: '2026-08-31',
+    category: 'Зарплаты',
+    amount: 1500,
+    comment: 'ЗП сотруднику Илья · 50% в погашение долга',
+    personal: false,
+    source: 'employee_payment',
+    employeeId: ilya.id,
+    employeePaymentId: 'ilya-split-pay-1',
+    createdAt: Store.state.expenses[0].createdAt,
+    grossAmount: 3000,
+    debtOffset: 1500
+  },
+  'расход должен равняться сумме, реально выданной сотруднику'
+);
+assert.equal(Store.deletePayment(ilya.id, 'ilya-split-pay-1'), true);
+assert.equal(ilya.paid, 0, 'удаление разделённой выплаты должно откатывать закрытую зарплату');
+assert.equal(ilya.advanceDebt, 5620, 'удаление разделённой выплаты должно восстанавливать долг сотрудника');
+assert.equal(Store.state.expenses.length, 0, 'расход разделённой выплаты должен удаляться вместе с ней');
+
 const clientsHtml = fs.readFileSync(path.join(root, 'pages/clients.html'), 'utf8');
 const tasksHtml = fs.readFileSync(path.join(root, 'pages/tasks.html'), 'utf8');
 const employeesHtml = fs.readFileSync(path.join(root, 'pages/employees.html'), 'utf8');

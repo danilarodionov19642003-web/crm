@@ -6,6 +6,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>Сотрудники — Mentori CRM</title>
   <link rel="stylesheet" href="../css/styles.css?v=20260628a"/>
+  <style>
+    @media (max-width: 520px) {
+      #pSplit { grid-template-columns: 1fr !important; }
+    }
+  </style>
 </head>
 <body>
   <div class="app">
@@ -47,8 +52,9 @@
                   <th class="num">Ставка / отклик</th>
                   <th class="num">Откликов</th>
                   <th class="num">Заработано</th>
-                  <th class="num">Выплачено</th>
-                  <th class="num">Долг</th>
+                  <th class="num">Закрыто по ЗП</th>
+                  <th class="num">Долг CRM</th>
+                  <th class="num">Долг сотрудника</th>
                   <th>Дата начала</th>
                   <th>Статус</th>
                   <th class="actions"></th>
@@ -124,10 +130,11 @@
               <input type="date" id="pDate" class="input"/>
             </div>
             <div class="field">
-              <label for="pAmount">Сумма, ₽</label>
+              <label for="pAmount">Начислено к выплате, ₽</label>
               <input type="number" id="pAmount" class="input" value="0" min="0" step="1"/>
             </div>
           </div>
+          <div id="pSplit" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px"></div>
           <div class="field" style="margin-top:12px">
             <label for="pNote">Комментарий</label>
             <input type="text" id="pNote" class="input" placeholder="Напр. ЗП за апрель"/>
@@ -142,7 +149,7 @@
   </div>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260730d"></script>
+  <script src="../js/app.js?v=20260808a"></script>
   <script src="../js/supabase-client.js?v=20260726b"></script>
   <script src="../js/auth-gate.js?v=20260726a"></script>
   <script src="../js/cloud-sync.js?v=20260726b"></script>
@@ -171,13 +178,15 @@
       const reviews = rows.reduce((s, r) => s + (+r.reviewsDone || 0), 0);
       const earned = rows.reduce((s, r) => s + (+r.reviewsDone || 0) * (+r.ratePerReview || 0), 0);
       const paidTotal = rows.reduce((s, r) => s + (+r.paid || 0), 0);
+      const advanceDebt = rows.reduce((s, r) => s + (+r.advanceDebt || 0), 0);
       const debt = Math.max(0, earned - paidTotal);
       document.getElementById('empKpis').innerHTML = `
         <div class="card"><div class="card__label">Активных</div><div class="card__value">${active}</div></div>
         <div class="card"><div class="card__label">Откликов сделано</div><div class="card__value">${reviews}</div></div>
         <div class="card"><div class="card__label">Заработано</div><div class="card__value">${fmtMoney(earned)}</div></div>
-        <div class="card"><div class="card__label">Выплачено</div><div class="card__value pos">${fmtMoney(paidTotal)}</div></div>
+        <div class="card"><div class="card__label">Закрыто по ЗП</div><div class="card__value pos">${fmtMoney(paidTotal)}</div></div>
         <div class="card"><div class="card__label">К выплате</div><div class="card__value ${debt>0?'neg':''}">${fmtMoney(debt)}</div></div>
+        <div class="card"><div class="card__label">Долг сотрудников</div><div class="card__value ${advanceDebt>0?'neg':''}">${fmtMoney(advanceDebt)}</div></div>
       `;
     }
 
@@ -198,13 +207,14 @@
       const tbody = document.getElementById('empRows');
       const tfoot = document.getElementById('empFoot');
       if (rows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="10" class="empty">Нет сотрудников. Нажмите «Добавить сотрудника».</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="11" class="empty">Нет сотрудников. Нажмите «Добавить сотрудника».</td></tr>`;
         tfoot.innerHTML = '';
       } else {
         tbody.innerHTML = rows.map(r => rowHtml(r)).join('');
         const reviews = rows.reduce((s, r) => s + (+r.reviewsDone || 0), 0);
         const earned = rows.reduce((s, r) => s + (+r.reviewsDone || 0) * (+r.ratePerReview || 0), 0);
         const paid = rows.reduce((s, r) => s + (+r.paid || 0), 0);
+        const advanceDebt = rows.reduce((s, r) => s + (+r.advanceDebt || 0), 0);
         tfoot.innerHTML = `
           <tr>
             <td colspan="3">ИТОГО</td>
@@ -212,6 +222,7 @@
             <td class="num">${fmtMoney(earned)}</td>
             <td class="num pos">${fmtMoney(paid)}</td>
             <td class="num ${earned-paid>0?'neg':''}">${fmtMoney(Math.max(0, earned - paid))}</td>
+            <td class="num ${advanceDebt>0?'neg':''}">${fmtMoney(advanceDebt)}</td>
             <td colspan="3"></td>
           </tr>`;
         bindRowEditors();
@@ -225,6 +236,7 @@
       const earned = reviews * rate;
       const paid = +r.paid || 0;
       const debt = Math.max(0, earned - paid);
+      const advanceDebt = Math.max(0, +r.advanceDebt || 0);
       return `
         <tr data-id="${r.id}">
           <td data-field="name"><strong>${escapeHtml(r.name || '—')}</strong></td>
@@ -234,6 +246,7 @@
           <td class="num"><strong>${fmtMoney(earned)}</strong></td>
           <td class="num pos" title="Меняется только через добавление или удаление выплаты">${paid}</td>
           <td class="num ${debt>0?'neg':''}">${fmtMoney(debt)}</td>
+          <td class="num ${advanceDebt>0?'neg':''}" title="Сумма, которую сотрудник возвращает из будущей зарплаты">${fmtMoney(advanceDebt)}</td>
           <td><input type="date" class="input" style="padding:4px 6px;background:transparent;border:1px solid transparent" data-field="hired" value="${r.hired || ''}"/></td>
           <td>
             <select class="select" style="padding:4px 8px" data-field="status">
@@ -313,10 +326,12 @@
       if (!e) return;
       const earned = (+e.reviewsDone || 0) * (+e.ratePerReview || 0);
       const debt = Math.max(0, earned - (+e.paid || 0));
-      document.getElementById('payTitle').textContent = `Выплаты — ${e.name} · к выплате ${fmtMoney(debt)}`;
+      const advanceDebt = Math.max(0, +e.advanceDebt || 0);
+      document.getElementById('payTitle').textContent = `Выплаты — ${e.name} · к выплате ${fmtMoney(debt)} · долг ${fmtMoney(advanceDebt)}`;
       document.getElementById('pDate').value = todayISO();
       document.getElementById('pAmount').value = debt > 0 ? debt : 0;
       document.getElementById('pNote').value = '';
+      renderPaymentSplit();
       renderPayments(e);
       Modal.open('payModal');
     }
@@ -330,17 +345,19 @@
       }
       list.innerHTML = `
         <table class="table" style="min-width:auto">
-          <thead><tr><th>Дата</th><th class="num">Сумма</th><th>Комментарий</th><th class="actions"></th></tr></thead>
+          <thead><tr><th>Дата</th><th class="num">Закрыто</th><th class="num">На руки</th><th class="num">В долг</th><th>Комментарий</th><th class="actions"></th></tr></thead>
           <tbody>
             ${payments.map(p => `
               <tr data-pid="${p.id}">
                 <td>${fmtDate(p.date)}</td>
                 <td class="num pos">${fmtMoney(p.amount)}</td>
+                <td class="num">${fmtMoney(p.cashAmount == null ? p.amount : p.cashAmount)}</td>
+                <td class="num ${Number(p.debtOffset)>0?'neg':''}">${Number(p.debtOffset)>0 ? `−${fmtMoney(p.debtOffset)}` : (Number(p.debtCreated)>0 ? `+${fmtMoney(p.debtCreated)}` : '—')}</td>
                 <td>${escapeHtml(p.note || '')}</td>
                 <td class="actions">
-                  <button class="btn--icon" data-remove title="Удалить">
+                  ${p.locked === true ? '' : `<button class="btn--icon" data-remove title="Удалить">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                  </button>
+                  </button>`}
                 </td>
               </tr>`).join('')}
           </tbody>
@@ -357,20 +374,46 @@
       });
     }
 
+    function paymentSplit(employee, grossValue) {
+      const gross = Math.max(0, Number(grossValue) || 0);
+      const debt = Math.max(0, Number(employee && employee.advanceDebt) || 0);
+      const debtOffset = Math.min(debt, Math.floor(gross * 0.5));
+      return { gross, debtOffset, cashAmount: gross - debtOffset, debtAfter: debt - debtOffset };
+    }
+
+    function renderPaymentSplit() {
+      const employee = Store.state.employees.find(x => x.id === currentEmpId);
+      if (!employee) return;
+      const split = paymentSplit(employee, document.getElementById('pAmount').value);
+      document.getElementById('pSplit').innerHTML = `
+        <div class="panel" style="padding:10px"><div class="card__label">На руки</div><strong>${fmtMoney(split.cashAmount)}</strong></div>
+        <div class="panel" style="padding:10px"><div class="card__label">В счёт долга</div><strong>${fmtMoney(split.debtOffset)}</strong></div>
+        <div class="panel" style="padding:10px"><div class="card__label">Долг после</div><strong>${fmtMoney(split.debtAfter)}</strong></div>`;
+    }
+
+    document.getElementById('pAmount').addEventListener('input', renderPaymentSplit);
+
     document.getElementById('pAdd').addEventListener('click', () => {
       if (!currentEmpId) return;
+      const employee = Store.state.employees.find(x => x.id === currentEmpId);
+      const split = paymentSplit(employee, document.getElementById('pAmount').value);
       const p = {
         date:   document.getElementById('pDate').value || todayISO(),
-        amount: Number(document.getElementById('pAmount').value) || 0,
+        amount: split.gross,
+        cashAmount: split.cashAmount,
+        debtOffset: split.debtOffset,
         note:   document.getElementById('pNote').value.trim()
       };
       if (p.amount <= 0) { toast('Укажите сумму', 'error'); return; }
       Store.addPayment(currentEmpId, p);
-      toast('Выплата добавлена');
+      toast(split.debtOffset > 0
+        ? `Выплата добавлена: ${fmtMoney(split.cashAmount)} на руки, ${fmtMoney(split.debtOffset)} в долг`
+        : 'Выплата добавлена');
       const e = Store.state.employees.find(x => x.id === currentEmpId);
       renderPayments(e);
       document.getElementById('pAmount').value = '0';
       document.getElementById('pNote').value = '';
+      renderPaymentSplit();
       render();
     });
 
@@ -398,6 +441,7 @@
         ratePerReview: Number(document.getElementById('mRate').value) || 0,
         reviewsDone:   0,
         paid:          0,
+        advanceDebt:   0,
         hired:         document.getElementById('mHired').value || tomorrowISO(),
         status:        document.getElementById('mStatus').value,
         payments:      []
