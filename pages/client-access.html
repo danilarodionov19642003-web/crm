@@ -6,6 +6,51 @@
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>Кабинеты клиентов — Mentori CRM</title>
   <link rel="stylesheet" href="../css/styles.css?v=20260628a"/>
+  <style>
+    .cp-mentors {
+      display: flex;
+      flex-direction: column;
+      flex-wrap: nowrap;
+      gap: 6px;
+      max-height: 320px;
+      overflow-x: hidden;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px;
+    }
+    .cp-mentor-block {
+      flex: 0 0 auto;
+      min-width: 0;
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      opacity: .7;
+    }
+    .cp-mentor-block.is-selected {
+      background: var(--bg-elev-2);
+      opacity: 1;
+    }
+    .cp-mentor-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+      cursor: pointer;
+    }
+    .cp-mentor-label span { min-width: 0; overflow-wrap: anywhere; }
+    .cp-mentor-fields {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 6px;
+      margin-top: 8px;
+      font-size: 12px;
+    }
+    @media (max-width: 640px) {
+      .cp-mentors { max-height: 280px; }
+      .cp-mentor-fields { grid-template-columns: minmax(0, 1fr); }
+    }
+  </style>
 </head>
 <body>
   <div class="app">
@@ -78,7 +123,7 @@
         </div>
         <div class="field">
           <label>Анкеты, видимые в кабинете</label>
-          <div id="cpMentors" style="display:flex;flex-wrap:wrap;gap:8px;max-height:240px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:10px"></div>
+          <div id="cpMentors" class="cp-mentors"></div>
           <div style="font-size:11px;color:var(--text-mute);margin-top:4px">Отметь все анкеты, которые принадлежат этому клиенту. Например, для «Флагман» — a21 и a22.</div>
         </div>
         <div class="field">
@@ -109,7 +154,7 @@
   </div>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260730d"></script>
+  <script src="../js/app.js?v=20260820a"></script>
   <script src="../js/supabase-client.js?v=20260726b"></script>
   <script src="../js/auth-gate.js?v=20260726a"></script>
   <script src="../js/cloud-sync.js?v=20260726b"></script>
@@ -118,7 +163,7 @@
 
   <script>
   document.addEventListener('DOMContentLoaded', () => {
-    const { Store, Modal, toast, fmtDate } = window.App;
+    const { Store, Modal, toast, fmtDate, normalizeClientCode, compareClientCodes } = window.App;
     Store.load();
 
     let editingId = null;
@@ -135,14 +180,14 @@
       return (Store.state.mentors || [])
         .filter(m => m.code)
         .map(m => {
-          const c = clients.find(cl => String(cl.code||'').toLowerCase().trim() === String(m.code||'').toLowerCase().trim());
+          const c = clients.find(cl => normalizeClientCode(cl.code) === normalizeClientCode(m.code));
           return {
             id: m.id,
             code: m.code,
             name: c ? (c.name || m.name || '') : (m.name || '')
           };
         })
-        .sort((a, b) => String(a.code).localeCompare(String(b.code), 'ru', { numeric: true }));
+        .sort((a, b) => compareClientCodes(a.code, b.code));
     }
 
     /** Per-mentor контакты в формате { [mentorId]: {name, telegramUsername, telegramChatId, threadId} }.
@@ -153,8 +198,6 @@
       _mentorContactsBuf = Object.assign({}, mentorContacts || {});
       const sel = new Set(selectedIds || []);
       const wrap = document.getElementById('cpMentors');
-      wrap.style.flexDirection = 'column';   // стек, не flex-wrap
-      wrap.style.gap = '6px';
       const list = listAllMentors();
       if (!list.length) {
         wrap.innerHTML = '<div style="color:var(--text-mute);font-size:13px">Нет анкет (mentor’ов). Сначала добавь клиентов на странице «Клиенты».</div>';
@@ -164,12 +207,12 @@
         const checked = sel.has(m.id);
         const c = _mentorContactsBuf[m.id] || {};
         return `
-        <div data-mentor-block="${m.id}" style="border:1px solid var(--border);border-radius:8px;padding:8px 10px;${checked ? 'background:#fafcff' : 'opacity:0.7'}">
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+        <div class="cp-mentor-block${checked ? ' is-selected' : ''}" data-mentor-block="${m.id}">
+          <label class="cp-mentor-label">
             <input type="checkbox" data-mentor-check value="${m.id}" ${checked ? 'checked' : ''} style="margin:0"/>
             <span><strong>${escapeHtml(m.code)}</strong>${m.name ? ' · ' + escapeHtml(m.name) : ''}</span>
           </label>
-          <div data-mentor-fields style="display:${checked ? 'grid' : 'none'};grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;margin-top:8px;font-size:12px">
+          <div class="cp-mentor-fields" data-mentor-fields style="display:${checked ? 'grid' : 'none'}">
             <div>
               <div style="color:var(--text-mute);margin-bottom:2px">Имя менеджера</div>
               <input data-mfield="name" type="text" class="input" placeholder="Анна" value="${escapeHtml(c.name || '')}" style="font-size:12px;padding:6px 8px"/>
@@ -194,13 +237,10 @@
         cb.addEventListener('change', () => {
           const block = cb.closest('[data-mentor-block]');
           const fields = block.querySelector('[data-mentor-fields]');
+          block.classList.toggle('is-selected', cb.checked);
           if (cb.checked) {
-            block.style.background = '#fafcff';
-            block.style.opacity = '1';
             fields.style.display = 'grid';
           } else {
-            block.style.background = '';
-            block.style.opacity = '0.7';
             fields.style.display = 'none';
           }
         });
