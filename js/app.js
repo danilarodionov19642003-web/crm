@@ -154,6 +154,13 @@
       .replace(/^а/, 'a')
       .replace(/[\s\u2010-\u2015-]+/g, '');
   }
+  function normalizeSearchText(value) {
+    return String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/а/g, 'a')
+      .replace(/[\s\u2010-\u2015-]+/g, '');
+  }
   function compareClientCodes(left, right) {
     const a = normalizeClientCode(left);
     const b = normalizeClientCode(right);
@@ -2829,7 +2836,7 @@
     Store, Modal, Counter, toast,
     fmtMoney, fmtDate, monthKey, monthLabel,
     uid, todayISO, tomorrowISO, addDaysISO, addMonthsISO, daysBetweenISO, deriveStatusAction,
-    normalizeClientCode, compareClientCodes, clientReviewsRemaining,
+    normalizeClientCode, normalizeSearchText, compareClientCodes, clientReviewsRemaining,
     SERVICES, EXPENSE_CATEGORIES, PERSONAL_CATEGORIES, PHONE_EXPENSE_AMOUNT, TARIFFS, TARIFF_NAMES,
     PROFILE_STATUSES, PERFORMERS, CITIES, cityFromCode,
     STATUS_SELECT, STATUS_CHOSEN, STATUS_READY

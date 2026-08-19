@@ -598,7 +598,7 @@
   </style>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260820a"></script>
+  <script src="../js/app.js?v=20260820b"></script>
   <script src="../js/supabase-client.js?v=20260726b"></script>
   <script src="../js/auth-gate.js?v=20260726a"></script>
   <script src="../js/cloud-sync.js?v=20260726b"></script>
@@ -613,7 +613,7 @@
     const {
       Store, Modal, toast, fmtMoney, fmtDate, todayISO, addDaysISO, deriveStatusAction,
       PROFILE_STATUSES, PERFORMERS, cityFromCode,
-      STATUS_SELECT, STATUS_CHOSEN, compareClientCodes, clientReviewsRemaining
+      STATUS_SELECT, STATUS_CHOSEN, normalizeSearchText, compareClientCodes, clientReviewsRemaining
     } = window.App;
     const { confirmDelete } = window.TableUtils;
 
@@ -752,7 +752,7 @@
         if (filters.q) {
           const q = filters.q;
           const mentorsStr = (p.mentorIds || []).map(id => mentorFull(mentorById(id))).join(' ').toLowerCase();
-          const blob = `${p.code || ''} ${p.city || ''} ${reg ? (reg.ownerName || '') + ' ' + (reg.phone || '') : ''} ${mentorsStr}`.toLowerCase();
+          const blob = normalizeSearchText(`${p.code || ''} ${p.city || ''} ${reg ? (reg.ownerName || '') + ' ' + (reg.phone || '') : ''} ${mentorsStr}`);
           if (!blob.includes(q)) return false;
         }
         if (filters.status) {
@@ -1694,7 +1694,7 @@
     document.getElementById('fCity').addEventListener('change', e => { filters.city = e.target.value; renderAccounts(); });
     document.getElementById('fStatus').addEventListener('change', e => { filters.status = e.target.value; renderAccounts(); });
     document.getElementById('fPerformer').addEventListener('change', e => { filters.performer = e.target.value; renderAccounts(); });
-    document.getElementById('fSearch').addEventListener('input', e => { filters.q = e.target.value.trim().toLowerCase(); renderAccounts(); });
+    document.getElementById('fSearch').addEventListener('input', e => { filters.q = normalizeSearchText(e.target.value); renderAccounts(); });
     document.getElementById('btnReset').addEventListener('click', () => {
       filters.city = filters.status = filters.performer = filters.q = '';
       ['fCity','fStatus','fPerformer','fSearch'].forEach(id => document.getElementById(id).value = '');
@@ -1705,7 +1705,7 @@
       filters.mode = b.dataset.tab;
       renderAccounts();
     }));
-    window.onGlobalSearch = q => { filters.q = q; document.getElementById('fSearch').value = q; renderAccounts(); };
+    window.onGlobalSearch = q => { filters.q = normalizeSearchText(q); document.getElementById('fSearch').value = q; renderAccounts(); };
 
     window.addEventListener('cloudstate:updated', renderAll);
     window.addEventListener('store:reloaded', renderAll);
