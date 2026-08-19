@@ -164,6 +164,9 @@
       font-size: 9px; font-weight: 800; line-height: 1;
       padding: 3px 6px; border-radius: 999px;
     }
+    .sched-cell__task-count[data-tone="done"] {
+      background: rgba(34,197,94,0.14); color: #22c55e;
+    }
     .sched-cell__dots {
       position: absolute; bottom: 4px; left: 6px; right: 6px;
       display: flex; gap: 2px; flex-wrap: wrap;
@@ -378,7 +381,7 @@
   </div>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260820c"></script>
+  <script src="../js/app.js?v=20260820d"></script>
   <script src="../js/supabase-client.js?v=20260726b"></script>
   <script src="../js/auth-gate.js?v=20260726a"></script>
   <script src="../js/cloud-sync.js?v=20260726b"></script>
@@ -390,7 +393,7 @@
 
   <script>
   document.addEventListener('DOMContentLoaded', () => {
-    const { Store, Modal, toast, todayISO, fmtDate } = window.App;
+    const { Store, Modal, toast, todayISO, fmtDate, clientScheduleBreakdown } = window.App;
     const { confirmDelete } = window.TableUtils;
 
     Store.load();
@@ -800,7 +803,7 @@
       return null;
     }
 
-    /** Собирает {date → [{client, count, color}]} из всех client.schedule */
+    /** Собирает остаток плана и автоматически выполненные отклики по датам. */
     function collectScheduleByDate() {
       const map = new Map();
       const clients = (Store.state.clients || []).filter(c =>
@@ -816,14 +819,14 @@
           m => String(m.code || '').toLowerCase().trim() === cCode
         );
         const mentorId = mentor ? mentor.id : null;
-        (c.schedule || []).forEach(s => {
-          if (!s.date || !s.count) return;
-          if (!map.has(s.date)) map.set(s.date, []);
-          map.get(s.date).push({
+        clientScheduleBreakdown(Store.state, c).forEach(item => {
+          if (!map.has(item.date)) map.set(item.date, []);
+          map.get(item.date).push({
             clientId: c.id, code: c.code, name: c.name, manager: c.manager || '',
             mentorId,                                       // ← добавлено для match с schedule_responses.mentor_id
             tariff: c.tariff || '', ordered: +c.ordered || 0,
-            done: deriveDoneLocal(c), count: +s.count || 0, color
+            done: deriveDoneLocal(c), count: item.remaining,
+            plannedCount: item.planned, completedCount: item.completed, color
           });
         });
       });
@@ -894,7 +897,10 @@
         let reviews = 0, tasks = 0, clientsSet = new Set();
         byDate.forEach((rows, date) => {
           if (date >= from && date <= to) {
-            rows.forEach(r => { reviews += r.count; clientsSet.add(r.clientId); });
+            rows.forEach(r => {
+              reviews += r.count;
+              if (r.count > 0) clientsSet.add(r.clientId);
+            });
           }
         });
         actionsByDate.forEach((rows, date) => {
@@ -955,6 +961,7 @@
         const iso = `${y}-${String(mm+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
         const rows = byDate.get(iso) || [];
         const total = rows.reduce((s, r) => s + r.count, 0);
+        const doneTotal = rows.reduce((s, r) => s + r.completedCount, 0);
         const taskTotal = (actionsByDate.get(iso) || []).length;
         const uniqColors = [...new Set(rows.map(r => r.color))].slice(0, 5);
         const dots = uniqColors.map(c => `<span class="sched-cell__dot" style="background:${c}"></span>`).join('');
@@ -965,12 +972,16 @@
           total > 0 ? 'has-plan' : '',
           taskTotal > 0 ? 'has-task' : ''
         ].filter(Boolean).join(' ');
+        const lowerBadge = [
+          doneTotal > 0 ? `✓ ${doneTotal}` : '',
+          taskTotal > 0 ? taskCountLabel(taskTotal) : ''
+        ].filter(Boolean).join(' · ');
         cells.push(`
           <button class="${cls}" data-iso="${iso}">
             ${total > 0 ? `<span class="sched-cell__count">${total}</span>` : ''}
             <span class="sched-cell__day">${d}</span>
             ${dots ? `<span class="sched-cell__dots">${dots}</span>` : ''}
-            ${taskTotal > 0 ? `<span class="sched-cell__task-count">✓ ${taskTotal}</span>` : ''}
+            ${lowerBadge ? `<span class="sched-cell__task-count" data-tone="${taskTotal > 0 ? 'task' : 'done'}">${lowerBadge}</span>` : ''}
           </button>
         `);
       }
@@ -992,13 +1003,14 @@
       const actionRows = actionsByDate.get(schedState.selected) || [];
       const rows = rawRows;
       const totalCount = rows.reduce((s, r) => s + r.count, 0);
+      const completedCount = rows.reduce((s, r) => s + r.completedCount, 0);
       const metaParts = [];
-      if (rows.length) {
-        metaParts.push(`${totalCount} откл.`);
-      }
+      if (totalCount > 0) metaParts.push(`${totalCount} откл. осталось`);
+      if (completedCount > 0) metaParts.push(`✓ ${completedCount} сделано`);
       if (actionRows.length) metaParts.push(taskCountLabel(actionRows.length));
       const meta = metaParts.length ? metaParts.join(' · ') : 'нет планов';
       const reviewBody = rows.map(r => {
+            const isDone = r.count === 0 && r.completedCount > 0;
             const left = Math.max(0, r.ordered - r.done);
             // Найдём ответ клиента по этой паре (mentor_id, date)
             const respKey = (r.mentorId || r.code || '') + '|' + schedState.selected;
@@ -1021,16 +1033,15 @@
               }
             }
             return `
-              <div class="sched-row">
+              <div class="sched-row${isDone ? ' is-done' : ''}">
                 <span class="sched-row__dot" style="background:${r.color}"></span>
                 <div class="sched-row__name">
                   <strong>${escapeHtml(r.code || '')}</strong>
                   ${r.name ? ` · ${escapeHtml(r.name)}` : ''}
-                  <span class="sched-row__progress">${r.manager ? escapeHtml(r.manager) + ' · ' : ''}${r.tariff ? r.tariff + ' · ' : ''}${r.done}/${r.ordered} (${left} осталось)</span>
+                  <span class="sched-row__progress">${r.manager ? escapeHtml(r.manager) + ' · ' : ''}${r.tariff ? r.tariff + ' · ' : ''}${r.done}/${r.ordered} (${left} осталось)${r.completedCount ? ` · откликов сделано: ${r.completedCount}` : ''}</span>
                 </div>
                 ${respBadge}
-                <span class="sched-row__count">${r.count}</span>
-                <button class="sched-row__link" type="button" data-complete-schedule-client="${escapeHtml(r.clientId)}" data-complete-schedule-date="${escapeHtml(schedState.selected)}">Отклик сделан</button>
+                <span class="sched-row__count">${isDone ? '✓' : r.count}</span>
                 <a class="sched-row__link" href="clients.html?focus=${encodeURIComponent(r.clientId)}">График →</a>
               </div>
             `;
@@ -1060,23 +1071,6 @@
       `;
       document.querySelectorAll('[data-calendar-schedule-status]').forEach(btn => {
         btn.addEventListener('click', () => openStatusSchedule(btn.dataset.calendarScheduleStatus));
-      });
-      document.querySelectorAll('[data-complete-schedule-client]').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const result = Store.completeScheduledReview(
-            btn.dataset.completeScheduleClient,
-            btn.dataset.completeScheduleDate
-          );
-          if (!result) {
-            toast('Этот отклик уже снят с плана', 'error');
-            renderSched();
-            return;
-          }
-          toast(result.remainingOnDate > 0
-            ? `Отклик отмечен. На эту дату осталось: ${result.remainingOnDate}`
-            : 'Отклик отмечен как сделанный');
-          renderSched();
-        });
       });
     }
 

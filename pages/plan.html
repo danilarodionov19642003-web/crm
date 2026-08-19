@@ -161,7 +161,7 @@
   </div>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260730d"></script>
+  <script src="../js/app.js?v=20260820d"></script>
   <script src="../js/supabase-client.js?v=20260726b"></script>
   <script src="../js/auth-gate.js?v=20260726a"></script>
   <script src="../js/cloud-sync.js?v=20260726b"></script>
@@ -173,7 +173,7 @@
 
   <script>
   document.addEventListener('DOMContentLoaded', () => {
-    const { Store, todayISO } = window.App;
+    const { Store, todayISO, clientScheduleBreakdown } = window.App;
     Store.load();
 
     const CAL_COLORS = ['#ff7a00','#22c55e','#3b82f6','#a855f7','#14b8a6','#eab308','#ef4444','#06b6d4'];
@@ -231,13 +231,13 @@
           m => String(m.code||'').toLowerCase().trim() === ccode
         );
         const mentorId = mentor ? mentor.id : null;
-        (c.schedule||[]).forEach(s => {
-          if (!s.date || !s.count) return;
-          if (!map.has(s.date)) map.set(s.date, []);
-          map.get(s.date).push({
+        clientScheduleBreakdown(Store.state, c).forEach(item => {
+          if (item.remaining <= 0) return;
+          if (!map.has(item.date)) map.set(item.date, []);
+          map.get(item.date).push({
             clientId: c.id, code: c.code, name: c.name, mentorId,
             tariff: c.tariff||'', ordered: +c.ordered||0,
-            done: deriveDoneLocal(c), count: +s.count||0, color
+            done: deriveDoneLocal(c), count: item.remaining, color
           });
         });
       });

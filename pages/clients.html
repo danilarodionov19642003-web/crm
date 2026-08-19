@@ -479,7 +479,7 @@
   </div>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260820c"></script>
+  <script src="../js/app.js?v=20260820d"></script>
   <script src="../js/supabase-client.js?v=20260726b"></script>
   <script src="../js/auth-gate.js?v=20260726a"></script>
   <script src="../js/cloud-sync.js?v=20260726b"></script>
@@ -498,7 +498,8 @@
   document.addEventListener('DOMContentLoaded', () => {
     const { Store, Modal, Counter, toast, fmtMoney, fmtDate, todayISO,
             SERVICES, TARIFFS, TARIFF_NAMES, PROFILE_STATUSES, PERFORMERS,
-            scheduledReviewCount, manualScheduleLimit } = window.App;
+            scheduledReviewCount, manualScheduleLimit,
+            clientOutreachStartsByDate, clientScheduleBreakdown } = window.App;
     const { makeEditable, confirmDelete } = window.TableUtils;
 
     Store.load();
@@ -939,37 +940,34 @@
     }
 
     /* ─────────── График: helpers ─────────────────────────────────────────
-       Хранение: client.schedule = [{ date: 'YYYY-MM-DD', count: N }, ...]
-       Только запланированные. «Сделанные» считаются автоматически — по
-       approved reviews с этим mentorId, дата = review.moderatedAt[:10].
+       Хранение: client.schedule = [{ date: 'YYYY-MM-DD', count: N }, ...].
+       Выполнение отклика определяется по первому рабочему статусу аккаунта.
+       Публикация старого отзыва не закрывает новый план на ту же дату.
        --------------------------------------------------------------------- */
 
     function getSchedule(c) {
       return Array.isArray(c.schedule) ? c.schedule : [];
     }
 
-    /** Map даты YYYY-MM-DD → кол-во сделанных отзывов в эту дату.
-     *  Считаем только approved-reviews которые попали в статус «🎯 Готов». */
+    function getScheduleBreakdown(c) {
+      return clientScheduleBreakdown(Store.state, c);
+    }
+
+    /** Map даты YYYY-MM-DD → сколько новых откликов реально начато. */
     function getDoneByDateMap(c) {
-      const reviews = collectReviewsForClient(c);  // уже отфильтрованы по approved
-      const map = {};
-      reviews.forEach(r => {
-        const d = (r.date || '').slice(0, 10);
-        if (!d) return;
-        map[d] = (map[d] || 0) + 1;
-      });
-      return map;
+      return clientOutreachStartsByDate(Store.state, c);
     }
 
     /** Сколько ещё запланировано отзывов (≥ сегодня), не учитывая прошедшие. */
     function countScheduledForClient(c) {
       const today = todayISO();
-      return getSchedule(c).reduce((s, x) => s + (x.date >= today ? (+x.count || 0) : 0), 0);
+      return getScheduleBreakdown(c)
+        .reduce((sum, item) => sum + (item.date >= today ? item.remaining : 0), 0);
     }
 
     /** Сумма count в schedule[]. Используется в footer-статистике модалки. */
     function totalPlanned(c) {
-      return scheduledReviewCount(c);
+      return scheduledReviewCount(c, Store.state);
     }
 
     /* Порядок статусов аккаунтов (для сводки/списка). Последний — «готово». */
@@ -1288,7 +1286,7 @@
       const daysInMonth = new Date(y, m + 1, 0).getDate();
       const doneMap = getDoneByDateMap(c);
       const planMap = {};
-      getSchedule(c).forEach(x => { planMap[x.date] = (+x.count || 0); });
+      getScheduleBreakdown(c).forEach(item => { planMap[item.date] = item.remaining; });
       // Аккаунты из «Аккаунтов» по их статус-датам → метки в календаре
       const accMap = {};
       acc.items.forEach(it => {
@@ -1408,8 +1406,8 @@
     function otherClientsOnDate(isoDate, exceptId) {
       return (Store.state.clients || []).filter(cl =>
         cl.id !== exceptId &&
-        Array.isArray(cl.schedule) &&
-        cl.schedule.some(s => s.date === isoDate && (+s.count || 0) > 0)
+        clientScheduleBreakdown(Store.state, cl)
+          .some(item => item.date === isoDate && item.remaining > 0)
       ).length;
     }
 
@@ -1417,8 +1415,12 @@
       const c = Store.state.clients.find(x => x.id === curSchClientId);
       if (!c) return;
       const schedule = getSchedule(c).map(x => ({ ...x }));
-      const idx = schedule.findIndex(x => x.date === isoDate);
-      const alreadyOnDay = idx >= 0 && (+schedule[idx].count || 0) > 0;
+      const day = getScheduleBreakdown(c).find(item => item.date === isoDate);
+      const currentRemaining = day ? day.remaining : 0;
+      const completedStarts = day
+        ? day.completedStarts
+        : Math.max(0, Number(getDoneByDateMap(c)[isoDate]) || 0);
+      const alreadyOnDay = currentRemaining > 0;
 
       if (delta > 0) {
         const limit = manualScheduleLimit(Store.state, c);
@@ -1445,13 +1447,12 @@
         }
       }
 
-      if (idx >= 0) {
-        schedule[idx].count = Math.max(0, (+schedule[idx].count || 0) + delta);
-        if (schedule[idx].count === 0) schedule.splice(idx, 1);
-      } else if (delta > 0) {
-        schedule.push({ date: isoDate, count: delta });
-      }
-      updateSchedule(curSchClientId, schedule);
+      if (delta < 0 && currentRemaining <= 0) return;
+      const nextRemaining = Math.max(0, currentRemaining + delta);
+      const nextRawCount = completedStarts + nextRemaining;
+      const nextSchedule = schedule.filter(item => item.date !== isoDate);
+      if (nextRawCount > 0) nextSchedule.push({ date: isoDate, count: nextRawCount });
+      updateSchedule(curSchClientId, nextSchedule);
       renderScheduleModal();
     }
 
