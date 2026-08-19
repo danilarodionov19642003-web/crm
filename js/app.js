@@ -199,6 +199,48 @@
     if (!code) return null;
     return (state.clients || []).find(item => normalizeClientCode(item.code) === code) || null;
   }
+  function scheduledReviewCount(client) {
+    return (Array.isArray(client && client.schedule) ? client.schedule : [])
+      .reduce((sum, item) => sum + Math.max(0, Number(item && item.count) || 0), 0);
+  }
+  function manualScheduleLimit(state, client) {
+    const code = normalizeClientCode(client && client.code);
+    const ordered = Math.max(0, Number(client && client.ordered) || 0);
+    if (!code || !ordered) return 0;
+    const mentorIds = new Set((state.mentors || [])
+      .filter(item => normalizeClientCode(item.code) === code)
+      .map(item => item.id));
+    const statuses = (state.profileStatuses || []).filter(item => mentorIds.has(item.mentorId));
+    const done = Math.max(
+      statuses.filter(item => item.status === STATUS_READY).length,
+      Math.max(0, Number(client && client.manualDone) || 0)
+    );
+    const active = statuses.filter(item =>
+      item.status !== PROFILE_STATUSES[0] && item.status !== STATUS_READY
+    ).length;
+    return Math.max(0, ordered - done - active);
+  }
+  function consumeScheduledReview(state, mentorId, preferredDate) {
+    const client = clientForStatusMentor(state || {}, mentorId);
+    if (!client || !Array.isArray(client.schedule) || !client.schedule.length) return '';
+    const schedule = client.schedule
+      .map(item => ({ date: String(item && item.date || '').slice(0, 10), count: Math.max(0, Number(item && item.count) || 0) }))
+      .filter(item => /^\d{4}-\d{2}-\d{2}$/.test(item.date) && item.count > 0)
+      .sort((a, b) => a.date.localeCompare(b.date));
+    if (!schedule.length) return '';
+
+    const target = /^\d{4}-\d{2}-\d{2}$/.test(String(preferredDate || ''))
+      ? String(preferredDate).slice(0, 10)
+      : todayISO();
+    const index = schedule.findIndex(item => item.date === target);
+    // Без точного совпадения ничего не угадываем: соседняя дата может быть
+    // другой самостоятельной задачей. Её можно закрыть явной кнопкой в задачах.
+    if (index < 0) return '';
+    const consumedDate = schedule[index].date;
+    schedule[index].count--;
+    client.schedule = schedule.filter(item => item.count > 0);
+    return consumedDate;
+  }
   function statusActionDefaultDays(rec, state) {
     if (!rec) return 0;
     if (rec.status === STATUS_SELECT) return STATUS_SELECT_WAIT_DAYS;
@@ -824,6 +866,22 @@
       // Синк имени/кода в связанного ментора (если они изменились).
       this._ensureMentorForClient(this.state.clients[i]);
       this.save();
+    },
+    completeScheduledReview(clientId, date) {
+      const client = (this.state.clients || []).find(item => item.id === clientId);
+      const safeDate = String(date || '').slice(0, 10);
+      if (!client || !/^\d{4}-\d{2}-\d{2}$/.test(safeDate) || !Array.isArray(client.schedule)) return null;
+      const schedule = client.schedule
+        .map(item => ({ date: String(item && item.date || '').slice(0, 10), count: Math.max(0, Number(item && item.count) || 0) }))
+        .filter(item => /^\d{4}-\d{2}-\d{2}$/.test(item.date) && item.count > 0)
+        .sort((a, b) => a.date.localeCompare(b.date));
+      const index = schedule.findIndex(item => item.date === safeDate);
+      if (index < 0) return null;
+      schedule[index].count--;
+      const remainingOnDate = Math.max(0, schedule[index].count);
+      client.schedule = schedule.filter(item => item.count > 0);
+      this.save();
+      return { clientId, date: safeDate, remainingOnDate };
     },
     deleteClient(id) {
       const client = (this.state.clients || []).find(x => x.id === id);
@@ -1638,6 +1696,7 @@
       const stamp = date || todayISO();
       // Захватываем СТАРЫЙ статус ДО мутации — нужен для уведомления клиенту.
       const oldStatus = rec ? rec.status : null;
+      const oldStatusDate = rec ? rec.date : '';
       const isNew = !rec;
       if (rec) {
         rec.history = rec.history || [];
@@ -1672,6 +1731,19 @@
         nextActionDate,
         nextActionMode
       });
+      // График откликов и публикация отзывов — разные процессы. Автоматически
+      // гасим план только при однозначном переходе ТОГО ЖЕ аккаунта из
+      // «Запланировано» в работу. Новый «Готов» или смена старого статуса
+      // не должны закрывать несвязанный отклик на совпавшую дату.
+      const becameActive = oldStatus === PROFILE_STATUSES[0]
+        && status !== PROFILE_STATUSES[0];
+      if (becameActive) {
+        consumeScheduledReview(
+          this.state,
+          mentorId,
+          oldStatus === PROFILE_STATUSES[0] ? oldStatusDate : stamp
+        );
+      }
       this.save();
       // Уведомление в Telegram-очередь — best effort, не блокирует и не валит save.
       try { this._queueStatusNotification(mentorId, profileId, status, oldStatus, comment, isNew); }
@@ -2837,6 +2909,7 @@
     fmtMoney, fmtDate, monthKey, monthLabel,
     uid, todayISO, tomorrowISO, addDaysISO, addMonthsISO, daysBetweenISO, deriveStatusAction,
     normalizeClientCode, normalizeSearchText, compareClientCodes, clientReviewsRemaining,
+    scheduledReviewCount, manualScheduleLimit, consumeScheduledReview,
     SERVICES, EXPENSE_CATEGORIES, PERSONAL_CATEGORIES, PHONE_EXPENSE_AMOUNT, TARIFFS, TARIFF_NAMES,
     PROFILE_STATUSES, PERFORMERS, CITIES, cityFromCode,
     STATUS_SELECT, STATUS_CHOSEN, STATUS_READY

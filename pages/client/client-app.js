@@ -325,15 +325,14 @@
         });
       });
       // Запланированные дни — из admin'ского графика (client.schedule).
-      // Гасим сделанное: план за день − откликов сделано (аккаунты со статусом
-      // ≠ «Запланировано», датированным этим днём). Сделал отклик → план уменьшается.
+      // schedule[] уже содержит только незакрытый план. Статусы и отзывы здесь
+      // не вычитаем: опубликованный старый отзыв может иметь ту же дату, но это
+      // не означает, что запланированный на сегодня отклик выполнен.
       (a.schedule || []).forEach(p => {
         if (!p.date || !p.count) return;
         const d = String(p.date).slice(0, 10);
-        const doneToday = (a.statuses || []).filter(s =>
-          String(s.date || '').slice(0, 10) === d && s.status !== '📋 Запланировано').length;
-        const left = Math.max(0, (+p.count || 0) - doneToday);
-        if (left <= 0) return;  // все запланированные отклики за день сделаны — не показываем
+        const left = Math.max(0, +p.count || 0);
+        if (left <= 0) return;
         events.push({
           date: d,
           color, anketa: a.name || a.code,

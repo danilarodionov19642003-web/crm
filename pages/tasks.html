@@ -378,7 +378,7 @@
   </div>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260805b"></script>
+  <script src="../js/app.js?v=20260820c"></script>
   <script src="../js/supabase-client.js?v=20260726b"></script>
   <script src="../js/auth-gate.js?v=20260726a"></script>
   <script src="../js/cloud-sync.js?v=20260726b"></script>
@@ -865,24 +865,6 @@
       )).length;
     }
 
-    /** Связь с «Аккаунтами»: работа по анкете в конкретный день.
-     *  Возвращает аккаунты (profileStatuses) этого клиента со статусом КРОМЕ
-     *  «📋 Запланировано», у которых дата = iso. Наличие = задача за день сделана. */
-    function accountWorkOnDate(code, iso) {
-      const c = String(code || '').toLowerCase().trim();
-      if (!c || !iso) return [];
-      const mentorIds = new Set((Store.state.mentors || [])
-        .filter(m => String(m.code || '').toLowerCase().trim() === c).map(m => m.id));
-      if (!mentorIds.size) return [];
-      return (Store.state.profileStatuses || [])
-        .filter(s => mentorIds.has(s.mentorId) && (s.date || '').slice(0, 10) === iso
-                     && s.status && s.status !== '📋 Запланировано')
-        .map(s => {
-          const prof = (Store.state.profiles || []).find(p => p.id === s.profileId);
-          return { acc: prof ? (prof.code || '?') : '?', status: s.status };
-        });
-    }
-
     function fmtDateRu(iso) {
       if (!iso) return '';
       const d = new Date(iso);
@@ -1008,23 +990,16 @@
     function renderSchedDayDetail(byDate, actionsByDate) {
       const rawRows = byDate.get(schedState.selected) || [];
       const actionRows = actionsByDate.get(schedState.selected) || [];
-      // Обогащаем каждую строку работой из «Аккаунтов» за этот день
-      const rows = rawRows.map(r => ({ ...r, work: accountWorkOnDate(r.code, schedState.selected) }));
+      const rows = rawRows;
       const totalCount = rows.reduce((s, r) => s + r.count, 0);
-      const doneN = rows.filter(r => r.work.length).length;
       const metaParts = [];
       if (rows.length) {
         metaParts.push(`${totalCount} откл.`);
-        metaParts.push(`<span style="color:#22c55e">✓ сделано ${doneN}/${rows.length}</span>`);
       }
       if (actionRows.length) metaParts.push(taskCountLabel(actionRows.length));
       const meta = metaParts.length ? metaParts.join(' · ') : 'нет планов';
       const reviewBody = rows.map(r => {
             const left = Math.max(0, r.ordered - r.done);
-            const isDone = r.work.length > 0;
-            const workBadge = isDone
-              ? `<span class="sched-row__resp" data-tone="pos" title="Из «Аккаунтов» за ${schedState.selected}: ${escapeHtml(r.work.map(w => w.status + ' ' + w.acc).join(', '))}">✓ сделано</span>`
-              : '';
             // Найдём ответ клиента по этой паре (mentor_id, date)
             const respKey = (r.mentorId || r.code || '') + '|' + schedState.selected;
             const resp = schedState.responses.get(respKey);
@@ -1046,16 +1021,16 @@
               }
             }
             return `
-              <div class="sched-row${isDone ? ' is-done' : ''}">
+              <div class="sched-row">
                 <span class="sched-row__dot" style="background:${r.color}"></span>
                 <div class="sched-row__name">
                   <strong>${escapeHtml(r.code || '')}</strong>
                   ${r.name ? ` · ${escapeHtml(r.name)}` : ''}
                   <span class="sched-row__progress">${r.manager ? escapeHtml(r.manager) + ' · ' : ''}${r.tariff ? r.tariff + ' · ' : ''}${r.done}/${r.ordered} (${left} осталось)</span>
                 </div>
-                ${workBadge}
                 ${respBadge}
                 <span class="sched-row__count">${r.count}</span>
+                <button class="sched-row__link" type="button" data-complete-schedule-client="${escapeHtml(r.clientId)}" data-complete-schedule-date="${escapeHtml(schedState.selected)}">Отклик сделан</button>
                 <a class="sched-row__link" href="clients.html?focus=${encodeURIComponent(r.clientId)}">График →</a>
               </div>
             `;
@@ -1085,6 +1060,23 @@
       `;
       document.querySelectorAll('[data-calendar-schedule-status]').forEach(btn => {
         btn.addEventListener('click', () => openStatusSchedule(btn.dataset.calendarScheduleStatus));
+      });
+      document.querySelectorAll('[data-complete-schedule-client]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const result = Store.completeScheduledReview(
+            btn.dataset.completeScheduleClient,
+            btn.dataset.completeScheduleDate
+          );
+          if (!result) {
+            toast('Этот отклик уже снят с плана', 'error');
+            renderSched();
+            return;
+          }
+          toast(result.remainingOnDate > 0
+            ? `Отклик отмечен. На эту дату осталось: ${result.remainingOnDate}`
+            : 'Отклик отмечен как сделанный');
+          renderSched();
+        });
       });
     }
 

@@ -479,7 +479,7 @@
   </div>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260730d"></script>
+  <script src="../js/app.js?v=20260820c"></script>
   <script src="../js/supabase-client.js?v=20260726b"></script>
   <script src="../js/auth-gate.js?v=20260726a"></script>
   <script src="../js/cloud-sync.js?v=20260726b"></script>
@@ -497,7 +497,8 @@
      ======================================================================== */
   document.addEventListener('DOMContentLoaded', () => {
     const { Store, Modal, Counter, toast, fmtMoney, fmtDate, todayISO,
-            SERVICES, TARIFFS, TARIFF_NAMES, PROFILE_STATUSES, PERFORMERS } = window.App;
+            SERVICES, TARIFFS, TARIFF_NAMES, PROFILE_STATUSES, PERFORMERS,
+            scheduledReviewCount, manualScheduleLimit } = window.App;
     const { makeEditable, confirmDelete } = window.TableUtils;
 
     Store.load();
@@ -968,7 +969,7 @@
 
     /** Сумма count в schedule[]. Используется в footer-статистике модалки. */
     function totalPlanned(c) {
-      return getSchedule(c).reduce((s, x) => s + (+x.count || 0), 0);
+      return scheduledReviewCount(c);
     }
 
     /* Порядок статусов аккаунтов (для сводки/списка). Последний — «готово». */
@@ -1223,7 +1224,7 @@
          - Shift+тык / правый клик → −1 (с минимумом 0, тогда запись удалится)
          - Прошлые дни кликабельны но визуально приглушены
          - «Сделано» считается автоматически из approved-reviews по дате
-         - Снизу live-статистика «осталось разместить» = ordered − done_actual − planned_future
+         - Снизу live-статистика «осталось разместить» = ordered − done − аккаунты в работе
        Состояние модалки:
          curSchClientId — id клиента
          curSchMonth   — какой месяц показываем (Date с 1м числом)
@@ -1256,6 +1257,7 @@
       const done = acc.done;          // статус 🎯 Готов
       const inWork = acc.inWork;      // промежуточные статусы (диалог/выбрать/выбран...)
       const plannedManual = totalPlanned(c);
+      const manualLimit = manualScheduleLimit(Store.state, c);
       const today = todayISO();
       const leftToPlace = Math.max(0, ordered - done - inWork);  // заказано − готово − в работе
       const over = ordered - done - inWork;  // < 0 = аккаунтов назначено больше, чем заказано
@@ -1269,7 +1271,7 @@
         <span class="sch-stat ok"><strong>🎯 Готово:</strong> ${done}</span>
         <span class="sch-stat warn"><strong>🛠 В работе:</strong> ${inWork}</span>
         <span class="sch-stat ${placeCls}">${placeText}</span>
-        <span class="sch-stat"><strong>🗓 План вручную:</strong> ${plannedManual}</span>
+        <span class="sch-stat ${plannedManual > manualLimit ? 'bad' : ''}"><strong>🗓 План вручную:</strong> ${plannedManual}${plannedManual > manualLimit ? ` · лишних ${plannedManual - manualLimit}` : ''}</span>
       `;
 
       // Заголовок месяца
@@ -1309,9 +1311,9 @@
         const isPast = iso < today;
         const planned = planMap[iso] || 0;
         const done = doneMap[iso] || 0;
-        // откликов СДЕЛАНО в этот день = аккаунты со статусом ≠ Запланировано (эмодзи ≠ 📋)
-        const accDoneToday = (accMap[iso] || []).filter(a => a.emoji !== '📋').length;
-        const plannedLeft = Math.max(0, planned - accDoneToday);  // осталось по плану (гасим сделанное)
+        // schedule[] хранит только ещё не выполненный план. Публикация старого
+        // отзыва на ту же дату не должна автоматически гасить отклик.
+        const plannedLeft = planned;
         let cls = 'sch-day';
         if (isToday) cls += ' is-today';
         if (isPast)  cls += ' is-past';
@@ -1417,6 +1419,20 @@
       const schedule = getSchedule(c).map(x => ({ ...x }));
       const idx = schedule.findIndex(x => x.date === isoDate);
       const alreadyOnDay = idx >= 0 && (+schedule[idx].count || 0) > 0;
+
+      if (delta > 0) {
+        const limit = manualScheduleLimit(Store.state, c);
+        const planned = totalPlanned(c);
+        if (planned >= limit) {
+          toast(
+            limit > 0
+              ? `По ${c.code || 'анкете'} можно запланировать ${limit}: все свободные отклики уже стоят в графике.`
+              : `По ${c.code || 'анкете'} нет свободных откликов для нового плана.`,
+            'error'
+          );
+          return;
+        }
+      }
 
       // Лимит: если ДОБАВЛЯЕМ нового клиента на день, где уже MAX клиентов — блок.
       // (Увеличение count тому, кто уже на этот день, не считается новым человеком.)
