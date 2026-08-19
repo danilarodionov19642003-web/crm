@@ -154,6 +154,38 @@
       .replace(/^а/, 'a')
       .replace(/[\s\u2010-\u2015-]+/g, '');
   }
+  function compareClientCodes(left, right) {
+    const a = normalizeClientCode(left);
+    const b = normalizeClientCode(right);
+    const aNumber = /^a(\d+)$/.exec(a);
+    const bNumber = /^a(\d+)$/.exec(b);
+    if (aNumber && bNumber) return Number(aNumber[1]) - Number(bNumber[1]);
+    if (aNumber) return -1;
+    if (bNumber) return 1;
+    return a.localeCompare(b, 'ru', { numeric: true, sensitivity: 'base' });
+  }
+  function clientReviewsRemaining(state, mentor) {
+    const code = normalizeClientCode(mentor && mentor.code);
+    if (!code) return 0;
+    const client = (state.clients || []).find(item => normalizeClientCode(item.code) === code);
+    if (!client) return 0;
+
+    const mentorIds = new Set((state.mentors || [])
+      .filter(item => normalizeClientCode(item.code) === code)
+      .map(item => item.id));
+    const statuses = state.profileStatuses || [];
+    const realDone = (state.reviews || []).filter(review =>
+      mentorIds.has(review.mentorId)
+      && review.moderation === 'approved'
+      && statuses.some(status =>
+        status.mentorId === review.mentorId
+        && status.profileId === review.profileId
+        && status.status === STATUS_READY
+      )
+    ).length;
+    const done = Math.max(realDone, Number(client.manualDone) || 0);
+    return Math.max(0, (Number(client.ordered) || 0) - done);
+  }
   function clientForStatusMentor(state, mentorId) {
     const mentor = (state.mentors || []).find(item => item.id === mentorId);
     const code = normalizeClientCode(mentor && mentor.code);
@@ -2797,6 +2829,7 @@
     Store, Modal, Counter, toast,
     fmtMoney, fmtDate, monthKey, monthLabel,
     uid, todayISO, tomorrowISO, addDaysISO, addMonthsISO, daysBetweenISO, deriveStatusAction,
+    normalizeClientCode, compareClientCodes, clientReviewsRemaining,
     SERVICES, EXPENSE_CATEGORIES, PERSONAL_CATEGORIES, PHONE_EXPENSE_AMOUNT, TARIFFS, TARIFF_NAMES,
     PROFILE_STATUSES, PERFORMERS, CITIES, cityFromCode,
     STATUS_SELECT, STATUS_CHOSEN, STATUS_READY

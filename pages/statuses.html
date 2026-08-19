@@ -598,7 +598,7 @@
   </style>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260730d"></script>
+  <script src="../js/app.js?v=20260820a"></script>
   <script src="../js/supabase-client.js?v=20260726b"></script>
   <script src="../js/auth-gate.js?v=20260726a"></script>
   <script src="../js/cloud-sync.js?v=20260726b"></script>
@@ -613,7 +613,7 @@
     const {
       Store, Modal, toast, fmtMoney, fmtDate, todayISO, addDaysISO, deriveStatusAction,
       PROFILE_STATUSES, PERFORMERS, cityFromCode,
-      STATUS_SELECT, STATUS_CHOSEN
+      STATUS_SELECT, STATUS_CHOSEN, compareClientCodes, clientReviewsRemaining
     } = window.App;
     const { confirmDelete } = window.TableUtils;
 
@@ -1110,7 +1110,7 @@
     function renderMentors() {
       const counts = new Map();
       (Store.state.profiles || []).forEach(p => (p.mentorIds || []).forEach(id => counts.set(id, (counts.get(id) || 0) + 1)));
-      const rows = (Store.state.mentors || []).slice().sort((a, b) => (a.code || '').localeCompare(b.code || '', 'ru', { numeric: true }));
+      const rows = (Store.state.mentors || []).slice().sort((a, b) => compareClientCodes(a.code, b.code));
       const tb = document.getElementById('mnRows');
       if (rows.length === 0) {
         tb.innerHTML = `<tr><td colspan="5" class="empty">Клиенты ещё не добавлены.</td></tr>`;
@@ -1183,9 +1183,10 @@
       const taken = new Set(p.mentorIds || []);
       const opts = (Store.state.mentors || [])
         .filter(m => !taken.has(m.id))
-        .sort((a, b) => (a.code || '').localeCompare(b.code || '', 'ru', { numeric: true }))
+        .filter(m => clientReviewsRemaining(Store.state, m) > 0)
+        .sort((a, b) => compareClientCodes(a.code, b.code))
         .map(m => `<option value="${m.id}">${escapeHtml(mentorFull(m))}</option>`).join('');
-      document.getElementById('addMentor').innerHTML = opts || '<option value="">— все клиенты уже привязаны —</option>';
+      document.getElementById('addMentor').innerHTML = opts || '<option value="">— нет клиентов с остатком отзывов —</option>';
       fillStatusSelect(document.getElementById('addStatus'));
       document.getElementById('addStatus').value = PROFILE_STATUSES[0]; // 📋 Запланировано
       fillPerformerSelect(document.getElementById('addPerformer'), '');
