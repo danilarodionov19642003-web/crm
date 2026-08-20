@@ -887,7 +887,8 @@
         paid: 0, remain: 0, total: 0,
         allowRegularTariff: false,
         date: todayISO(), deadline: '', overdueDays: 0,
-        assignedEmail: '', manager: '', avatarUrl: ''
+        assignedEmail: '', manager: '',
+        profileUrl: '', avatarUrl: '', avatarUpdatedAt: ''
       }, rec);
       // нормализация email
       if (item.assignedEmail) item.assignedEmail = String(item.assignedEmail).toLowerCase().trim();
@@ -942,11 +943,11 @@
      */
     _ensureMentorForClient(client) {
       if (!client) return;
-      const code = String(client.code || '').toLowerCase().trim();
+      const code = normalizeClientCode(client.code);
       if (!code) return;
       this.state.mentors = this.state.mentors || [];
       const existing = this.state.mentors.find(
-        m => String(m.code || '').toLowerCase().trim() === code
+        m => normalizeClientCode(m.code) === code
       );
       if (existing) {
         // Всегда синхронизируем имя клиента в ментора, чтобы переименование
@@ -954,12 +955,16 @@
         // страницах «Аккаунты», «Связи», «Задачи» и т.д.
         const cn = String(client.name || '').trim();
         if (cn && existing.name !== cn) existing.name = cn;
+        existing.profileUrl = String(client.profileUrl || '');
+        existing.avatarUrl = String(client.avatarUrl || '');
         return existing;
       }
       const mentor = {
         id: uid(),
         code,
         name: client.name || '',
+        profileUrl: client.profileUrl || '',
+        avatarUrl: client.avatarUrl || '',
         notes: '',
         createdAt: todayISO()
       };
@@ -2186,10 +2191,10 @@
     _buildAnketaSnapshot(mentorId) {
       const mentor = (this.state.mentors || []).find(m => m.id === mentorId);
       if (!mentor) return null;
-      const code = String(mentor.code || '').toLowerCase().trim();
+      const code = normalizeClientCode(mentor.code);
       // Парный клиент (источник financial-полей: ordered/paid/total/...)
       const client = (this.state.clients || []).find(
-        c => String(c.code || '').toLowerCase().trim() === code
+        c => normalizeClientCode(c.code) === code
       );
       // Платежи — только items.accountId === client.id
       const payments = client ? this.getPaymentsForClient(client.id) : [];
@@ -2270,6 +2275,8 @@
         mentorId,
         code: mentor.code || '',
         name: client ? (client.name || mentor.name || '') : (mentor.name || ''),
+        profileUrl: client ? (client.profileUrl || '') : (mentor.profileUrl || ''),
+        avatarUrl: client ? (client.avatarUrl || '') : (mentor.avatarUrl || ''),
         platform: client ? (client.platform || '') : '',
         tariff: client ? (client.tariff || '') : '',
         ordered: client ? Number(client.ordered) || 0 : 0,

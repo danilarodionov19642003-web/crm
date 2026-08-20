@@ -25,6 +25,7 @@ from .domain import (
     refresh_financial_snapshot,
     verify_webhook_signature,
 )
+from .profi_profile import extract_avatar_url, normalize_profile_url
 
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
@@ -68,6 +69,10 @@ class ManualConfirmBody(BaseModel):
 
 class CancelOrderBody(BaseModel):
     client_order_id: int = Field(gt=0)
+
+
+class ProfiProfileBody(BaseModel):
+    profile_url: str = Field(min_length=10, max_length=500)
 
 
 def db() -> psycopg.Connection:
@@ -141,6 +146,46 @@ def provider_headers() -> dict[str, str]:
         "X-Nonce": str(uuid.uuid4()),
         "Content-Type": "application/json",
     }
+
+
+@app.post("/profile-avatar/resolve")
+async def resolve_profile_avatar(
+    body: ProfiProfileBody,
+    user: dict[str, Any] = Depends(current_user),
+):
+    if not is_owner(user):
+        raise HTTPException(status_code=403, detail="Owner access required")
+    try:
+        profile_url = normalize_profile_url(body.profile_url)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    document = bytearray()
+    try:
+        timeout = httpx.Timeout(12.0, connect=5.0)
+        async with httpx.AsyncClient(
+            timeout=timeout,
+            headers={"User-Agent": "Mozilla/5.0 (compatible; MentoriCRM/1.0)"},
+        ) as client:
+            async with client.stream("GET", profile_url, follow_redirects=False) as response:
+                if response.status_code != 200:
+                    raise HTTPException(status_code=409, detail="Анкета Profi.ru недоступна")
+                if "text/html" not in str(response.headers.get("content-type") or "").lower():
+                    raise HTTPException(status_code=409, detail="Profi.ru вернул неожиданный формат")
+                async for chunk in response.aiter_bytes():
+                    document.extend(chunk)
+                    if len(document) > 2_000_000:
+                        raise HTTPException(status_code=413, detail="Страница анкеты слишком большая")
+    except HTTPException:
+        raise
+    except httpx.HTTPError as exc:
+        log.warning("Profi profile fetch failed for %s: %s", profile_url, exc)
+        raise HTTPException(status_code=409, detail="Не удалось загрузить анкету Profi.ru") from exc
+
+    avatar_url = extract_avatar_url(document.decode("utf-8", errors="replace"))
+    if not avatar_url:
+        raise HTTPException(status_code=404, detail="В анкете Profi.ru не найдена фотография")
+    return {"profile_url": profile_url, "avatar_url": avatar_url}
 
 
 def public_transaction(row: dict[str, Any]) -> dict[str, Any]:

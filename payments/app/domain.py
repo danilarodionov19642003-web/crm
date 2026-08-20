@@ -149,12 +149,16 @@ def _create_paid_client(
         "deadline": "",
         "overdueDays": 0,
         "assignedEmail": str(order.get("client_email") or "").strip().lower(),
+        "profileUrl": "",
         "avatarUrl": "",
+        "avatarUpdatedAt": "",
     }
     mentor = {
         "id": _stable_id("mentor", order.get("id"), item_id),
         "code": code,
         "name": name,
+        "profileUrl": "",
+        "avatarUrl": "",
         "notes": "",
         "createdAt": paid_date,
     }
@@ -358,6 +362,8 @@ def refresh_financial_snapshot(payload: dict[str, Any], state: dict[str, Any]) -
                 "code": client.get("code") or mentor.get("code") or "",
                 "name": client.get("name") or mentor.get("name") or "",
                 "platform": client.get("platform") or "",
+                "profileUrl": client.get("profileUrl") or mentor.get("profileUrl") or "",
+                "avatarUrl": client.get("avatarUrl") or mentor.get("avatarUrl") or "",
                 "tariff": client.get("tariff") or "",
                 "ordered": client.get("ordered") or 0,
                 "done": client.get("manualDone") or 0,
@@ -382,6 +388,15 @@ def refresh_financial_snapshot(payload: dict[str, Any], state: dict[str, Any]) -
             continue
         for field in ("ordered", "paid", "remain", "total", "tariff"):
             anketa[field] = client.get(field, 0 if field != "tariff" else "")
+        mentor = next(
+            (
+                item for item in state.get("mentors", [])
+                if normalize_code(item.get("code")) == normalize_code(client.get("code"))
+            ),
+            None,
+        ) or {}
+        anketa["profileUrl"] = client.get("profileUrl") or mentor.get("profileUrl") or ""
+        anketa["avatarUrl"] = client.get("avatarUrl") or mentor.get("avatarUrl") or ""
         payments = []
         for income in incomes:
             for item in income.get("items") or []:

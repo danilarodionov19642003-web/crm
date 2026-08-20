@@ -182,6 +182,17 @@
 .cli-card__top {
   display: flex; align-items: center; gap: 12px; margin-bottom: 14px;
 }
+.cli-anketa-avatar {
+  width: 48px; height: 48px; flex: 0 0 48px; overflow: hidden;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 50%; border: 1px solid var(--border);
+  background: rgba(255,122,0,0.09); color: var(--cli-accent);
+  font-size: 11px; font-weight: 800; text-transform: uppercase;
+}
+.cli-anketa-avatar img { width: 100%; height: 100%; display: block; object-fit: cover; }
+.cli-anketa-avatar__fallback { display: inline-flex; width: 100%; height: 100%; align-items: center; justify-content: center; }
+.cli-anketa-avatar img + .cli-anketa-avatar__fallback { display: none; }
+.cli-anketa-avatar img[hidden] + .cli-anketa-avatar__fallback { display: inline-flex; }
 .cli-card__code {
   background: linear-gradient(135deg, rgba(255,122,0,0.12), rgba(255,154,60,0.05));
   color: var(--cli-accent);
@@ -346,8 +357,21 @@
 }
 .cli-back:hover { color: var(--cli-accent); border-color: rgba(255,122,0,0.4); }
 
+.cli-detail-head { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; }
+.cli-detail-avatar-link { flex: 0 0 auto; border-radius: 50%; text-decoration: none; }
+.cli-detail-avatar-link:hover .cli-anketa-avatar { border-color: var(--cli-accent); }
+.cli-anketa-avatar.is-detail { width: 64px; height: 64px; flex-basis: 64px; font-size: 14px; }
+.cli-detail-identity { min-width: 0; }
 .cli-detail-title { font-size: 24px; font-weight: 800; margin: 0 0 6px; }
 .cli-detail-sub   { color: var(--text-mute); font-size: 13px; margin-bottom: 20px; }
+.cli-detail-identity .cli-detail-sub { margin-bottom: 0; }
+
+@media (max-width: 480px) {
+  .cli-card__top { gap: 9px; }
+  .cli-anketa-avatar { width: 42px; height: 42px; flex-basis: 42px; }
+  .cli-anketa-avatar.is-detail { width: 54px; height: 54px; flex-basis: 54px; }
+  .cli-detail-title { font-size: 20px; overflow-wrap: anywhere; }
+}
 
 /* ---------- пакеты по анкете ---------- */
 .cli-packages { margin: 24px 0; }

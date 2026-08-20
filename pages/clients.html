@@ -19,6 +19,18 @@
     .cl-card { background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
     .cl-card.is-closed { opacity: .55; }
     .cl-card__head { display: flex; align-items: center; gap: 8px; }
+    .cl-client-avatar {
+      width: 42px; height: 42px; flex: 0 0 42px; padding: 0;
+      display: inline-flex; align-items: center; justify-content: center;
+      overflow: hidden; border: 1px solid var(--border); border-radius: 50%;
+      background: var(--bg-elev-2); color: var(--accent); cursor: pointer;
+      font: inherit; font-size: 11px; font-weight: 800; text-transform: uppercase;
+    }
+    .cl-client-avatar:hover { border-color: var(--accent); }
+    .cl-client-avatar img { width: 100%; height: 100%; display: block; object-fit: cover; }
+    .cl-client-avatar__fallback { display: inline-flex; align-items: center; justify-content: center; width: 100%; height: 100%; }
+    .cl-client-avatar img + .cl-client-avatar__fallback { display: none; }
+    .cl-client-avatar img[hidden] + .cl-client-avatar__fallback { display: inline-flex; }
     .cl-card__code { font-family: ui-monospace, Menlo, monospace; font-size: 12px; font-weight: 600; background: var(--bg-elev-2); padding: 2px 7px; border-radius: var(--radius-sm); cursor: pointer; white-space: nowrap; }
     .cl-card__name { font-weight: 600; font-size: 15px; flex: 1; min-width: 0; }
     .cl-card__meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12px; }
@@ -84,6 +96,7 @@
       min-width: 0; display: flex; flex-direction: column; gap: 5px;
     }
     .cl-list__client-main { min-width: 0; display: flex; align-items: center; gap: 7px; }
+    .cl-list__client-main .cl-client-avatar { width: 34px; height: 34px; flex-basis: 34px; }
     .cl-list__client .cl-card__name { white-space: normal; overflow-wrap: anywhere; }
     .cl-list__customer { color: var(--text-dim); font-size: 11px; }
     .cl-list__manager, .cl-list__setup .select { width: 100%; min-width: 0; padding: 4px 6px; font-size: 11px; }
@@ -282,6 +295,11 @@
           <label for="mPlatform">Площадка</label>
           <select id="mPlatform" class="select"></select>
         </div>
+        <div class="field" id="mProfileUrlField">
+          <label for="mProfileUrl">Ссылка на анкету Profi.ru</label>
+          <input type="url" id="mProfileUrl" class="input" placeholder="https://profi.ru/profile/..." inputmode="url" autocomplete="off"/>
+          <div style="font-size:11px;color:var(--text-mute);margin-top:4px">Фотография загрузится из публичной анкеты автоматически.</div>
+        </div>
         <div class="field">
           <label for="mManager">Ответственный менеджер</label>
           <select id="mManager" class="select"></select>
@@ -327,6 +345,33 @@
       <div class="modal__footer">
         <button class="btn btn--ghost" data-close>Отмена</button>
         <button class="btn btn--primary" id="mSave">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Фото и ссылка на публичную анкету Profi.ru -->
+  <div class="modal-backdrop" id="profilePhotoModal">
+    <div class="modal" style="max-width:520px">
+      <div class="modal__header">
+        <h3 id="profilePhotoTitle">Фото анкеты</h3>
+        <button class="btn--icon" data-close aria-label="Закрыть">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal__body">
+        <div style="display:grid;grid-template-columns:96px minmax(0,1fr);gap:16px;align-items:center">
+          <div class="cl-client-avatar" id="profilePhotoPreview" style="width:96px;height:96px;cursor:default;font-size:18px"></div>
+          <div class="field" style="margin:0">
+            <label for="profilePhotoUrl">Ссылка на анкету Profi.ru</label>
+            <input type="url" id="profilePhotoUrl" class="input" placeholder="https://profi.ru/profile/..." inputmode="url" autocomplete="off"/>
+            <div id="profilePhotoStatus" style="font-size:11px;color:var(--text-mute);margin-top:6px">Вставьте ссылку, и CRM сама найдёт фотографию.</div>
+          </div>
+        </div>
+      </div>
+      <div class="modal__footer">
+        <a class="btn btn--ghost" id="profilePhotoOpen" href="#" target="_blank" rel="noopener" hidden>Открыть анкету</a>
+        <button class="btn btn--ghost" data-close>Отмена</button>
+        <button class="btn btn--primary" id="profilePhotoSave">Загрузить фото</button>
       </div>
     </div>
   </div>
@@ -486,7 +531,7 @@
   </div>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260820h"></script>
+  <script src="../js/app.js?v=20260820i"></script>
   <script src="../js/supabase-client.js?v=20260820d"></script>
   <script src="../js/auth-gate.js?v=20260726a"></script>
   <script src="../js/cloud-sync.js?v=20260820d"></script>
@@ -761,6 +806,37 @@
       return `<svg width="${w}" height="${w}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px">${path}</svg>`;
     }
 
+    function safeProfiAvatarUrl(value) {
+      try {
+        const url = new URL(String(value || ''));
+        return url.protocol === 'https:' && url.hostname === 'cdn.profi.ru'
+          && url.pathname.startsWith('/xfiles/pfiles/') ? url.href : '';
+      } catch (_) { return ''; }
+    }
+
+    function safeProfiProfileUrl(value) {
+      try {
+        const url = new URL(String(value || ''));
+        return url.protocol === 'https:' && ['profi.ru', 'www.profi.ru'].includes(url.hostname)
+          && /^\/profile\/[A-Za-z0-9_-]+\/?$/.test(url.pathname) ? url.href : '';
+      } catch (_) { return ''; }
+    }
+
+    function avatarFallback(client) {
+      const code = String(client && client.code || '').trim();
+      const name = String(client && client.name || '').trim();
+      return (code || name || '?').slice(0, 2);
+    }
+
+    function clientAvatarHtml(client) {
+      const avatar = safeProfiAvatarUrl(client && client.avatarUrl);
+      const label = avatar ? 'Обновить фотографию анкеты' : 'Добавить фотографию анкеты';
+      return `<button type="button" class="cl-client-avatar" data-act="profile-photo" title="${label}" aria-label="${label}">
+        ${avatar ? `<img src="${escapeHtml(avatar)}" alt="" data-client-avatar/>` : ''}
+        <span class="cl-client-avatar__fallback">${escapeHtml(avatarFallback(client))}</span>
+      </button>`;
+    }
+
     function clientActionsHtml(r, className = 'cl-card__actions') {
       return `
         <div class="${className}">
@@ -799,6 +875,7 @@
       return `
         <div class="cl-card${r.closed ? ' is-closed' : ''}" data-client-row data-id="${r.id}">
           <div class="cl-card__head">
+            ${clientAvatarHtml(r)}
             <span class="cl-card__code" data-act="reviews" title="Код · опубликованные отзывы">${escapeHtml(r.code || '—')}</span>
             <span class="cl-card__name cl-editable" data-field="name" title="Имя (клик — изменить)">${escapeHtml(r.name || '—')}</span>
             ${statusBadge(r)}
@@ -867,6 +944,7 @@
         <div class="cl-list__row${r.closed ? ' is-closed' : ''}" data-client-row data-id="${r.id}">
           <div class="cl-list__client">
             <div class="cl-list__client-main">
+              ${clientAvatarHtml(r)}
               <span class="cl-card__code" data-act="reviews" title="Код · опубликованные отзывы">${escapeHtml(r.code || '—')}</span>
               <span class="cl-card__name cl-editable" data-field="name" title="Имя (клик — изменить)">${escapeHtml(r.name || '—')}</span>
             </div>
@@ -1035,6 +1113,15 @@
     function bindRowEditors() {
       document.querySelectorAll('#clCards [data-client-row]').forEach(tr => {
         const id = tr.dataset.id;
+
+        tr.querySelectorAll('img[data-client-avatar]').forEach(image => {
+          image.addEventListener('error', () => { image.hidden = true; }, { once: true });
+        });
+        const photoButton = tr.querySelector('[data-act="profile-photo"]');
+        if (photoButton) photoButton.addEventListener('click', event => {
+          event.stopPropagation();
+          openProfilePhotoEditor(id);
+        });
 
         // редактируемые text/number поля (span.cl-editable)
         tr.querySelectorAll('.cl-editable').forEach(cell => {
@@ -1658,6 +1745,87 @@
     const PAYMENTS_API = 'https://mentori.tech/api/payments';
     function _sb() { return window.Supabase || {}; }
     function _sbToken() { const S = _sb(); return (S.accessToken && S.accessToken()) || S.KEY; }
+    async function resolveProfiAvatar(profileUrl) {
+      const response = await fetch(`${PAYMENTS_API}/profile-avatar/resolve`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${_sbToken()}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ profile_url: String(profileUrl || '').trim() })
+      });
+      let payload = {};
+      try { payload = await response.json(); } catch (_) {}
+      if (!response.ok) throw new Error(String(payload.detail || 'Не удалось загрузить фотографию'));
+      const avatarUrl = safeProfiAvatarUrl(payload.avatar_url);
+      const normalizedProfileUrl = safeProfiProfileUrl(payload.profile_url);
+      if (!avatarUrl || !normalizedProfileUrl) throw new Error('Profi.ru вернул некорректные данные фотографии');
+      return { profileUrl: normalizedProfileUrl, avatarUrl };
+    }
+
+    let editingPhotoClientId = '';
+    function renderProfilePhotoPreview(client) {
+      const preview = document.getElementById('profilePhotoPreview');
+      const avatar = safeProfiAvatarUrl(client && client.avatarUrl);
+      preview.innerHTML = `${avatar ? `<img src="${escapeHtml(avatar)}" alt=""/>` : ''}<span class="cl-client-avatar__fallback">${escapeHtml(avatarFallback(client))}</span>`;
+      const image = preview.querySelector('img');
+      if (image) image.addEventListener('error', () => { image.hidden = true; }, { once: true });
+    }
+
+    function openProfilePhotoEditor(clientId) {
+      const client = (Store.state.clients || []).find(item => item.id === clientId);
+      if (!client) return;
+      editingPhotoClientId = clientId;
+      document.getElementById('profilePhotoTitle').textContent = `Фото · ${client.code || client.name || 'анкета'}`;
+      document.getElementById('profilePhotoUrl').value = client.profileUrl || '';
+      document.getElementById('profilePhotoStatus').textContent = client.avatarUrl
+        ? 'Фотография уже загружена. Кнопка обновит её из анкеты.'
+        : 'Вставьте ссылку, и CRM сама найдёт фотографию.';
+      document.getElementById('profilePhotoStatus').style.color = 'var(--text-mute)';
+      renderProfilePhotoPreview(client);
+      const openLink = document.getElementById('profilePhotoOpen');
+      const profileUrl = safeProfiProfileUrl(client.profileUrl);
+      openLink.hidden = !profileUrl;
+      openLink.href = profileUrl || '#';
+      const saveButton = document.getElementById('profilePhotoSave');
+      saveButton.disabled = false;
+      saveButton.textContent = client.avatarUrl ? 'Обновить фото' : 'Загрузить фото';
+      Modal.open('profilePhotoModal');
+      setTimeout(() => document.getElementById('profilePhotoUrl').focus(), 60);
+    }
+
+    document.getElementById('profilePhotoSave').addEventListener('click', async () => {
+      const client = (Store.state.clients || []).find(item => item.id === editingPhotoClientId);
+      if (!client) return;
+      const profileUrl = document.getElementById('profilePhotoUrl').value.trim();
+      if (!profileUrl) {
+        Store.updateClient(client.id, { profileUrl: '', avatarUrl: '', avatarUpdatedAt: '' });
+        Modal.close('profilePhotoModal');
+        toast('Фото анкеты удалено');
+        render();
+        return;
+      }
+      const button = document.getElementById('profilePhotoSave');
+      const status = document.getElementById('profilePhotoStatus');
+      button.disabled = true;
+      button.textContent = 'Загружаю…';
+      status.textContent = 'Читаю публичную анкету Profi.ru…';
+      try {
+        const resolved = await resolveProfiAvatar(profileUrl);
+        Store.updateClient(client.id, {
+          ...resolved,
+          avatarUpdatedAt: new Date().toISOString()
+        });
+        Modal.close('profilePhotoModal');
+        toast('Фотография анкеты обновлена');
+        render();
+      } catch (error) {
+        button.disabled = false;
+        button.textContent = client.avatarUrl ? 'Обновить фото' : 'Загрузить фото';
+        status.textContent = error.message || 'Не удалось загрузить фотографию';
+        status.style.color = 'var(--red)';
+      }
+    });
     function receiptObjectPath(reference) {
       const value = String(reference || '').trim();
       const privatePrefix = 'storage://receipts/';
@@ -2190,24 +2358,48 @@
     mCodeInput.addEventListener('input', validateNewClientCode);
     mCodeInput.addEventListener('blur', validateNewClientCode);
 
+    function syncNewClientProfileField() {
+      const field = document.getElementById('mProfileUrlField');
+      const input = document.getElementById('mProfileUrl');
+      field.hidden = document.getElementById('mPlatform').value !== 'Профи.ру' && !input.value.trim();
+    }
+    document.getElementById('mPlatform').addEventListener('change', syncNewClientProfileField);
+
     document.getElementById('btnAdd').addEventListener('click', () => {
       ['mName','mCode'].forEach(id => document.getElementById(id).value = '');
       ['mOrdered','mPaid','mTotal'].forEach(id => document.getElementById(id).value = '0');
       document.getElementById('mPlatform').value = '';
       document.getElementById('mManager').value = '';
       document.getElementById('mTariff').value = '';
+      document.getElementById('mProfileUrl').value = '';
       refreshAddTariffTotals(true);
       document.getElementById('mDate').value = todayISO();
       document.getElementById('mDeadline').value = '';
       mCodeInput.placeholder = Store._nextMentorCode();
       validateNewClientCode();
+      syncNewClientProfileField();
       Modal.open('addModal');
       setTimeout(() => document.getElementById('mName').focus(), 60);
     });
-    document.getElementById('mSave').addEventListener('click', () => {
+    document.getElementById('mSave').addEventListener('click', async () => {
       const name = document.getElementById('mName').value.trim();
       if (!name) { toast('Укажите имя клиента', 'error'); return; }
       if (!validateNewClientCode()) { toast('Выберите свободный код клиента', 'error'); return; }
+      const profileUrl = document.getElementById('mProfileUrl').value.trim();
+      let profilePhoto = { profileUrl: '', avatarUrl: '', avatarUpdatedAt: '' };
+      if (profileUrl) {
+        mSaveButton.disabled = true;
+        mSaveButton.textContent = 'Загружаю фото…';
+        try {
+          const resolved = await resolveProfiAvatar(profileUrl);
+          profilePhoto = { ...resolved, avatarUpdatedAt: new Date().toISOString() };
+        } catch (error) {
+          mSaveButton.textContent = 'Сохранить';
+          validateNewClientCode();
+          toast(error.message || 'Не удалось загрузить фотографию Profi.ru', 'error');
+          return;
+        }
+      }
       const paid = 0;
       document.getElementById('mPaid').value = '0';
       refreshAddTariffTotals(false);
@@ -2224,8 +2416,10 @@
         remain:   Math.max(0, total - paid),
         date:     document.getElementById('mDate').value,
         deadline: document.getElementById('mDeadline').value,
-        overdueDays: 0
+        overdueDays: 0,
+        ...profilePhoto
       });
+      mSaveButton.textContent = 'Сохранить';
       if (!created) {
         validateNewClientCode();
         toast('Этот код уже занят. Выберите другой', 'error');

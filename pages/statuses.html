@@ -163,6 +163,11 @@
       transition: background .12s ease;
     }
     .stg__chip:hover { background: var(--bg-hover); }
+    .stg__chip__avatar {
+      width: 22px; height: 22px; margin: -2px 1px -2px -5px;
+      border-radius: 50%; object-fit: cover; flex: 0 0 22px;
+      border: 1px solid rgba(255,255,255,.14); background: var(--bg-elev);
+    }
     .stg__chip[data-st="planned"]  { border-color: rgba(160,160,160,.3); }
     .stg__chip[data-st="started"]  { border-color: rgba(255,122,0,.4); color: var(--accent); }
     .stg__chip[data-st="finished"] { border-color: rgba(34,197,94,.4); color: var(--green); }
@@ -604,7 +609,7 @@
   </style>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260820h"></script>
+  <script src="../js/app.js?v=20260820i"></script>
   <script src="../js/supabase-client.js?v=20260820d"></script>
   <script src="../js/auth-gate.js?v=20260726a"></script>
   <script src="../js/cloud-sync.js?v=20260820d"></script>
@@ -659,6 +664,13 @@
     }
     function mentorLabel(m) { return m ? `${m.code || '?'}` : '?'; }
     function mentorFull(m) { return m ? `${m.code || '?'} · ${m.name || ''}` : '?'; }
+    function mentorAvatar(m) {
+      try {
+        const url = new URL(String(m && m.avatarUrl || ''));
+        return url.protocol === 'https:' && url.hostname === 'cdn.profi.ru'
+          && url.pathname.startsWith('/xfiles/pfiles/') ? url.href : '';
+      } catch (_) { return ''; }
+    }
     /** Короткая дата «5 апр» / «12 мар» — для компактных бейджей в чипе */
     function shortDate(iso) {
       if (!iso) return '';
@@ -824,6 +836,10 @@
           if (!items.length) return '';
           const kind = STATUS_KIND[s] || '';
           const chips = items.map(({ m, st }) => {
+            const avatarUrl = mentorAvatar(m);
+            const avatar = avatarUrl
+              ? `<img class="stg__chip__avatar" src="${escapeHtml(avatarUrl)}" alt="" data-mentor-avatar/>`
+              : '';
             const dateLabel = st && st.date ? shortDate(st.date) : '';
             const dateBadge = dateLabel
               ? `<span class="stg__chip__date" title="Дата статуса «${escapeHtml(s)}»: ${escapeHtml(fmtDate(st.date))}">${escapeHtml(dateLabel)}</span>`
@@ -841,13 +857,17 @@
               + (action ? `\nВ статусе: ${action.daysInStatus} дн.\nСледующее действие: ${fmtDate(action.date)}${action.daysOverdue > 0 ? ` (просрочено ${action.daysOverdue} дн.)` : ''}` : '')
               + (st && st.performer ? '\nДелал: ' + st.performer : '')
               + (st && st.comment ? '\n' + st.comment : '');
-            return `<span class="stg__chip" data-st="${kind}" data-act="chgst" data-pid="${p.id}" data-mid="${m.id}" title="${escapeHtml(titleText)}">${escapeHtml(mentorLabel(m))}${dateBadge}${perfBadge}${ageBadge}</span>`;
+            return `<span class="stg__chip" data-st="${kind}" data-act="chgst" data-pid="${p.id}" data-mid="${m.id}" title="${escapeHtml(titleText)}">${avatar}${escapeHtml(mentorLabel(m))}${dateBadge}${perfBadge}${ageBadge}</span>`;
           }).join('');
           return `<div class="stg__row"><div class="stg__lbl">${escapeHtml(s)}</div><div class="stg__items">${chips}</div></div>`;
         }).filter(Boolean).join('');
 
         const noStatusRow = noStatus.length
-          ? `<div class="stg__row"><div class="stg__lbl">— без статуса —</div><div class="stg__items">${noStatus.map(({ m }) => `<span class="stg__chip" data-act="chgst" data-pid="${p.id}" data-mid="${m.id}">${escapeHtml(mentorLabel(m))}</span>`).join('')}</div></div>`
+          ? `<div class="stg__row"><div class="stg__lbl">— без статуса —</div><div class="stg__items">${noStatus.map(({ m }) => {
+              const avatarUrl = mentorAvatar(m);
+              const avatar = avatarUrl ? `<img class="stg__chip__avatar" src="${escapeHtml(avatarUrl)}" alt="" data-mentor-avatar/>` : '';
+              return `<span class="stg__chip" data-act="chgst" data-pid="${p.id}" data-mid="${m.id}">${avatar}${escapeHtml(mentorLabel(m))}</span>`;
+            }).join('')}</div></div>`
           : '';
 
         const innerBody = (groupRows || noStatusRow)
@@ -1000,6 +1020,10 @@
           </div>
         `;
       }).join('') + addAccountCard;
+
+      grid.querySelectorAll('img[data-mentor-avatar]').forEach(image => {
+        image.addEventListener('error', () => image.remove(), { once: true });
+      });
 
       // привязка кликов: активный режим
       const addCard = grid.querySelector('[data-act="new-account"]');

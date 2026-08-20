@@ -17,7 +17,9 @@ class PaymentDomainTest(unittest.TestCase):
         return {
             "clients": [
                 {"id": "a21-id", "code": "A-21", "name": "Флагман", "ordered": 10,
-                 "paid": 1000, "remain": 500, "total": 1500, "tariff": ""},
+                 "paid": 1000, "remain": 500, "total": 1500, "tariff": "",
+                 "profileUrl": "https://profi.ru/profile/FlagmanTest/",
+                 "avatarUrl": "https://cdn.profi.ru/xfiles/pfiles/flagman.jpg"},
                 {"id": "a22-id", "code": "a22", "name": "Юрий", "ordered": 12,
                  "paid": 7745, "remain": 7745, "total": 15490, "tariff": "Развитие"},
                 {"id": "a34-id", "code": "a34", "name": "Последняя", "ordered": 1,
@@ -70,6 +72,14 @@ class PaymentDomainTest(unittest.TestCase):
         self.assertEqual(result["totals"], {
             "ordered": 22, "done": 5, "paid": 8745, "remain": 8245, "total": 16990,
         })
+        self.assertEqual(
+            result["anketas"][0]["profileUrl"],
+            "https://profi.ru/profile/FlagmanTest/",
+        )
+        self.assertEqual(
+            result["anketas"][0]["avatarUrl"],
+            "https://cdn.profi.ru/xfiles/pfiles/flagman.jpg",
+        )
         self.assertEqual(payload["totals"], {})
 
     def test_multi_payment_applies_packages_and_creates_next_card_after_payment(self):

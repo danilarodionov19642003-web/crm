@@ -52,6 +52,34 @@
       '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
     }[c]));
   }
+  function safeProfiAvatarUrl(value) {
+    try {
+      const url = new URL(String(value || ''));
+      return url.protocol === 'https:' && url.hostname === 'cdn.profi.ru'
+        && url.pathname.startsWith('/xfiles/pfiles/') ? url.href : '';
+    } catch (_) { return ''; }
+  }
+  function safeProfiProfileUrl(value) {
+    try {
+      const url = new URL(String(value || ''));
+      return url.protocol === 'https:' && ['profi.ru', 'www.profi.ru'].includes(url.hostname)
+        && /^\/profile\/[A-Za-z0-9_-]+\/?$/.test(url.pathname) ? url.href : '';
+    } catch (_) { return ''; }
+  }
+  function anketaAvatarHtml(anketa, className = '') {
+    const avatar = safeProfiAvatarUrl(anketa && anketa.avatarUrl);
+    const fallback = String((anketa && (anketa.code || anketa.name)) || '?').trim().slice(0, 2);
+    return `<span class="cli-anketa-avatar ${className}">
+      ${avatar ? `<img src="${escapeHtml(avatar)}" alt="" data-anketa-avatar/>` : ''}
+      <span class="cli-anketa-avatar__fallback">${escapeHtml(fallback)}</span>
+    </span>`;
+  }
+  function bindAvatarFallbacks(root) {
+    if (!root) return;
+    root.querySelectorAll('img[data-anketa-avatar]').forEach(image => {
+      image.addEventListener('error', () => { image.hidden = true; }, { once: true });
+    });
+  }
   function progressPct(done, ordered) {
     const o = Number(ordered) || 0;
     const d = Number(done) || 0;
@@ -357,6 +385,7 @@
       return `
         <a class="cli-card" href="./profile.html?id=${encodeURIComponent(a.mentorId)}">
           <div class="cli-card__top">
+            ${anketaAvatarHtml(a)}
             <span class="cli-card__code">${escapeHtml(a.code)}</span>
             <span class="cli-card__name">${escapeHtml(a.name || a.code)}</span>
           </div>
@@ -390,6 +419,7 @@
         </a>
       `;
     }).join('');
+    bindAvatarFallbacks(el);
   }
 
   function renderFeed(feed) {
@@ -1340,10 +1370,17 @@
       `).join('')}
     ` : `<h3 class="cli-section-title">Опубликованные отзывы</h3><div class="cli-empty">Отзывов пока нет.</div>`;
 
+    const publicProfileUrl = safeProfiProfileUrl(a.profileUrl);
+    const detailAvatar = anketaAvatarHtml(a, 'is-detail');
     root.innerHTML = `
       <a href="./index.html" class="cli-back">← Назад к анкетам</a>
-      <h1 class="cli-detail-title">${escapeHtml(a.code)} · ${escapeHtml(a.name || '')}</h1>
-      <div class="cli-detail-sub">${escapeHtml(a.platform || '')}${a.tariff ? ' · ' + escapeHtml(a.tariff) : ''}${a.deadline ? ' · дедлайн ' + fmtDate(a.deadline) : ''}</div>
+      <div class="cli-detail-head">
+        ${publicProfileUrl ? `<a class="cli-detail-avatar-link" href="${escapeHtml(publicProfileUrl)}" target="_blank" rel="noopener" title="Открыть анкету Profi.ru">${detailAvatar}</a>` : detailAvatar}
+        <div class="cli-detail-identity">
+          <h1 class="cli-detail-title">${escapeHtml(a.code)} · ${escapeHtml(a.name || '')}</h1>
+          <div class="cli-detail-sub">${escapeHtml(a.platform || '')}${a.tariff ? ' · ' + escapeHtml(a.tariff) : ''}${a.deadline ? ' · дедлайн ' + fmtDate(a.deadline) : ''}</div>
+        </div>
+      </div>
       ${totalsHtml}
       ${moneyHtml}
       ${outreachHtml}
@@ -1352,6 +1389,7 @@
       ${paymentsHtml}
       ${reviewsHtml}
     `;
+    bindAvatarFallbacks(root);
 
     root.querySelectorAll('[data-publication-submit]').forEach(button => {
       button.addEventListener('click', async () => {
