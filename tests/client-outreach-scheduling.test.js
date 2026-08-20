@@ -17,6 +17,10 @@ const migration = fs.readFileSync(
   path.join(root, 'sql/migrations/2026-08-20_client_outreach_slots.sql'),
   'utf8'
 );
+const hardeningMigration = fs.readFileSync(
+  path.join(root, 'sql/migrations/2026-08-20_client_planning_hardening.sql'),
+  'utf8'
+);
 
 const noop = () => {};
 const context = {
@@ -114,16 +118,29 @@ assert.match(migration, /staff_move_outreach_slot/);
 assert.match(migration, /staff_complete_outreach_slot/);
 assert.match(migration, /scheduled_date <= p_date/);
 assert.doesNotMatch(migration, /grant insert on public\.client_outreach_slots to authenticated/i);
+assert.match(hardeningMigration, /scheduled_date < current_date/);
+assert.match(hardeningMigration, /source in \('snapshot_seed', 'legacy_seed'\)/);
+assert.match(hardeningMigration, /slot_status = 'cancelled'/,
+  'прошедшие планы из старого снимка должны стать историей');
 
 assert.match(clientApp, /manage_client_outreach_slot/);
 assert.match(clientApp, /get_client_outreach_calendar/);
+assert.match(clientApp, /scheduled_date=gte\.\$\{todayISO\(\)\}/,
+  'кабинет должен загружать только актуальный план');
+assert.match(clientApp, /activeOutreachSlots[\s\S]*scheduled_date \|\| ''\)\.slice\(0, 10\) >= todayISO\(\)/,
+  'повторный защитный фильтр не должен пропускать старые даты в обработчики карточки');
 assert.match(clientApp, /data-outreach-move/);
 assert.match(clientApp, /data-outreach-cancel/);
 assert.match(clientApp, /data-outreach-inline-date/);
 assert.match(clientApp, /ownSlots\.length \? 'cancel' : 'add'/);
 assert.match(clientApp, /load\.available > 0 && meta\.availableToAdd > 0/);
+assert.match(clientApp, /const isPastDate = date < today/);
+assert.match(clientApp, /const label = isPastDate \? ''/,
+  'на прошедших днях не должно быть надписей «свободно» или «ваш отклик»');
 assert.match(clientApp, /7 откликов/);
 assert.match(appSource, /scheduleLimit: client \? manualScheduleLimit/);
+assert.match(appSource, /item\.remaining > 0 && item\.date >= todayISO\(\)/,
+  'устаревший план не должен попадать даже в резервный снимок кабинета');
 assert.match(clientCss, /\.cli-status-mobile__item/);
 assert.match(clientCss, /\.cli-outreach-cal__grid/);
 assert.match(clientCss, /\.cli-outreach__body/);

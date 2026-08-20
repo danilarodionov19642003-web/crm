@@ -5,7 +5,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://mentori.tech https://*.supabase.co https://mentori-tg.rubicon1326.workers.dev https://*.lte-center.ru; font-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>Статусы — Mentori CRM</title>
-  <link rel="stylesheet" href="../css/styles.css?v=20260628a"/>
+  <link rel="stylesheet" href="../css/styles.css?v=20260820b"/>
   <style>
     /* Карточки аккаунтов */
     .acc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 14px; }
@@ -227,7 +227,6 @@
       background: var(--bg-elev-2); border: 1px solid var(--border);
       border-radius: 12px; padding: 12px 14px;
     }
-    .perf-card--none { opacity: .75; }
     .perf-card__head {
       display: flex; align-items: baseline; justify-content: space-between;
       gap: 10px; margin-bottom: 9px;
@@ -598,13 +597,13 @@
   </style>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260820f"></script>
+  <script src="../js/app.js?v=20260820g"></script>
   <script src="../js/supabase-client.js?v=20260726b"></script>
   <script src="../js/auth-gate.js?v=20260726a"></script>
   <script src="../js/cloud-sync.js?v=20260820c"></script>
   <script src="../js/accounts-sync.js"></script>
   <script src="../js/reviews-sync.js?v=20260717a"></script>
-  <script src="../components/sidebar.js"></script>
+  <script src="../components/sidebar.js?v=20260820b"></script>
   <script src="../components/header.js"></script>
   <script src="../components/table.js"></script>
 
@@ -678,11 +677,16 @@
       return (Store.state.profileStatuses || []).find(s => s.profileId === profileId && s.mentorId === mentorId) || null;
     }
 
+    function activeProfileStatuses() {
+      const activeProfileIds = new Set((Store.state.profiles || []).map(profile => profile.id));
+      return (Store.state.profileStatuses || []).filter(row => activeProfileIds.has(row.profileId));
+    }
+
     /* ---- KPI ---- */
     function renderKpis() {
       const profs = Store.state.profiles || [];
       const mentors = Store.state.mentors || [];
-      const ps = Store.state.profileStatuses || [];
+      const ps = activeProfileStatuses();
       const counts = {};
       PROFILE_STATUSES.forEach(s => counts[s] = 0);
       ps.forEach(r => { if (counts[r.status] != null) counts[r.status]++; });
@@ -700,11 +704,10 @@
     function renderPerformers() {
       const el = document.getElementById('stPerformers');
       if (!el) return;
-      const ps = Store.state.profileStatuses || [];
-      const groups = [...PERFORMERS, '']; // исполнители + «— не указан —»
+      const ps = activeProfileStatuses();
+      const groups = PERFORMERS;
       const cards = groups.map(person => {
         const mine = ps.filter(r => (r.performer || '') === person);
-        if (person === '' && !mine.length) return ''; // пустой «не указан» не показываем
         const accs = new Set(mine.map(r => r.profileId)).size;
         const sts = PROFILE_STATUSES.map(s => {
           const n = mine.filter(r => r.status === s).length;
@@ -712,11 +715,10 @@
           const isDone = s === '🎯 Готов';
           return `<span class="perf-card__st${isDone ? ' is-done' : ''}">${escapeHtml(s)} <b>${n}</b></span>`;
         }).filter(Boolean).join('');
-        const label = person || '— не указан —';
         return `
-          <div class="perf-card${person ? '' : ' perf-card--none'}">
+          <div class="perf-card">
             <div class="perf-card__head">
-              <span class="perf-card__name">👤 ${escapeHtml(label)}</span>
+              <span class="perf-card__name">👤 ${escapeHtml(person)}</span>
               <span class="perf-card__total" title="Аккаунтов / откликов">${accs}<small> акк. · ${mine.length} откл.</small></span>
             </div>
             <div class="perf-card__sts">${sts || '<span class="perf-card__st" style="opacity:.5">нет отметок</span>'}</div>

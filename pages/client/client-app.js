@@ -175,6 +175,8 @@
     try {
       const url = `${_url()}/rest/v1/client_outreach_slots`
         + `?client_email=eq.${encodeURIComponent(email)}`
+        + '&slot_status=eq.scheduled'
+        + `&scheduled_date=gte.${todayISO()}`
         + '&select=id,mentor_id,anketa_code,anketa_name,scheduled_date,slot_status,source,updated_at'
         + '&order=scheduled_date.asc,id.asc';
       const res = await authFetch(url, {
@@ -462,7 +464,9 @@
         ? (() => {
             const grouped = new Map();
             outreachSlots
-              .filter(row => row.slot_status === 'scheduled' && row.mentor_id === a.mentorId)
+              .filter(row => row.slot_status === 'scheduled'
+                && row.mentor_id === a.mentorId
+                && String(row.scheduled_date || '').slice(0, 10) >= todayISO())
               .forEach(row => {
                 const date = String(row.scheduled_date || '').slice(0, 10);
                 if (date) grouped.set(date, (grouped.get(date) || 0) + 1);
@@ -473,6 +477,7 @@
       plannedRows.forEach(p => {
         if (!p.date || !p.count) return;
         const d = String(p.date).slice(0, 10);
+        if (d < todayISO()) return;
         const left = Math.max(0, +p.count || 0);
         if (left <= 0) return;
         events.push({
@@ -729,7 +734,9 @@
     const canonicalAvailable = Array.isArray(context.outreachSlots);
     const activeSlots = canonicalAvailable
       ? context.outreachSlots
-          .filter(row => row.mentor_id === context.mentorId && row.slot_status === 'scheduled')
+          .filter(row => row.mentor_id === context.mentorId
+            && row.slot_status === 'scheduled'
+            && String(row.scheduled_date || '').slice(0, 10) >= todayISO())
           .sort((left, right) => String(left.scheduled_date).localeCompare(String(right.scheduled_date)))
       : [];
     if (!anketa) return { anketa: null, canonicalAvailable, activeSlots, availableToAdd: 0 };
@@ -790,7 +797,7 @@
     const ownByDate = new Map();
     meta.activeSlots.forEach(slot => {
       const date = String(slot.scheduled_date || '').slice(0, 10);
-      if (!date) return;
+      if (!date || date < todayISO()) return;
       if (!ownByDate.has(date)) ownByDate.set(date, []);
       ownByDate.get(date).push(slot);
     });
@@ -807,26 +814,30 @@
       const load = byDate.get(date) || { used: 0, available: 7 };
       const ownSlots = ownByDate.get(date) || [];
       const ownCount = ownSlots.length;
-      const canAdd = date >= today && date <= maxDate && load.available > 0 && meta.availableToAdd > 0;
-      const canToggle = ownCount > 0 || canAdd;
+      const isPastDate = date < today;
+      const canAdd = !isPastDate && date <= maxDate && load.available > 0 && meta.availableToAdd > 0;
+      const canToggle = !isPastDate && (ownCount > 0 || canAdd);
       const classes = [
         'cli-outreach-cal__day',
-        ownCount ? 'is-owned' : '',
-        load.available <= 0 && !ownCount ? 'is-full' : '',
+        ownCount && !isPastDate ? 'is-owned' : '',
+        load.available <= 0 && !ownCount && !isPastDate ? 'is-full' : '',
+        isPastDate ? 'is-past' : '',
         !canToggle ? 'is-disabled' : '',
         date === today ? 'is-today' : ''
       ].filter(Boolean).join(' ');
-      const label = ownCount
+      const label = isPastDate ? '' : (ownCount
         ? (ownCount === 1 ? 'ваш отклик' : `ваших: ${ownCount}`)
-        : (load.available > 0 ? `свободно ${load.available}` : 'занято');
-      const actionLabel = ownCount
+        : (load.available > 0 ? `свободно ${load.available}` : 'занято'));
+      const actionLabel = isPastDate
+        ? `Прошедшая дата ${fmtDate(date)}`
+        : ownCount
         ? `Снять отклик на ${fmtDate(date)}`
         : `Запланировать отклик на ${fmtDate(date)}, свободно ${load.available} из 7`;
       cells.push(`
         <button type="button" class="${classes}" data-outreach-inline-date="${date}"
           aria-label="${escapeAttr(actionLabel)}"${canToggle ? '' : ' disabled'}>
           <strong>${day}</strong>
-          <span>${label}</span>
+          ${label ? `<span>${label}</span>` : ''}
         </button>`);
     }
 
@@ -1024,11 +1035,14 @@
     let activeSlots;
     if (canonicalAvailable) {
       activeSlots = outreachSlots
-        .filter(row => row.mentor_id === anketa.mentorId && row.slot_status === 'scheduled')
+        .filter(row => row.mentor_id === anketa.mentorId
+          && row.slot_status === 'scheduled'
+          && String(row.scheduled_date || '').slice(0, 10) >= todayISO())
         .sort((left, right) => String(left.scheduled_date).localeCompare(String(right.scheduled_date)));
     } else {
       activeSlots = [];
       (anketa.schedule || []).forEach((item, itemIndex) => {
+        if (String(item && item.date || '').slice(0, 10) < todayISO()) return;
         for (let index = 0; index < Math.max(0, Number(item.count) || 0); index++) {
           activeSlots.push({ id: null, scheduled_date: item.date, mentor_id: anketa.mentorId, legacyKey: `${itemIndex}-${index}` });
         }
@@ -1150,7 +1164,17 @@
         ? stored
         : null;
     };
+    const isReadyStatus = status => status.status === '🎯 Готов';
+    const statusAge = status => isReadyStatus(status)
+      ? '<span class="cli-status-days is-complete">Завершён</span>'
+      : `<span class="cli-status-days"><strong>${daysSince(status.date)}</strong> дн.</span>`;
     const publicationControl = status => {
+      if (isReadyStatus(status)) {
+        const publishedDate = String(status.date || '').slice(0, 10);
+        return publishedDate
+          ? `<div class="cli-pub-confirmed"><strong>${fmtDate(publishedDate)}</strong><span>Опубликовано</span></div>`
+          : '<span class="cli-pub-empty">—</span>';
+      }
       if (status.status !== '🏆 Выбран' || !status.id) return '<span class="cli-pub-empty">—</span>';
       const request = requestForStatus(status);
       if (request && request.request_status === 'accepted') {
@@ -1174,6 +1198,12 @@
         </div>`;
     };
     const publicationSummary = status => {
+      if (isReadyStatus(status)) {
+        const publishedDate = String(status.date || '').slice(0, 10);
+        return publishedDate
+          ? `<span class="cli-status-mobile__request is-accepted">${fmtDate(publishedDate)} · опубликовано</span>`
+          : '';
+      }
       if (status.status !== '🏆 Выбран' || !status.id) return '';
       const request = requestForStatus(status);
       if (!request) return '<span class="cli-status-mobile__request">Дата не выбрана</span>';
@@ -1198,7 +1228,7 @@
             <td data-label="Аккаунт"><strong>${escapeHtml(s.profileName || '—')}</strong></td>
             <td data-label="Статус"><span class="cli-status-pill">${escapeHtml(s.status || '')}</span></td>
             <td data-label="Обновлён">${fmtDate(s.date)}</td>
-            <td data-label="В статусе"><span class="cli-status-days"><strong>${daysSince(s.date)}</strong> дн.</span></td>
+            <td data-label="В статусе">${statusAge(s)}</td>
             <td data-label="Публикация">${publicationControl(s)}</td>
           </tr>
         `).join('')}</tbody>
@@ -1213,7 +1243,7 @@
                 <span class="cli-status-pill">${escapeHtml(s.status || '')}</span>
               </span>
               <span class="cli-status-mobile__meta">
-                <span class="cli-status-days"><strong>${daysSince(s.date)}</strong> дн.</span>
+                ${statusAge(s)}
                 ${publicationSummary(s)}
               </span>
             </summary>
@@ -1301,7 +1331,9 @@
     });
 
     const activeOutreachSlots = Array.isArray(outreachSlots)
-      ? outreachSlots.filter(row => row.mentor_id === mentorId && row.slot_status === 'scheduled')
+      ? outreachSlots.filter(row => row.mentor_id === mentorId
+          && row.slot_status === 'scheduled'
+          && String(row.scheduled_date || '').slice(0, 10) >= todayISO())
       : [];
     const slotsById = new Map(activeOutreachSlots.map(row => [String(row.id), row]));
     const addOutreach = root.querySelector('[data-outreach-add]');

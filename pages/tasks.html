@@ -5,7 +5,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://mentori.tech https://*.supabase.co https://mentori-tg.rubicon1326.workers.dev https://*.lte-center.ru; font-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>Задачи — Mentori CRM</title>
-  <link rel="stylesheet" href="../css/styles.css?v=20260628a"/>
+  <link rel="stylesheet" href="../css/styles.css?v=20260820b"/>
   <style>
     .task-list { display:flex; flex-direction:column; gap:8px; }
     .task-card {
@@ -76,6 +76,35 @@
       color: var(--text-mute); margin: 18px 0 6px 4px; font-weight: 600;
     }
     .task-group-title:first-child { margin-top: 0; }
+
+    .publication-queue {
+      margin-bottom: 20px; padding: 0;
+    }
+    .publication-queue[hidden] { display: none !important; }
+    .publication-queue__head {
+      display: flex; align-items: center; gap: 9px; margin-bottom: 9px;
+    }
+    .publication-queue__head h2 { margin: 0; font-size: 15px; }
+    .publication-queue__count {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-width: 22px; height: 22px; padding: 0 7px; border-radius: 999px;
+      background: rgba(34,197,94,.14); color: #4ade80; font-size: 11px; font-weight: 800;
+    }
+    .publication-queue__list { display: grid; gap: 8px; }
+    .publication-request {
+      display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px;
+      padding: 12px 14px; border: 1px solid rgba(34,197,94,.32); border-radius: 8px;
+      background: linear-gradient(100deg, rgba(34,197,94,.08), transparent 52%), var(--bg-elev);
+    }
+    .publication-request__main { min-width: 0; }
+    .publication-request__title { font-size: 13px; font-weight: 750; overflow-wrap: anywhere; }
+    .publication-request__meta {
+      display: flex; flex-wrap: wrap; gap: 6px 12px; margin-top: 5px;
+      color: var(--text-mute); font-size: 11px;
+    }
+    .publication-request__date { color: #4ade80; font-weight: 750; }
+    .publication-request__actions { display: flex; gap: 6px; }
+    .publication-request__actions .btn { white-space: nowrap; }
 
     /* ───── Агрегированный календарь по всем клиентам ───── */
     .sched-wrap {
@@ -253,6 +282,9 @@
       .task-schedule-context { grid-template-columns: 1fr; }
       .sched-row { flex-wrap: wrap; }
       .sched-row__link { margin-left: 24px; }
+      .publication-request { grid-template-columns: minmax(0, 1fr); }
+      .publication-request__actions { width: 100%; }
+      .publication-request__actions .btn { flex: 1; }
     }
   </style>
 </head>
@@ -274,6 +306,14 @@
             Новая задача
           </button>
         </div>
+
+        <section class="publication-queue" id="publicationQueue" data-owner-only style="display:none" hidden>
+          <div class="publication-queue__head">
+            <h2>Запросы клиентов на публикацию</h2>
+            <span class="publication-queue__count" id="publicationQueueCount">0</span>
+          </div>
+          <div class="publication-queue__list" id="publicationQueueList"></div>
+        </section>
 
         <!-- ───── Агрегированный календарь по всем клиентам ───── -->
         <div class="sched-wrap" data-owner-only style="display:none">
@@ -383,14 +423,14 @@
   </div>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260820f"></script>
+  <script src="../js/app.js?v=20260820g"></script>
   <script src="../js/supabase-client.js?v=20260726b"></script>
   <script src="../js/auth-gate.js?v=20260726a"></script>
   <script src="../js/cloud-sync.js?v=20260820c"></script>
   <script src="../js/reviews-sync.js?v=20260717a"></script>
   <script src="../js/outreach-schedule-sync.js?v=20260820a"></script>
   <script src="../js/schedule-apply.js?v=20260522b"></script>
-  <script src="../components/sidebar.js"></script>
+  <script src="../components/sidebar.js?v=20260820b"></script>
   <script src="../components/header.js"></script>
   <script src="../components/table.js"></script>
 
@@ -407,6 +447,7 @@
     let editingId = null;
     let schedulingStatusId = null;
     let publicationRequests = [];
+    const resolvingPublicationIds = new Set();
     let publicationSnapshotsRefreshed = false;
 
     function escapeHtml(s) {
@@ -483,58 +524,96 @@
       }
     }
 
-    async function patchPublicationRequest(id, patch) {
+    async function resolvePublicationRequestOnServer(id, accepted) {
       const S = window.Supabase;
-      if (!S || !S.authFetch) return false;
-      const res = await S.authFetch(
-        `${S.URL}/rest/v1/client_publication_requests?id=eq.${encodeURIComponent(id)}`,
-        {
-          method: 'PATCH',
-          headers: {
-            'apikey': S.KEY,
-            'Content-Type': 'application/json',
-            'Prefer': 'return=minimal'
-          },
-          body: JSON.stringify(patch)
-        }
-      );
-      if (!res.ok) console.warn('[tasks] publication request update failed', res.status, await res.text().catch(() => ''));
-      return res.ok;
+      if (!S || !S.authFetch) throw new Error('NO_CONNECTION');
+      const res = await S.authFetch(`${S.URL}/rest/v1/rpc/resolve_client_publication_request`, {
+        method: 'POST',
+        headers: { 'apikey': S.KEY, 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({ p_request_id: Number(id), p_accept: !!accepted })
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const error = new Error(String(body.message || body.details || `HTTP ${res.status}`));
+        error.status = res.status;
+        throw error;
+      }
+      return body;
     }
 
     async function resolvePublicationRequest(id, accepted) {
       const request = publicationRequests.find(item => String(item.id) === String(id));
-      if (!request) return;
-      if (accepted) {
-        const status = (Store.state.profileStatuses || []).find(item => item.id === request.status_id);
-        if (!status || status.status !== STATUS_CHOSEN) {
-          toast('Статус аккаунта уже изменился. Запрос нельзя подтвердить.', 'error');
-          return;
+      if (!request || resolvingPublicationIds.has(String(id))) return;
+      resolvingPublicationIds.add(String(id));
+      renderPublicationQueue();
+      try {
+        await resolvePublicationRequestOnServer(request.id, accepted);
+        if (accepted && window.CloudSync && window.CloudSync.pull) {
+          await window.CloudSync.pull({ silent: true });
         }
-        const planned = Store.setProfileStatusTaskDate(request.status_id, request.requested_date);
-        if (!planned) {
-          toast('Не удалось записать задачу в CRM', 'error');
-          return;
-        }
-      }
-      const resolvedBy = (window.AuthGate && window.AuthGate.email && window.AuthGate.email()) || '';
-      const ok = await patchPublicationRequest(request.id, {
-        request_status: accepted ? 'accepted' : 'rejected',
-        resolved_at: new Date().toISOString(),
-        resolved_by: resolvedBy
-      });
-      if (!ok) {
+        publicationRequests = await loadPublicationRequests();
         toast(accepted
-          ? 'Задача записана, но запрос не закрылся. Обнови страницу.'
-          : 'Не удалось отклонить запрос', 'error');
-        return;
+          ? `Дата ${fmtDate(request.requested_date)} подтверждена и добавлена в календарь`
+          : 'Запрос клиента отклонён');
+      } catch (error) {
+        const raw = String(error && error.message || '');
+        const message = raw.includes('STATUS_NOT_AVAILABLE')
+          ? 'Статус аккаунта уже изменился. Запрос нельзя подтвердить.'
+          : raw.includes('REQUEST_ALREADY_RESOLVED')
+            ? 'Этот запрос уже обработан. Обновляю список.'
+            : 'Не удалось обработать запрос. Проверь связь и попробуй ещё раз.';
+        toast(message, 'error');
+        publicationRequests = await loadPublicationRequests();
+      } finally {
+        resolvingPublicationIds.delete(String(id));
       }
-      publicationRequests = publicationRequests.filter(item => item.id !== request.id);
-      toast(accepted
-        ? `Дата ${fmtDate(request.requested_date)} подтверждена и добавлена в календарь`
-        : 'Запрос клиента отклонён');
       render();
       renderSched();
+    }
+
+    function renderPublicationQueue() {
+      const section = document.getElementById('publicationQueue');
+      const list = document.getElementById('publicationQueueList');
+      const count = document.getElementById('publicationQueueCount');
+      if (!section || !list || !count) return;
+      const rows = publicationRequests.filter(request => request.request_status === 'pending');
+      section.hidden = !isOwner || !rows.length;
+      if (!isOwner || !rows.length) {
+        list.innerHTML = '';
+        count.textContent = '0';
+        return;
+      }
+      count.textContent = String(rows.length);
+      list.innerHTML = rows.map(request => {
+        const mentor = mentorById(request.mentor_id);
+        const profile = profileById(request.profile_id);
+        const busy = resolvingPublicationIds.has(String(request.id));
+        const clientLabel = mentorLabel(mentor) !== '—'
+          ? mentorLabel(mentor)
+          : `${request.anketa_code || '—'}${request.anketa_name ? ' — ' + request.anketa_name : ''}`;
+        const accountLabel = profile ? profileLabel(profile) : (request.account_name || '—');
+        return `
+          <article class="publication-request">
+            <div class="publication-request__main">
+              <div class="publication-request__title">${escapeHtml(clientLabel)}</div>
+              <div class="publication-request__meta">
+                <span>Аккаунт: ${escapeHtml(accountLabel)}</span>
+                <span class="publication-request__date">Публикация: ${escapeHtml(fmtDate(request.requested_date))}</span>
+              </div>
+            </div>
+            <div class="publication-request__actions">
+              <button class="btn btn--primary" type="button" data-queue-accept="${escapeHtml(request.id)}"${busy ? ' disabled' : ''}>Подтвердить</button>
+              <button class="btn btn--ghost" type="button" data-queue-reject="${escapeHtml(request.id)}"${busy ? ' disabled' : ''}>Отклонить</button>
+              <a class="btn btn--ghost task-open" href="statuses.html?profileId=${encodeURIComponent(request.profile_id)}&mentorId=${encodeURIComponent(request.mentor_id)}">Открыть →</a>
+            </div>
+          </article>`;
+      }).join('');
+      list.querySelectorAll('[data-queue-accept]').forEach(button => {
+        button.addEventListener('click', () => resolvePublicationRequest(button.dataset.queueAccept, true));
+      });
+      list.querySelectorAll('[data-queue-reject]').forEach(button => {
+        button.addEventListener('click', () => resolvePublicationRequest(button.dataset.queueReject, false));
+      });
     }
 
     function fillSelects() {
@@ -586,11 +665,11 @@
       fillSelects();
       const manualTasks = (Store.state.dailyTasks || []).slice();
       const statusTasks = Store.listProfileStatusActionTasks(todayISO());
-      const requestTasks = publicationRequests.map(publicationRequestTask);
-      const all = manualTasks.concat(statusTasks, requestTasks)
+      const all = manualTasks.concat(statusTasks)
         .sort((a,b) => (a.date||'').localeCompare(b.date||'') || (a.createdAt||'').localeCompare(b.createdAt||''));
       const filtered = applyFilters(all);
       const managerScoped = all.filter(t => matchesManager(t.manager || managerForMentor(t.mentorId)));
+      renderPublicationQueue();
 
       // KPI
       const today = todayISO();

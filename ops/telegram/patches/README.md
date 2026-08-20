@@ -3,6 +3,16 @@
 `profi-clients-topic.patch` routes the automated owner morning digest to a
 Telegram forum topic while keeping manager digests and client polls unchanged.
 
+`client-publication-approval.patch` adds inline Telegram buttons for approving
+or rejecting a publication date selected in a client cabinet. It calls the
+atomic CRM RPC and never writes the CRM blob directly.
+
+`bot-notification-only.patch` removes the mailing-software dashboard buttons,
+commands, Telegram Business auto-replies, and the periodic campaign report from
+this bot. Apply it after `client-publication-approval.patch`. Client requests,
+channel post delivery, the CRM schedule, payment actions, and system
+notifications remain enabled.
+
 Apply from the bot repository root with zero-context support:
 
 ```bash

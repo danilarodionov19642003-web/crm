@@ -2206,6 +2206,7 @@
           const pr = this.getProfileOrArchived(r.profileId);
           return {
             id: r.id,
+            profileId: r.profileId,
             profileName: friendlyName(r.profileId),
             archived: pr ? !!pr.archived : false,
             text: r.text || '',
@@ -2245,7 +2246,7 @@
         // дни на календаре и понимает когда ждать следующих отзывов.
         schedule: client
           ? clientScheduleBreakdown(this.state, client)
-              .filter(item => item.remaining > 0)
+              .filter(item => item.remaining > 0 && item.date >= todayISO())
               .map(item => ({ date: item.date, count: item.remaining }))
           : [],
         scheduleLimit: client ? manualScheduleLimit(this.state, client) : 0,

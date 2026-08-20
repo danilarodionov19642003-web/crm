@@ -25,6 +25,7 @@ create table if not exists public.notification_outbox (
   -- ссылки на исходные сущности (для дедупа/отладки)
   mentor_id         text,
   profile_id        text,
+  action_ref        text,
   new_status        text,
   old_status        text,
 

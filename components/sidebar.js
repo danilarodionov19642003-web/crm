@@ -51,8 +51,9 @@
           <span>Mentori</span>
         </div>
         <nav class="sidebar__nav">
+          <span class="sidebar__glass" aria-hidden="true"></span>
           ${visibleNav().map(n => `
-            <a href="${resolveHref(n.href)}" class="nav-item ${n.id === active ? 'active' : ''}">
+            <a href="${resolveHref(n.href)}" class="nav-item ${n.id === active ? 'active' : ''}"${n.id === active ? ' aria-current="page"' : ''}>
               ${n.icon}
               <span>${n.label}</span>
             </a>
@@ -71,6 +72,53 @@
       document.getElementById('sidebar').classList.remove('open');
       backdrop.classList.remove('open');
     });
+
+    setupLiquidNavigation(el.querySelector('.sidebar'));
+  }
+
+  function setupLiquidNavigation(sidebar) {
+    if (!sidebar) return;
+    const nav = sidebar.querySelector('.sidebar__nav');
+    const glass = nav && nav.querySelector('.sidebar__glass');
+    const items = nav ? Array.from(nav.querySelectorAll('.nav-item')) : [];
+    let current = items.find(item => item.classList.contains('active')) || null;
+    if (!nav || !glass || !current) return;
+
+    function moveGlass(item, instant) {
+      if (!item) return;
+      nav.classList.toggle('is-initializing', !!instant);
+      glass.style.setProperty('--sidebar-glass-y', `${item.offsetTop}px`);
+      glass.style.setProperty('--sidebar-glass-h', `${item.offsetHeight}px`);
+      nav.classList.add('is-ready');
+      if (instant) {
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          nav.classList.remove('is-initializing');
+        }));
+      }
+    }
+
+    moveGlass(current, true);
+
+    items.forEach(item => item.addEventListener('click', event => {
+      const regularClick = event.button === 0
+        && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
+      if (!regularClick || item === current || nav.dataset.navigating === 'true') return;
+
+      event.preventDefault();
+      nav.dataset.navigating = 'true';
+      current.classList.remove('active');
+      current.removeAttribute('aria-current');
+      item.classList.add('active');
+      item.setAttribute('aria-current', 'page');
+      current = item;
+      moveGlass(item, false);
+
+      const reduceMotion = window.matchMedia
+        && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      window.setTimeout(() => window.location.assign(item.href), reduceMotion ? 0 : 320);
+    }));
+
+    window.addEventListener('resize', () => moveGlass(current, true));
   }
 
   function detectActive() {

@@ -453,6 +453,8 @@
 .cli-outreach-cal__day.is-owned { background: rgba(255,122,0,.14); border-color: var(--cli-accent); }
 .cli-outreach-cal__day.is-owned span { color: var(--cli-accent); font-weight: 700; }
 .cli-outreach-cal__day.is-disabled { opacity: .35; cursor: default; }
+.cli-outreach-cal__day.is-past { background: transparent; border-color: rgba(128,128,128,.12); }
+.cli-outreach-cal__day.is-past strong { color: var(--text-mute); font-weight: 500; }
 .cli-outreach-cal__day.is-full span { color: var(--cli-red); }
 .cli-outreach-cal__legend {
   display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 10px; color: var(--text-mute); font-size: 9px;
@@ -534,6 +536,7 @@
 .cli-pub-state.is-rejected { color: var(--cli-red); }
 .cli-pub-confirmed strong { display: block; color: var(--cli-green); font-size: 13px; }
 .cli-pub-confirmed span { color: var(--cli-green); }
+.cli-status-days.is-complete { color: var(--cli-green); font-weight: 700; }
 
 @media (max-width: 700px) {
   .cli-table-wrap { display: none; }

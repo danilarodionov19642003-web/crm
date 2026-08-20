@@ -1,0 +1,72 @@
+--- a/backend/notifier.py
++++ b/backend/notifier.py
+@@ -139,0 +140,6 @@ async def _process_one(session: aiohttp.ClientSession, row: dict[str, Any]) -> N
++    elif row.get("kind") == "client_publication_request" and row.get("action_ref"):
++        request_id = str(row["action_ref"])
++        reply_markup = {"inline_keyboard": [[
++            {"text": "✓ Подтвердить дату", "callback_data": f"cpub:c:{request_id}"},
++            {"text": "✕ Отклонить", "callback_data": f"cpub:r:{request_id}"},
++        ]]}
+--- a/backend/crm_client.py
++++ b/backend/crm_client.py
+@@ -217,0 +218,20 @@ async def update_client_order(order_id: int, patch: dict[str, Any]) -> bool:
++async def resolve_client_publication_request(request_id: int, accepted: bool) -> dict[str, Any]:
++    """Atomically resolve a client-selected publication date through the CRM RPC."""
++    if not settings.supabase_url or not settings.supabase_service_key:
++        return {"ok": False, "reason": "CRM_NOT_CONFIGURED"}
++    url = f"{settings.supabase_url}/rest/v1/rpc/resolve_client_publication_request"
++    payload = {"p_request_id": int(request_id), "p_accept": bool(accepted)}
++    try:
++        async with aiohttp.ClientSession(timeout=REST_TIMEOUT) as s:
++            async with s.post(url, headers=_headers(), json=payload) as resp:
++                body = await resp.json(content_type=None)
++                if resp.status != 200:
++                    reason = str((body or {}).get("message") or (body or {}).get("details") or resp.status)
++                    log.warning("resolve_client_publication_request %s: %s", resp.status, reason)
++                    return {"ok": False, "reason": reason}
++                return {"ok": True, "row": body}
++    except Exception as e:
++        log.warning("resolve_client_publication_request error: %s", e)
++        return {"ok": False, "reason": str(e)}
++
++
+--- a/backend/bot.py
++++ b/backend/bot.py
+@@ -1540,0 +1541,37 @@ async def _safe_edit_corder(cb: CallbackQuery, text: str) -> None:
++@dp.callback_query(F.data.startswith("cpub:"))
++async def on_client_publication_callback(cb: CallbackQuery) -> None:
++    """Owner approves or rejects the publication date selected in a client cabinet."""
++    owner = await get_owner_chat_id()
++    presser = cb.message.chat.id if cb.message else None
++    if not _is_owner(presser, owner):
++        await cb.answer("Только владелец может подтверждать дату.", show_alert=True)
++        return
++    parts = (cb.data or "").split(":")
++    if len(parts) != 3 or parts[1] not in ("c", "r"):
++        await cb.answer()
++        return
++    try:
++        request_id = int(parts[2])
++    except ValueError:
++        await cb.answer()
++        return
++
++    from .crm_client import resolve_client_publication_request
++
++    accepted = parts[1] == "c"
++    result = await resolve_client_publication_request(request_id, accepted)
++    if not result.get("ok"):
++        reason = str(result.get("reason") or "")
++        message = ("Статус аккаунта уже изменился. Обнови CRM."
++                   if "STATUS_NOT_AVAILABLE" in reason
++                   else "Не удалось обработать запрос. Попробуй ещё раз.")
++        await cb.answer(message, show_alert=True)
++        return
++
++    base = (cb.message.text or "") if cb.message else ""
++    tail = ("\n\n✅ <b>Дата публикации подтверждена</b>"
++            if accepted else "\n\n❌ <b>Дата публикации отклонена</b>")
++    await _safe_edit_corder(cb, base + tail)
++    await cb.answer("Подтверждено" if accepted else "Отклонено")
++
++

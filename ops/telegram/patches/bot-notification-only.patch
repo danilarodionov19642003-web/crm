@@ -1,0 +1,190 @@
+--- a/backend/bot.py
++++ b/backend/bot.py
+@@ -1 +1 @@
+-"""Telegram-бот: отчёты по рассылкам + уведомления о подписках + приём заказов.
++"""Telegram-бот Mentori: заявки, канал и системные уведомления CRM.
+@@ -27 +26,0 @@ from aiogram.types import (
+-    BusinessConnection,
+@@ -41 +39,0 @@ from . import models
+-from . import business_assistant
+@@ -242,12 +240,3 @@ BTN_MAP = {
+-    "📊 Активные":   "stats",
+-    "📅 Сегодня":    "today",
+-    "👥 Аккаунты":   "accounts",
+-    "🔍 Последняя":  "last",
+-    "📋 Логи":       "logs",
+-    "📥 Заявки":     "orders",
+-    "🤖 Автоответы": "autoreplies",
+-    "🗄 Архив":      "archive",
+-    "📅 Отклики":   "schedule",   # отправляет отдельным сообщением, не edit
+-    "🚫 Негатив":   "negative",
+-    "✅ Подписки":  "subscribers",
+-    "🔄 Обновить":   "refresh",
++    "📥 Заявки":   "orders",
++    "📅 Отклики": "schedule",   # отправляет отдельным сообщением, не edit
++    "🔄 Обновить": "refresh",
+@@ -258,6 +247,2 @@ REPLY_KB = ReplyKeyboardMarkup(
+-        [KeyboardButton(text="📊 Активные"),   KeyboardButton(text="📅 Сегодня")],
+-        [KeyboardButton(text="👥 Аккаунты"),   KeyboardButton(text="🔍 Последняя")],
+-        [KeyboardButton(text="📋 Логи"),       KeyboardButton(text="🤖 Автоответы")],
+-        [KeyboardButton(text="🗄 Архив"),      KeyboardButton(text="📥 Заявки")],
+-        [KeyboardButton(text="🚫 Негатив"),    KeyboardButton(text="✅ Подписки")],
+-        [KeyboardButton(text="📅 Отклики"),    KeyboardButton(text="🔄 Обновить")],
++        [KeyboardButton(text="📥 Заявки"), KeyboardButton(text="📅 Отклики")],
++        [KeyboardButton(text="🔄 Обновить")],
+@@ -284,10 +269,4 @@ async def stats_menu() -> str:
+-        "📊 <b>Активные</b> — running-рассылки\n"
+-        "📅 <b>Сегодня</b> — итоги дня\n"
+-        "👥 <b>Аккаунты</b> — статусы (active/flood/banned)\n"
+-        "⚠ <b>Ошибки</b> — сгруппированные ошибки отправки\n"
+-        "📋 <b>Логи</b> — последние отправки и ошибки\n"
+-        "🤖 <b>Автоответы</b> — счётчики + последние 10\n"
+-        "🗄 <b>Архив</b> — итоги завершённых рассылок\n"
+-        "🔍 <b>Последняя</b> — детали последней\n"
+-        "📥 <b>Заявки</b> — клиенты из бота\n\n"
+-        "🔔 Авто-отчёт раз в 2 ч, пока есть running-рассылки."
++        "📥 <b>Заявки</b> — обращения клиентов из бота\n"
++        "📅 <b>Отклики</b> — рабочий график из CRM\n\n"
++        "🔔 Системные уведомления CRM и новые посты канала приходят автоматически.\n"
++        "Отчёты софта рассылки в этом боте отключены."
+@@ -940,5 +918,0 @@ VIEW_GETTERS = {
+-    "stats":        stats_running_campaigns,
+-    "today":        stats_today,
+-    "accounts":     stats_accounts,
+-    "last":         stats_last_campaign,
+-    "logs":         stats_logs,
+@@ -946,5 +919,0 @@ VIEW_GETTERS = {
+-    "autoreplies":  stats_autoreplies,
+-    "archive":      stats_archive,
+-    "errors":       stats_errors,
+-    "negative":     stats_negative,
+-    "subscribers":  stats_subscribers,
+@@ -1490,18 +1458,0 @@ async def cmd_set_manager_chat(m: Message, command: CommandObject) -> None:
+-# ─────────────────────────────────────────────
+-# Business Assistant — автоответы в личных чатах владельца
+-# ─────────────────────────────────────────────
+-
+-@dp.business_connection()
+-async def on_business_connection(conn: BusinessConnection) -> None:
+-    """Фиксируется когда владелец подключает/отключает бота в TG Business.
+-    Логика — в business_assistant.py."""
+-    await business_assistant.on_business_connection(conn)
+-
+-
+-@dp.business_message()
+-async def on_business_message(m: Message, bot: Bot) -> None:
+-    """Сообщение из личного чата владельца (Business mode). Решаем нужен ли
+-    автоответ — вся логика в business_assistant.py."""
+-    await business_assistant.handle_business_message(m, bot)
+-
+-
+@@ -2026,36 +1976,0 @@ async def cmd_menu(m: Message, bot: Bot):
+-@dp.message(Command("stats"))
+-async def cmd_stats(m: Message, bot: Bot):
+-    owner = await get_owner_chat_id()
+-    if not _is_owner(m.chat.id, owner):
+-        return
+-    await _delete_msg(m)
+-    await _show_view("stats", bot, m.chat.id)
+-
+-
+-@dp.message(Command("today"))
+-async def cmd_today(m: Message, bot: Bot):
+-    owner = await get_owner_chat_id()
+-    if not _is_owner(m.chat.id, owner):
+-        return
+-    await _delete_msg(m)
+-    await _show_view("today", bot, m.chat.id)
+-
+-
+-@dp.message(Command("accounts"))
+-async def cmd_accounts(m: Message, bot: Bot):
+-    owner = await get_owner_chat_id()
+-    if not _is_owner(m.chat.id, owner):
+-        return
+-    await _delete_msg(m)
+-    await _show_view("accounts", bot, m.chat.id)
+-
+-
+-@dp.message(Command("last"))
+-async def cmd_last(m: Message, bot: Bot):
+-    owner = await get_owner_chat_id()
+-    if not _is_owner(m.chat.id, owner):
+-        return
+-    await _delete_msg(m)
+-    await _show_view("last", bot, m.chat.id)
+-
+-
+@@ -2227,54 +2141,0 @@ async def fallback_any_message(m: Message, bot: Bot, state: FSMContext):
+-# ─────────────────────────────────────────────
+-# Периодический авто-отчёт
+-# ─────────────────────────────────────────────
+-
+-async def periodic_report_loop(bot: Bot):
+-    interval = max(60, settings.bot_report_interval_sec)
+-    log.info("auto-report loop started, interval=%ss", interval)
+-    # Даём API/worker подняться, потом входим в основной цикл
+-    await asyncio.sleep(30)
+-    while True:
+-        try:
+-            owner = await get_owner_chat_id()
+-            if owner is not None:
+-                # Проверяем когда последний раз отправляли — не чаще чем раз в interval сек
+-                now = datetime.now(timezone.utc)
+-                # НЕ будим владельца ночью: тихие часы 22:00–09:00 МСК — отчёты не шлём.
+-                msk_hour = (now + timedelta(hours=3)).hour
+-                if msk_hour >= 22 or msk_hour < 9:
+-                    await asyncio.sleep(1800)  # ночь — ждём 30 мин и проверяем снова
+-                    continue
+-                last_str = await _setting_get("bot_last_report_at")
+-                if last_str:
+-                    try:
+-                        last_dt = datetime.fromisoformat(last_str)
+-                        elapsed = (now - last_dt).total_seconds()
+-                        if elapsed < interval:
+-                            wait = interval - elapsed
+-                            log.info("auto-report: следующий через %.0f сек", wait)
+-                            await asyncio.sleep(wait)
+-                            continue
+-                    except ValueError:
+-                        pass  # битое значение — игнорируем, шлём
+-
+-                async with AsyncSessionLocal() as s:
+-                    has_running = await s.scalar(
+-                        select(func.count(models.Campaign.id)).where(
+-                            models.Campaign.status == "running",
+-                            models.Campaign.archived == False,
+-                        )
+-                    )
+-                if has_running:
+-                    text = await stats_running_campaigns()
+-                    today_text = await stats_today()
+-                    full = f"🔔 <b>Авто-отчёт</b>\n\n{text}\n\n———\n{today_text}"
+-                    try:
+-                        await bot.send_message(owner, full)
+-                        await _setting_set("bot_last_report_at", now.isoformat())
+-                    except Exception as e:
+-                        log.warning("auto-report send failed: %s", e)
+-        except Exception:
+-            log.exception("auto-report loop error")
+-        await asyncio.sleep(interval)
+-
+-
+@@ -2384,0 +2246,8 @@ async def main():
++    # Старые reply-кнопки Telegram хранит на устройстве пользователя. Один раз
++    # сбрасываем id редактируемого сообщения: при следующем действии бот пришлёт
++    # новый компактный экран и заменит прежнюю клавиатуру.
++    menu_schema = "notification-only-v1"
++    if await _setting_get("bot_owner_menu_schema") != menu_schema:
++        await set_main_msg_id(0)
++        await _setting_set("bot_owner_menu_schema", menu_schema)
++
+@@ -2389 +2257,0 @@ async def main():
+-    asyncio.create_task(periodic_report_loop(bot))
+@@ -2396,3 +2263,0 @@ async def main():
+-    # ВАЖНО: business_message / business_connection НЕ входят в дефолтный
+-    # whitelist getUpdates — без явного перечисления Telegram их не пришлёт,
+-    # и автоответы в Business mode молчат. Добавляем явно.
+@@ -2405,2 +2269,0 @@ async def main():
+-            "business_connection", "business_message",
+-            "edited_business_message", "deleted_business_messages",
