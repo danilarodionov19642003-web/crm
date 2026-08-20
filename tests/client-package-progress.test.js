@@ -48,6 +48,29 @@ assert.deepEqual(legacy.map(p => ({ name: p.name, qty: p.qty, done: p.done, stat
   { name: 'Поддержка', qty: 6, done: 6, state: 'closed' }
 ]);
 
+const compositeOrder = build([
+  {
+    id: 72, anketa_code: 'a46', tariff_name: 'Экспресс', qty: 3,
+    status: 'confirmed', order_type: 'multi_order', confirmed_at: '2026-08-20T10:47:49Z'
+  },
+  {
+    id: 73, parent_order_id: 72, anketa_code: 'a46', tariff_name: 'Экспресс', qty: 3,
+    status: 'confirmed', order_type: 'package_item', confirmed_at: '2026-08-20T10:47:49Z'
+  }
+], { code: 'a46', ordered: 3, done: 0 }, 0);
+assert.deepEqual(compositeOrder.map(p => ({ id: p.id, name: p.name, qty: p.qty })), [
+  { id: '73', name: 'Экспресс', qty: 3 }
+]);
+
+const legacyCompositeParent = build([
+  {
+    id: 74, anketa_code: 'a47', tariff_name: 'Экспресс', qty: 3,
+    status: 'confirmed', order_type: 'multi_order', confirmed_at: '2026-08-20T11:00:00Z'
+  }
+], { code: 'a47', ordered: 3, done: 0 }, 0);
+assert.equal(legacyCompositeParent.length, 1);
+assert.equal(legacyCompositeParent[0].id, '74');
+
 const clientApp = fs.readFileSync(path.join(__dirname, '../pages/client/client-app.js'), 'utf8');
 assert.match(clientApp, /Math\.min\(100, Math\.round\(\(\(br\.active \+ effectiveDone\)/,
   'процент карточки должен быть ограничен 100%');

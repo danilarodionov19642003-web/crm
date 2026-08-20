@@ -18,9 +18,14 @@
   function build(orders, anketa, activeCount) {
     const card = anketa || {};
     const code = normCode(card.code);
-    const orderPackages = (Array.isArray(orders) ? orders : [])
+    const sourceOrders = Array.isArray(orders) ? orders : [];
+    const parentIdsWithChildren = new Set(sourceOrders
+      .filter(order => order && order.order_type === 'package_item' && order.parent_order_id != null)
+      .map(order => String(order.parent_order_id)));
+    const orderPackages = sourceOrders
       .filter(order => order
         && order.order_type !== 'remainder'
+        && !(order.order_type === 'multi_order' && parentIdsWithChildren.has(String(order.id)))
         && order.status === 'confirmed'
         && normCode(order.anketa_code) === code
         && Number(order.qty) > 0)
