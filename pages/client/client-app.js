@@ -1479,9 +1479,9 @@
             ? '<span class="cli-pub-state is-rejected">Выберите другую дату</span>'
             : '<span class="cli-pub-state" data-publication-result></span>');
       return `
-        <div class="cli-pub-control" data-publication-status="${escapeAttr(status.id)}" data-publication-min="${escapeAttr(minimumDate)}">
+        <div class="cli-pub-control" data-publication-status="${escapeAttr(status.id)}" data-publication-min="${escapeAttr(minimumDate)}" data-publication-wait="${waitDays}">
           <div class="cli-pub-actions">
-            <input type="date" class="cli-pub-date" min="${escapeAttr(minimumDate)}" value="${escapeAttr(value)}" aria-label="Дата публикации"/>
+            <input type="date" class="cli-pub-date" min="${todayISO()}" value="${escapeAttr(value)}" aria-label="Дата публикации"/>
             <button type="button" class="cli-pub-submit" data-publication-submit>${value ? 'Изменить' : 'Запланировать'}</button>
           </div>
           ${waitDays ? `<span class="cli-pub-min">Не раньше ${fmtDate(minimumDate)} · минимум ${waitDays} дн. в статусе</span>` : ''}
@@ -1606,10 +1606,20 @@
         const result = control && control.querySelector('[data-publication-result], .cli-pub-state');
         const date = input && input.value;
         const minimumDate = control && control.dataset.publicationMin || todayISO();
-        if (!date || date < minimumDate) {
+        const waitDays = Math.max(0, Number(control && control.dataset.publicationWait) || 0);
+        if (!date) {
           if (result) {
             result.className = 'cli-pub-state is-rejected';
-            result.textContent = `Можно выбрать дату не раньше ${fmtDate(minimumDate)}`;
+            result.textContent = 'Выберите дату публикации';
+          }
+          return;
+        }
+        if (date < minimumDate) {
+          if (result) {
+            result.className = 'cli-pub-state is-rejected';
+            result.textContent = waitDays
+              ? `Минимальная дата публикации — ${fmtDate(minimumDate)}. Аккаунт должен быть в статусе «Выбран» не менее ${waitDays} дней.`
+              : `Можно выбрать дату не раньше ${fmtDate(minimumDate)}`;
           }
           return;
         }
