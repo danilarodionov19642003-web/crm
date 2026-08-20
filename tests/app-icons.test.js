@@ -39,6 +39,7 @@ assert.equal(clientManifest.start_url, '/pages/client/login.html',
 assert.equal(clientManifest.scope, '/pages/client/', 'клиентский ярлык должен оставаться в своём разделе');
 
 [
+  'favicon.ico',
   'assets/icons/favicon-32.png',
   'assets/icons/apple-touch-icon.png',
   'assets/icons/mentori-crm-icon-192.png',
