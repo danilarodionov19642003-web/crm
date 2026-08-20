@@ -64,6 +64,14 @@
     .task-pill--today  { background: rgba(34,197,94,0.18); color: #4ade80; }
     .task-pill--planned{ background: rgba(168,85,247,0.15); color: #c4b5fd; }
     .task-pill--request{ background: rgba(34,197,94,0.14); color: #4ade80; }
+    .task-client-preview {
+      border: 0; font: inherit; cursor: zoom-in; text-align: left;
+      transition: background .15s, color .15s, box-shadow .15s;
+    }
+    .task-client-preview:hover { background: rgba(249,115,22,0.24); color: #ffad73; }
+    .task-client-preview:focus-visible {
+      outline: 2px solid var(--accent); outline-offset: 2px;
+    }
     .task-note { color: var(--text); font-size: 14px; line-height: 1.4; word-break: break-word; }
     .task-actions { display:flex; gap:6px; flex-shrink:0; }
     .task-actions button { padding: 4px 8px; font-size: 12px; }
@@ -243,6 +251,14 @@
       font-size: 13px; font-weight: 600;
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
+    button.sched-row__name {
+      border: 0; background: transparent; color: inherit; font-family: inherit;
+      padding: 0; cursor: zoom-in; text-align: left;
+    }
+    button.sched-row__name:hover strong { color: var(--accent, #ff7a00); }
+    button.sched-row__name:focus-visible {
+      outline: 2px solid var(--accent, #ff7a00); outline-offset: 4px; border-radius: 4px;
+    }
     .sched-row__count {
       font-size: 12px; font-weight: 700; color: var(--accent, #ff7a00);
       font-variant-numeric: tabular-nums;
@@ -252,6 +268,18 @@
       font-size: 11px; color: var(--text-mute);
       font-variant-numeric: tabular-nums;
     }
+    .task-photo-view { display: grid; gap: 12px; justify-items: center; }
+    .task-photo-view__frame {
+      width: min(100%, 360px); aspect-ratio: 1;
+      display: grid; place-items: center; overflow: hidden;
+      border: 1px solid var(--border); border-radius: 8px;
+      background: var(--bg);
+    }
+    .task-photo-view__frame img { width: 100%; height: 100%; display: block; object-fit: cover; }
+    .task-photo-view__empty {
+      padding: 24px; color: var(--text-mute); font-size: 13px; text-align: center;
+    }
+    .task-photo-view__meta { color: var(--text-mute); font-size: 12px; text-align: center; }
     .sched-row__link {
       font-size: 11px; padding: 4px 10px;
       border-radius: 999px; background: transparent;
@@ -429,6 +457,31 @@
     </div>
   </div>
 
+  <!-- Быстрый просмотр фотографии анкеты без ухода со страницы задач -->
+  <div class="modal-backdrop" id="clientPhotoModal">
+    <div class="modal" style="max-width:460px" role="dialog" aria-modal="true" aria-labelledby="clientPhotoTitle">
+      <div class="modal__header">
+        <h3 id="clientPhotoTitle">Фото анкеты</h3>
+        <button class="btn--icon" type="button" data-close aria-label="Закрыть">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal__body">
+        <div class="task-photo-view">
+          <div class="task-photo-view__frame">
+            <img id="clientPhotoImage" alt="" referrerpolicy="no-referrer" hidden/>
+            <div class="task-photo-view__empty" id="clientPhotoEmpty">Загрузка фотографии...</div>
+          </div>
+          <div class="task-photo-view__meta" id="clientPhotoMeta"></div>
+        </div>
+      </div>
+      <div class="modal__footer">
+        <a class="btn btn--ghost" id="clientPhotoProfileLink" href="#" target="_blank" rel="noopener" hidden>Открыть анкету Profi.ru</a>
+        <button class="btn btn--primary" type="button" data-close>Закрыть</button>
+      </div>
+    </div>
+  </div>
+
   <script src="../data/seed.js"></script>
   <script src="../js/app.js?v=20260820i"></script>
   <script src="../js/supabase-client.js?v=20260820d"></script>
@@ -461,6 +514,22 @@
       return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     }
 
+    function safeProfiAvatarUrl(value) {
+      try {
+        const url = new URL(String(value || ''));
+        return url.protocol === 'https:' && url.hostname === 'cdn.profi.ru'
+          && url.pathname.startsWith('/xfiles/pfiles/') ? url.href : '';
+      } catch (_) { return ''; }
+    }
+
+    function safeProfiProfileUrl(value) {
+      try {
+        const url = new URL(String(value || ''));
+        return url.protocol === 'https:' && ['profi.ru', 'www.profi.ru'].includes(url.hostname)
+          && /^\/profile\/[A-Za-z0-9_-]+\/?$/.test(url.pathname) ? url.href : '';
+      } catch (_) { return ''; }
+    }
+
     function mentorById(id) { return (Store.state.mentors || []).find(m => m.id === id) || null; }
     function clientByMentorId(id) {
       const mentor = mentorById(id);
@@ -488,6 +557,61 @@
       const base = `${p.code || '—'}${p.city ? ' · ' + p.city : ''}`;
       return p.archived ? `🗑 ${base}` : base;
     }
+
+    function clientPhotoTriggerHtml(mentorId, content, className) {
+      if (!mentorId) return `<div class="${className}">${content}</div>`;
+      return `<button type="button" class="${className} task-client-preview" data-client-photo="${escapeHtml(mentorId)}" title="Показать фотографию анкеты">${content}</button>`;
+    }
+
+    function openClientPhoto(mentorId) {
+      const mentor = mentorById(mentorId);
+      const client = clientByMentorId(mentorId);
+      if (!mentor && !client) return;
+
+      const code = String((client && client.code) || (mentor && mentor.code) || '').trim();
+      const name = String((client && client.name) || (mentor && mentor.name) || '').trim();
+      const title = [code, name].filter(Boolean).join(' · ') || 'Фото анкеты';
+      const avatarUrl = safeProfiAvatarUrl(
+        (client && client.avatarUrl) || (mentor && mentor.avatarUrl) || ''
+      );
+      const profileUrl = safeProfiProfileUrl(
+        (client && client.profileUrl) || (mentor && mentor.profileUrl) || ''
+      );
+      const image = document.getElementById('clientPhotoImage');
+      const empty = document.getElementById('clientPhotoEmpty');
+      const profileLink = document.getElementById('clientPhotoProfileLink');
+
+      document.getElementById('clientPhotoTitle').textContent = title;
+      document.getElementById('clientPhotoMeta').textContent = 'Фотография из публичной анкеты Profi.ru';
+      image.hidden = true;
+      image.removeAttribute('src');
+      image.alt = `Фото анкеты ${title}`;
+      empty.hidden = false;
+      empty.textContent = avatarUrl ? 'Загрузка фотографии...' : 'Фотография для этой анкеты пока не загружена.';
+      profileLink.hidden = !profileUrl;
+      profileLink.href = profileUrl || '#';
+
+      if (avatarUrl) {
+        image.onload = () => {
+          image.hidden = false;
+          empty.hidden = true;
+        };
+        image.onerror = () => {
+          image.hidden = true;
+          empty.hidden = false;
+          empty.textContent = 'Не удалось загрузить фотографию. Попробуйте открыть анкету Profi.ru.';
+        };
+        image.src = avatarUrl;
+      }
+      Modal.open('clientPhotoModal');
+    }
+
+    document.addEventListener('click', event => {
+      const trigger = event.target.closest('[data-client-photo]');
+      if (!trigger) return;
+      event.preventDefault();
+      openClientPhoto(trigger.dataset.clientPhoto);
+    });
 
     function publicationRequestTask(request) {
       return {
@@ -602,7 +726,7 @@
         return `
           <article class="publication-request">
             <div class="publication-request__main">
-              <div class="publication-request__title">${escapeHtml(clientLabel)}</div>
+              ${clientPhotoTriggerHtml(request.mentor_id, escapeHtml(clientLabel), 'publication-request__title')}
               <div class="publication-request__meta">
                 <span>Аккаунт: ${escapeHtml(accountLabel)}</span>
                 <span class="publication-request__date">Публикация: ${escapeHtml(fmtDate(request.requested_date))}</span>
@@ -786,7 +910,7 @@
           <div class="task-meta">
             <div class="task-row1">
               <span class="task-pill ${datePill}">📅 ${escapeHtml(fmtDate(t.date) || t.date || '—')}</span>
-              <span class="task-pill task-pill--client">👤 ${escapeHtml(mentorLabel(m))}</span>
+              ${clientPhotoTriggerHtml(t.mentorId, `👤 ${escapeHtml(mentorLabel(m))}`, 'task-pill task-pill--client')}
               <span class="task-pill task-pill--manager">${escapeHtml(manager || 'не назначен')}</span>
               ${accBlock}
               ${statusMeta}
@@ -1250,14 +1374,14 @@
                 respBadge = `<span class="sched-row__resp" data-tone="${lbl.tone}" title="${title}">${lbl.icon} ${lbl.text}${when}</span>`;
               }
             }
+            const clientContent = `
+              <strong>${escapeHtml(r.code || '')}</strong>
+              ${r.name ? ` · ${escapeHtml(r.name)}` : ''}
+              <span class="sched-row__progress">${r.manager ? escapeHtml(r.manager) + ' · ' : ''}${r.tariff ? escapeHtml(r.tariff) + ' · ' : ''}${r.done}/${r.ordered} (${left} осталось)${r.completedCount ? ` · откликов сделано: ${r.completedCount}` : ''}</span>`;
             return `
               <div class="sched-row${isDone ? ' is-done' : ''}">
                 <span class="sched-row__dot" style="background:${r.color}"></span>
-                <div class="sched-row__name">
-                  <strong>${escapeHtml(r.code || '')}</strong>
-                  ${r.name ? ` · ${escapeHtml(r.name)}` : ''}
-                  <span class="sched-row__progress">${r.manager ? escapeHtml(r.manager) + ' · ' : ''}${r.tariff ? r.tariff + ' · ' : ''}${r.done}/${r.ordered} (${left} осталось)${r.completedCount ? ` · откликов сделано: ${r.completedCount}` : ''}</span>
-                </div>
+                ${clientPhotoTriggerHtml(r.mentorId, clientContent, 'sched-row__name')}
                 ${respBadge}
                 <span class="sched-row__count">${isDone ? '✓' : r.count}</span>
                 <a class="sched-row__link" href="clients.html?focus=${encodeURIComponent(r.clientId)}">График →</a>
@@ -1266,14 +1390,14 @@
           }).join('');
       const actionBody = actionRows.map(task => {
         const isClientRequest = task.source === 'client_publication_request';
+        const clientContent = `
+          <strong>${escapeHtml(task.code || '')}</strong>
+          ${task.name ? ` · ${escapeHtml(task.name)}` : ''}
+          <span class="sched-row__progress">${escapeHtml(task.manager || 'не назначен')} · ${escapeHtml(task.accountLabel)} · ${escapeHtml(task.note)}</span>`;
         return `
           <div class="sched-row sched-row--task${isClientRequest ? ' task-card--client-request' : ''}">
             <span class="sched-row__dot" style="background:${isClientRequest ? '#22c55e' : '#a855f7'}"></span>
-            <div class="sched-row__name">
-              <strong>${escapeHtml(task.code || '')}</strong>
-              ${task.name ? ` · ${escapeHtml(task.name)}` : ''}
-              <span class="sched-row__progress">${escapeHtml(task.manager || 'не назначен')} · ${escapeHtml(task.accountLabel)} · ${escapeHtml(task.note)}</span>
-            </div>
+            ${clientPhotoTriggerHtml(task.mentorId, clientContent, 'sched-row__name')}
             <span class="sched-row__task-label">${isClientRequest ? 'КЛИЕНТ' : 'СТАТУС'}</span>
             ${isClientRequest
               ? `<button class="sched-row__link" type="button" data-calendar-accept-publication="${escapeHtml(task.requestId)}">Подтвердить</button>
