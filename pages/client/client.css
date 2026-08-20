@@ -189,20 +189,21 @@
 /* SVG-donut с прогрессом анкеты */
 .cli-donut { position: relative; width: 100px; height: 100px; flex-shrink: 0; }
 .cli-donut svg { width: 100%; height: 100%; transform: rotate(-90deg); }
-.cli-donut circle { fill: none; stroke-width: 11; }
+.cli-donut circle { fill: none; stroke-width: 9; }
 .cli-donut__track { stroke: var(--border); }
 .cli-donut__active { stroke: var(--cli-accent-soft); transition: stroke-dasharray .4s ease; }
 .cli-donut__done   { stroke: var(--cli-green); transition: stroke-dasharray .4s ease; }
 .cli-donut__center {
-  position: absolute; inset: 0;
+  position: absolute; inset: 13%; min-width: 0;
   display: flex; flex-direction: column;
-  align-items: center; justify-content: center;
+  align-items: center; justify-content: center; text-align: center;
 }
-.cli-donut__pct { font-size: 22px; font-weight: 800; color: var(--text); line-height: 1; font-variant-numeric: tabular-nums; }
-.cli-donut__sub { font-size: 9px; text-transform: uppercase; color: var(--text-mute); letter-spacing: .08em; margin-top: 3px; }
+.cli-donut__pct { font-size: 20px; font-weight: 800; color: var(--text); line-height: 1; font-variant-numeric: tabular-nums; }
+.cli-donut__sub { max-width: 100%; margin-top: 3px; color: var(--text-mute); font-size: 9px; line-height: 1; letter-spacing: 0; white-space: nowrap; }
 @media (max-width: 480px) {
   .cli-donut { width: 80px; height: 80px; }
-  .cli-donut__pct { font-size: 18px; }
+  .cli-donut__pct { font-size: 17px; }
+  .cli-donut__sub { font-size: 8px; margin-top: 2px; }
 }
 
 /* Цифры справа от donut */
@@ -389,7 +390,17 @@
 }
 .cli-outreach__head h3 { margin: 0; color: var(--text); font-size: 15px; }
 .cli-outreach__head span { display: block; margin-top: 3px; color: var(--text-mute); font-size: 10px; }
+.cli-outreach__body {
+  display: grid; grid-template-columns: minmax(260px, .85fr) minmax(380px, 1.15fr);
+  align-items: start; gap: 16px; margin-top: 12px;
+}
+.cli-outreach__agenda,
+.cli-outreach__calendar { min-width: 0; }
+.cli-outreach__calendar {
+  padding: 12px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg);
+}
 .cli-outreach__list { display: grid; gap: 7px; margin-top: 12px; }
+.cli-outreach__agenda .cli-outreach__list { margin-top: 0; }
 .cli-outreach-row {
   display: grid; grid-template-columns: 112px minmax(0, 1fr) auto;
   align-items: center; gap: 10px; min-height: 42px; padding: 7px 9px;
@@ -439,8 +450,21 @@
 .cli-outreach-cal__day.is-today { border-color: var(--cli-accent); }
 .cli-outreach-cal__day.is-selected { background: var(--cli-accent); color: #fff; border-color: var(--cli-accent); }
 .cli-outreach-cal__day.is-selected span { color: #fff; }
+.cli-outreach-cal__day.is-owned { background: rgba(255,122,0,.14); border-color: var(--cli-accent); }
+.cli-outreach-cal__day.is-owned span { color: var(--cli-accent); font-weight: 700; }
 .cli-outreach-cal__day.is-disabled { opacity: .35; cursor: default; }
 .cli-outreach-cal__day.is-full span { color: var(--cli-red); }
+.cli-outreach-cal__legend {
+  display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 10px; color: var(--text-mute); font-size: 9px;
+}
+.cli-outreach-cal__legend span::before {
+  content: ''; display: inline-block; width: 7px; height: 7px; margin-right: 5px; border-radius: 2px; background: var(--cli-green);
+}
+.cli-outreach-cal__legend .is-owned::before { background: var(--cli-accent); }
+.cli-outreach-cal__legend .is-full::before { background: var(--cli-red); }
+.cli-outreach-cal__result { min-height: 16px; margin-top: 8px; color: var(--text-mute); font-size: 10px; }
+.cli-outreach-cal__result.is-pending { color: var(--cli-accent); }
+.cli-outreach-cal__loading { min-height: 320px; display: flex; align-items: center; justify-content: center; }
 .cli-outreach-cal__footer {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   min-height: 38px; margin-top: 14px;
@@ -451,6 +475,8 @@
   .cli-outreach { padding: 11px; }
   .cli-outreach__head { align-items: flex-start; }
   .cli-outreach__head .cli-outreach-primary { flex: 0 0 auto; }
+  .cli-outreach__body { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .cli-outreach__calendar { padding: 9px; }
   .cli-outreach-row { grid-template-columns: minmax(0, 1fr) auto; }
   .cli-outreach-row__state { text-align: right; }
   .cli-outreach-row__actions { grid-column: 1 / -1; }

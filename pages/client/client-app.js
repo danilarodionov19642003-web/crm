@@ -675,6 +675,7 @@
   }
 
   let outreachPlannerState = null;
+  const inlineOutreachMonths = new Map();
 
   function localISO(date) {
     const pad = value => String(value).padStart(2, '0');
@@ -720,6 +721,163 @@
       context.publicationRequests,
       slots
     );
+  }
+
+  function profileOutreachMeta(context) {
+    const anketa = ((context.payload && context.payload.anketas) || [])
+      .find(item => item.mentorId === context.mentorId);
+    const canonicalAvailable = Array.isArray(context.outreachSlots);
+    const activeSlots = canonicalAvailable
+      ? context.outreachSlots
+          .filter(row => row.mentor_id === context.mentorId && row.slot_status === 'scheduled')
+          .sort((left, right) => String(left.scheduled_date).localeCompare(String(right.scheduled_date)))
+      : [];
+    if (!anketa) return { anketa: null, canonicalAvailable, activeSlots, availableToAdd: 0 };
+    const breakdown = _statusBreakdown(anketa.statuses);
+    const ordered = Math.max(0, Number(anketa.ordered) || 0);
+    const done = Math.max(Number(anketa.done) || 0, breakdown.done);
+    const fallbackLimit = Math.max(0, ordered - done - breakdown.active);
+    const limit = Number.isFinite(Number(anketa.scheduleLimit))
+      ? Math.max(0, Number(anketa.scheduleLimit))
+      : fallbackLimit;
+    return {
+      anketa,
+      canonicalAvailable,
+      activeSlots,
+      availableToAdd: Math.max(0, limit - activeSlots.length)
+    };
+  }
+
+  async function renderInlineOutreachCalendar(context) {
+    const host = document.querySelector('[data-outreach-inline]');
+    if (!host) return;
+    const meta = profileOutreachMeta(context);
+    if (!meta.anketa || !meta.canonicalAvailable) return;
+
+    const storedMonth = inlineOutreachMonths.get(context.mentorId);
+    const month = storedMonth instanceof Date && !isNaN(storedMonth.getTime())
+      ? storedMonth
+      : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+    inlineOutreachMonths.set(context.mentorId, month);
+    const year = month.getFullYear();
+    const monthIndex = month.getMonth();
+    const first = new Date(year, monthIndex, 1);
+    const last = new Date(year, monthIndex + 1, 0);
+    const requestId = `${Date.now()}-${Math.random()}`;
+    host.dataset.requestId = requestId;
+    host.innerHTML = '<div class="cli-empty cli-outreach-cal__loading">Проверяем свободные даты…</div>';
+
+    let availability;
+    try {
+      availability = await loadOutreachAvailability(localISO(first), localISO(last));
+    } catch (_) {
+      if (host.dataset.requestId !== requestId || !host.isConnected) return;
+      host.innerHTML = `
+        <div class="cli-outreach-error">Не удалось загрузить свободные даты.</div>
+        <button type="button" class="cli-outreach-primary" data-outreach-inline-retry>Повторить</button>`;
+      host.querySelector('[data-outreach-inline-retry]').addEventListener('click', () => renderInlineOutreachCalendar(context));
+      return;
+    }
+    if (host.dataset.requestId !== requestId || !host.isConnected) return;
+
+    const byDate = new Map((availability || []).map(item => [
+      String(item.schedule_date || '').slice(0, 10),
+      {
+        used: Math.max(0, Number(item.used_count) || 0),
+        available: Math.max(0, Number(item.available_count) || 0)
+      }
+    ]));
+    const ownByDate = new Map();
+    meta.activeSlots.forEach(slot => {
+      const date = String(slot.scheduled_date || '').slice(0, 10);
+      if (!date) return;
+      if (!ownByDate.has(date)) ownByDate.set(date, []);
+      ownByDate.get(date).push(slot);
+    });
+
+    const today = todayISO();
+    const maxDateObject = new Date();
+    maxDateObject.setDate(maxDateObject.getDate() + 180);
+    const maxDate = localISO(maxDateObject);
+    const firstDow = (first.getDay() + 6) % 7;
+    const cells = [];
+    for (let index = 0; index < firstDow; index++) cells.push('<span class="cli-outreach-cal__empty"></span>');
+    for (let day = 1; day <= last.getDate(); day++) {
+      const date = localISO(new Date(year, monthIndex, day));
+      const load = byDate.get(date) || { used: 0, available: 7 };
+      const ownSlots = ownByDate.get(date) || [];
+      const ownCount = ownSlots.length;
+      const canAdd = date >= today && date <= maxDate && load.available > 0 && meta.availableToAdd > 0;
+      const canToggle = ownCount > 0 || canAdd;
+      const classes = [
+        'cli-outreach-cal__day',
+        ownCount ? 'is-owned' : '',
+        load.available <= 0 && !ownCount ? 'is-full' : '',
+        !canToggle ? 'is-disabled' : '',
+        date === today ? 'is-today' : ''
+      ].filter(Boolean).join(' ');
+      const label = ownCount
+        ? (ownCount === 1 ? 'ваш отклик' : `ваших: ${ownCount}`)
+        : (load.available > 0 ? `свободно ${load.available}` : 'занято');
+      const actionLabel = ownCount
+        ? `Снять отклик на ${fmtDate(date)}`
+        : `Запланировать отклик на ${fmtDate(date)}, свободно ${load.available} из 7`;
+      cells.push(`
+        <button type="button" class="${classes}" data-outreach-inline-date="${date}"
+          aria-label="${escapeAttr(actionLabel)}"${canToggle ? '' : ' disabled'}>
+          <strong>${day}</strong>
+          <span>${label}</span>
+        </button>`);
+    }
+
+    const monthLabel = first.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' });
+    const minMonth = new Date();
+    minMonth.setDate(1);
+    minMonth.setHours(0, 0, 0, 0);
+    const maxMonth = new Date(maxDateObject.getFullYear(), maxDateObject.getMonth(), 1);
+    const canPrev = first > minMonth;
+    const canNext = first < maxMonth;
+    host.innerHTML = `
+      <div class="cli-outreach-cal__nav">
+        <button type="button" data-outreach-inline-prev${canPrev ? '' : ' disabled'} aria-label="Предыдущий месяц">‹</button>
+        <strong>${escapeHtml(monthLabel.charAt(0).toUpperCase() + monthLabel.slice(1))}</strong>
+        <button type="button" data-outreach-inline-next${canNext ? '' : ' disabled'} aria-label="Следующий месяц">›</button>
+      </div>
+      <div class="cli-outreach-cal__weekdays"><span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span></div>
+      <div class="cli-outreach-cal__grid">${cells.join('')}</div>
+      <div class="cli-outreach-cal__legend"><span class="is-free">Свободно</span><span class="is-owned">Ваш отклик</span><span class="is-full">Занято</span></div>
+      <div class="cli-outreach-cal__result" data-outreach-inline-result></div>`;
+
+    host.querySelector('[data-outreach-inline-prev]').addEventListener('click', () => {
+      inlineOutreachMonths.set(context.mentorId, new Date(year, monthIndex - 1, 1));
+      renderInlineOutreachCalendar(context);
+    });
+    host.querySelector('[data-outreach-inline-next]').addEventListener('click', () => {
+      inlineOutreachMonths.set(context.mentorId, new Date(year, monthIndex + 1, 1));
+      renderInlineOutreachCalendar(context);
+    });
+    host.querySelectorAll('[data-outreach-inline-date]:not([disabled])').forEach(button => {
+      button.addEventListener('click', async () => {
+        const date = button.dataset.outreachInlineDate;
+        const ownSlots = ownByDate.get(date) || [];
+        const action = ownSlots.length ? 'cancel' : 'add';
+        const result = host.querySelector('[data-outreach-inline-result]');
+        host.querySelectorAll('button').forEach(item => { item.disabled = true; });
+        result.className = 'cli-outreach-cal__result is-pending';
+        result.textContent = action === 'cancel' ? 'Снимаем отклик…' : 'Добавляем отклик…';
+        const response = await manageOutreachSlot(action, {
+          slotId: ownSlots[0] && ownSlots[0].id,
+          mentorId: context.mentorId,
+          targetDate: date
+        });
+        if (!response.ok) {
+          alert(response.message);
+          await renderInlineOutreachCalendar(context);
+          return;
+        }
+        await refreshProfileOutreach(context);
+      });
+    });
   }
 
   async function renderOutreachPlannerCalendar() {
@@ -900,9 +1058,18 @@
           </div>
           <button type="button" class="cli-outreach-primary" data-outreach-add${canonicalAvailable && availableToAdd > 0 ? '' : ' disabled'}>+ Запланировать</button>
         </div>
-        <div class="cli-outreach__list">${rowsHtml}</div>
-        ${canonicalAvailable && availableToAdd <= 0 ? '<div class="cli-outreach__limit">Все доступные отклики уже распределены.</div>' : ''}
-        ${!canonicalAvailable ? '<div class="cli-outreach-error">План временно доступен только для просмотра. Обновите страницу.</div>' : ''}
+        <div class="cli-outreach__body">
+          <div class="cli-outreach__agenda">
+            <div class="cli-outreach__list">${rowsHtml}</div>
+            ${canonicalAvailable && availableToAdd <= 0 ? '<div class="cli-outreach__limit">Все доступные отклики уже распределены.</div>' : ''}
+            ${!canonicalAvailable ? '<div class="cli-outreach-error">План временно доступен только для просмотра. Обновите страницу.</div>' : ''}
+          </div>
+          <div class="cli-outreach__calendar" data-outreach-inline>
+            ${canonicalAvailable
+              ? '<div class="cli-empty cli-outreach-cal__loading">Проверяем свободные даты…</div>'
+              : '<div class="cli-empty">Календарь временно недоступен.</div>'}
+          </div>
+        </div>
       </section>`;
   }
 
@@ -1161,6 +1328,7 @@
         await refreshProfileOutreach(outreachContext);
       });
     });
+    renderInlineOutreachCalendar(outreachContext);
   }
 
   function escapeAttr(s) {
@@ -1171,7 +1339,7 @@
 
   /* ====================================================================
      Заказ отзывов (самообслуживание оплаты).
-     Клиент выбирает анкету (существующую/новую) + тариф и жмёт
+     Клиент выбирает существующую анкету + тариф и жмёт
      «Перейти к оплате» → INSERT в client_orders (RLS: только свой email),
      затем backend создаёт платёж RollyPay и возвращает pay_url.
      Триггер в БД пингует владельца в Telegram. Тарифы приходят в
