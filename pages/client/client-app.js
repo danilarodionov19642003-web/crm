@@ -15,7 +15,7 @@
     console.error('[client-app] supabase-client.js?v=20260521a должен подключаться раньше');
     return;
   }
-  const { Auth, accessToken } = window.Supabase;
+  const { Auth, accessToken, authFetch } = window.Supabase;
   // URL/KEY — геттеры (см. supabase-client.js Object.defineProperties),
   // меняются после фолбэка. Через _url()/_key() читаем актуальные значения.
   const _url = () => window.Supabase.URL;
@@ -33,6 +33,19 @@
   function fmtMoney(v) {
     if (v == null || isNaN(v)) return '0 ₽';
     return Number(v).toLocaleString('ru-RU', { maximumFractionDigits: 2 }) + ' ₽';
+  }
+  function todayISO() {
+    const now = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  }
+  function daysSince(iso) {
+    const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ''));
+    if (!match) return 0;
+    const start = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+    const now = new Date();
+    const current = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+    return Math.max(0, Math.floor((current - start) / 86400000));
   }
   function escapeHtml(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
@@ -103,6 +116,125 @@
     const rows = await res.json();
     if (!rows || !rows.length) return null;
     return { payload: rows[0].payload, updatedAt: rows[0].updated_at };
+  }
+
+  async function loadMyPublicationRequests() {
+    const token = accessToken();
+    const email = (Auth.email() || '').toLowerCase();
+    if (!token || !email) return [];
+    try {
+      const url = `${_url()}/rest/v1/client_publication_requests`
+        + `?client_email=eq.${encodeURIComponent(email)}`
+        + '&select=id,status_id,mentor_id,profile_id,status_date,requested_date,request_status,updated_at,resolved_at'
+        + '&order=updated_at.desc';
+      const res = await authFetch(url, {
+        headers: { 'apikey': _key(), 'Accept': 'application/json' }
+      });
+      if (!res.ok) {
+        console.warn('[client-app] publication requests load failed', res.status);
+        return [];
+      }
+      return await res.json();
+    } catch (error) {
+      console.warn('[client-app] publication requests load error', error);
+      return [];
+    }
+  }
+
+  async function submitPublicationRequest(statusId, requestedDate) {
+    try {
+      const res = await authFetch(`${_url()}/rest/v1/rpc/request_client_publication_date`, {
+        method: 'POST',
+        headers: {
+          'apikey': _key(),
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({ p_status_id: statusId, p_requested_date: requestedDate })
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const raw = String(body.message || body.details || '');
+        let message = 'Не удалось сохранить дату. Обновите страницу и попробуйте ещё раз.';
+        if (raw.includes('DATE_OUT_OF_RANGE')) message = 'Выберите дату от сегодняшнего дня до ближайших шести месяцев.';
+        else if (raw.includes('STATUS_NOT_AVAILABLE')) message = 'Статус аккаунта уже изменился. Обновите страницу.';
+        else if (raw.includes('DATE_ALREADY_ACCEPTED')) message = 'Эта дата уже подтверждена менеджером.';
+        return { ok: false, message };
+      }
+      return { ok: true, row: body };
+    } catch (error) {
+      console.warn('[client-app] publication request submit error', error);
+      return { ok: false, message: 'Нет связи с сервером. Попробуйте ещё раз.' };
+    }
+  }
+
+  async function loadMyOutreachSlots() {
+    const token = accessToken();
+    const email = (Auth.email() || '').toLowerCase();
+    if (!token || !email) return null;
+    try {
+      const url = `${_url()}/rest/v1/client_outreach_slots`
+        + `?client_email=eq.${encodeURIComponent(email)}`
+        + '&select=id,mentor_id,anketa_code,anketa_name,scheduled_date,slot_status,source,updated_at'
+        + '&order=scheduled_date.asc,id.asc';
+      const res = await authFetch(url, {
+        headers: { apikey: _key(), Accept: 'application/json' }
+      });
+      if (!res.ok) {
+        console.warn('[client-app] outreach slots load failed', res.status);
+        return null;
+      }
+      return await res.json();
+    } catch (error) {
+      console.warn('[client-app] outreach slots load error', error);
+      return null;
+    }
+  }
+
+  async function loadOutreachAvailability(fromDate, toDate) {
+    try {
+      const res = await authFetch(`${_url()}/rest/v1/rpc/get_client_outreach_calendar`, {
+        method: 'POST',
+        headers: { apikey: _key(), 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ p_from: fromDate, p_to: toDate })
+      });
+      if (!res.ok) throw new Error(await res.text().catch(() => `HTTP ${res.status}`));
+      return await res.json();
+    } catch (error) {
+      console.warn('[client-app] outreach availability load error', error);
+      throw error;
+    }
+  }
+
+  function outreachErrorMessage(rawError) {
+    const raw = String(rawError && rawError.message || rawError || '');
+    if (raw.includes('DAY_FULL')) return 'На этот день уже запланировано 7 откликов. Выберите другой.';
+    if (raw.includes('NO_AVAILABLE_OUTREACH')) return 'Все доступные отклики этой анкеты уже запланированы или находятся в работе.';
+    if (raw.includes('DATE_OUT_OF_RANGE')) return 'Можно выбрать дату от сегодняшнего дня до ближайших шести месяцев.';
+    if (raw.includes('SLOT_NOT_FOUND')) return 'Этот отклик уже перенесён или отменён. Обновите страницу.';
+    if (raw.includes('ANKETA_NOT_FOUND')) return 'Доступ к анкете изменился. Обновите страницу.';
+    return 'Не удалось изменить план. Проверьте связь и попробуйте ещё раз.';
+  }
+
+  async function manageOutreachSlot(action, options = {}) {
+    try {
+      const res = await authFetch(`${_url()}/rest/v1/rpc/manage_client_outreach_slot`, {
+        method: 'POST',
+        headers: { apikey: _key(), 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({
+          p_action: action,
+          p_slot_id: options.slotId || null,
+          p_mentor_id: options.mentorId || null,
+          p_target_date: options.targetDate || null
+        })
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(String(body.message || body.details || `HTTP ${res.status}`));
+      return { ok: true, row: body };
+    } catch (error) {
+      console.warn('[client-app] outreach slot update error', error);
+      return { ok: false, message: outreachErrorMessage(error) };
+    }
   }
 
   function renderHeader(snap) {
@@ -294,7 +426,7 @@
   const CAL_COLORS = ['#ff7a00', '#22c55e', '#3b82f6', '#a855f7', '#14b8a6'];
   const calState = { month: new Date(), selected: new Date().toISOString().slice(0, 10) };
 
-  function _gatherEvents(snap) {
+  function _gatherEvents(snap, outreachSlots) {
     const events = [];
     if (!snap || !snap.anketas) return events;
     snap.anketas.forEach((a, idx) => {
@@ -324,11 +456,21 @@
           comment: ''
         });
       });
-      // Запланированные дни — из admin'ского графика (client.schedule).
-      // schedule[] уже содержит только незакрытый план. Статусы и отзывы здесь
-      // не вычитаем: опубликованный старый отзыв может иметь ту же дату, но это
-      // не означает, что запланированный на сегодня отклик выполнен.
-      (a.schedule || []).forEach(p => {
+      // Canonical rows are preferred. The snapshot schedule remains a fallback
+      // while an old cached client page is being refreshed.
+      const plannedRows = Array.isArray(outreachSlots)
+        ? (() => {
+            const grouped = new Map();
+            outreachSlots
+              .filter(row => row.slot_status === 'scheduled' && row.mentor_id === a.mentorId)
+              .forEach(row => {
+                const date = String(row.scheduled_date || '').slice(0, 10);
+                if (date) grouped.set(date, (grouped.get(date) || 0) + 1);
+              });
+            return [...grouped].map(([date, count]) => ({ date, count }));
+          })()
+        : (a.schedule || []);
+      plannedRows.forEach(p => {
         if (!p.date || !p.count) return;
         const d = String(p.date).slice(0, 10);
         const left = Math.max(0, +p.count || 0);
@@ -351,10 +493,10 @@
     return `${months[d.getMonth()]} ${d.getFullYear()}`;
   }
 
-  function renderCalendar(snap) {
+  function renderCalendar(snap, outreachSlots) {
     const el = document.querySelector('[data-cli-calendar]');
     if (!el || !snap) return;
-    const events = _gatherEvents(snap);
+    const events = _gatherEvents(snap, outreachSlots);
     const byDate = new Map();
     events.forEach(e => {
       if (!byDate.has(e.date)) byDate.set(e.date, []);
@@ -468,21 +610,21 @@
 
     // Биндим клики (после каждого ререндера, поскольку innerHTML затирает старые слушатели)
     el.querySelector('[data-cal-prev]').addEventListener('click', () => {
-      calState.month = new Date(year, month - 1, 1); renderCalendar(snap);
+      calState.month = new Date(year, month - 1, 1); renderCalendar(snap, outreachSlots);
     });
     el.querySelector('[data-cal-next]').addEventListener('click', () => {
-      calState.month = new Date(year, month + 1, 1); renderCalendar(snap);
+      calState.month = new Date(year, month + 1, 1); renderCalendar(snap, outreachSlots);
     });
     el.querySelector('[data-cal-today]').addEventListener('click', () => {
       const t = new Date();
       calState.month = new Date(t.getFullYear(), t.getMonth(), 1);
       calState.selected = t.toISOString().slice(0, 10);
-      renderCalendar(snap);
+      renderCalendar(snap, outreachSlots);
     });
     el.querySelectorAll('.cli-cal__cell[data-date]').forEach(b => {
       b.addEventListener('click', () => {
         calState.selected = b.dataset.date;
-        renderCalendar(snap);
+        renderCalendar(snap, outreachSlots);
       });
     });
   }
@@ -500,7 +642,7 @@
     };
     return `
       <section class="cli-packages">
-        <h3 class="cli-section-title">Пакеты по анкете</h3>
+        <h3 class="cli-section-title">Заказы по анкете</h3>
         <div class="cli-packages__list">
           ${packages.map(item => {
             const state = stateLabel[item.state] || stateLabel.queued;
@@ -532,7 +674,239 @@
       </section>`;
   }
 
-  function renderProfileDetail(payload, mentorId, orders) {
+  let outreachPlannerState = null;
+
+  function localISO(date) {
+    const pad = value => String(value).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  }
+
+  function ensureOutreachPlannerModal() {
+    let modal = document.getElementById('cliOutreachModal');
+    if (modal) return modal;
+    modal = document.createElement('div');
+    modal.className = 'cli-modal';
+    modal.id = 'cliOutreachModal';
+    modal.hidden = true;
+    modal.innerHTML = `
+      <div class="cli-modal__backdrop" data-outreach-close></div>
+      <div class="cli-modal__box cli-outreach-modal">
+        <div class="cli-modal__head">
+          <h3 data-outreach-title>Запланировать отклик</h3>
+          <button class="cli-modal__x" type="button" data-outreach-close aria-label="Закрыть">✕</button>
+        </div>
+        <div class="cli-modal__body" data-outreach-body></div>
+      </div>`;
+    document.body.appendChild(modal);
+    modal.querySelectorAll('[data-outreach-close]').forEach(button => {
+      button.addEventListener('click', closeOutreachPlanner);
+    });
+    return modal;
+  }
+
+  function closeOutreachPlanner() {
+    const modal = document.getElementById('cliOutreachModal');
+    if (modal) modal.hidden = true;
+    outreachPlannerState = null;
+  }
+
+  async function refreshProfileOutreach(context) {
+    const refreshed = await loadMyOutreachSlots();
+    const slots = Array.isArray(refreshed) ? refreshed : context.outreachSlots;
+    renderProfileDetail(
+      context.payload,
+      context.mentorId,
+      context.orders,
+      context.publicationRequests,
+      slots
+    );
+  }
+
+  async function renderOutreachPlannerCalendar() {
+    const state = outreachPlannerState;
+    const modal = ensureOutreachPlannerModal();
+    const body = modal.querySelector('[data-outreach-body]');
+    if (!state || !body) return;
+
+    const year = state.month.getFullYear();
+    const month = state.month.getMonth();
+    const first = new Date(year, month, 1);
+    const last = new Date(year, month + 1, 0);
+    const from = localISO(first);
+    const to = localISO(last);
+    body.innerHTML = '<div class="cli-empty">Проверяем свободные даты…</div>';
+
+    let availability;
+    try {
+      availability = await loadOutreachAvailability(from, to);
+    } catch (_) {
+      if (outreachPlannerState !== state) return;
+      body.innerHTML = `
+        <div class="cli-outreach-error">Не удалось загрузить календарь.</div>
+        <button type="button" class="cli-outreach-primary" data-outreach-retry>Повторить</button>`;
+      body.querySelector('[data-outreach-retry]').addEventListener('click', renderOutreachPlannerCalendar);
+      return;
+    }
+    if (outreachPlannerState !== state) return;
+
+    const byDate = new Map((availability || []).map(item => [
+      String(item.schedule_date || '').slice(0, 10),
+      {
+        used: Math.max(0, Number(item.used_count) || 0),
+        available: Math.max(0, Number(item.available_count) || 0)
+      }
+    ]));
+    const today = todayISO();
+    const maxDateObject = new Date();
+    maxDateObject.setDate(maxDateObject.getDate() + 180);
+    const maxDate = localISO(maxDateObject);
+    const currentSlotDate = state.slot ? String(state.slot.scheduled_date || '').slice(0, 10) : '';
+    const firstDow = (first.getDay() + 6) % 7;
+    const cells = [];
+    for (let index = 0; index < firstDow; index++) cells.push('<span class="cli-outreach-cal__empty"></span>');
+    for (let day = 1; day <= last.getDate(); day++) {
+      const date = localISO(new Date(year, month, day));
+      const load = byDate.get(date) || { used: 0, available: 7 };
+      const disabled = date < today || date > maxDate || load.available <= 0 || date === currentSlotDate;
+      const classes = [
+        'cli-outreach-cal__day',
+        disabled ? 'is-disabled' : '',
+        load.available <= 0 ? 'is-full' : '',
+        date === state.selectedDate ? 'is-selected' : '',
+        date === today ? 'is-today' : ''
+      ].filter(Boolean).join(' ');
+      cells.push(`
+        <button type="button" class="${classes}" data-outreach-date="${date}"${disabled ? ' disabled' : ''}>
+          <strong>${day}</strong>
+          <span>${load.available > 0 ? `${load.available} из 7` : 'мест нет'}</span>
+        </button>`);
+    }
+
+    const monthLabel = first.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' });
+    const minMonth = new Date();
+    minMonth.setDate(1);
+    minMonth.setHours(0, 0, 0, 0);
+    const maxMonth = new Date(maxDateObject.getFullYear(), maxDateObject.getMonth(), 1);
+    const canPrev = first > minMonth;
+    const canNext = first < maxMonth;
+    body.innerHTML = `
+      <div class="cli-outreach-cal__nav">
+        <button type="button" data-outreach-prev${canPrev ? '' : ' disabled'} aria-label="Предыдущий месяц">‹</button>
+        <strong>${escapeHtml(monthLabel.charAt(0).toUpperCase() + monthLabel.slice(1))}</strong>
+        <button type="button" data-outreach-next${canNext ? '' : ' disabled'} aria-label="Следующий месяц">›</button>
+      </div>
+      <div class="cli-outreach-cal__weekdays"><span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span></div>
+      <div class="cli-outreach-cal__grid">${cells.join('')}</div>
+      <div class="cli-outreach-cal__footer">
+        <span data-outreach-result>${state.selectedDate ? `Выбрано: ${fmtDate(state.selectedDate)}` : 'Выберите свободный день'}</span>
+        <button type="button" class="cli-outreach-primary" data-outreach-save${state.selectedDate ? '' : ' disabled'}>${state.mode === 'move' ? 'Перенести' : 'Запланировать'}</button>
+      </div>`;
+
+    body.querySelector('[data-outreach-prev]').addEventListener('click', () => {
+      state.month = new Date(year, month - 1, 1);
+      state.selectedDate = '';
+      renderOutreachPlannerCalendar();
+    });
+    body.querySelector('[data-outreach-next]').addEventListener('click', () => {
+      state.month = new Date(year, month + 1, 1);
+      state.selectedDate = '';
+      renderOutreachPlannerCalendar();
+    });
+    body.querySelectorAll('[data-outreach-date]:not([disabled])').forEach(button => {
+      button.addEventListener('click', () => {
+        state.selectedDate = button.dataset.outreachDate;
+        body.querySelectorAll('[data-outreach-date]').forEach(item => item.classList.toggle('is-selected', item === button));
+        body.querySelector('[data-outreach-result]').textContent = `Выбрано: ${fmtDate(state.selectedDate)}`;
+        body.querySelector('[data-outreach-save]').disabled = false;
+      });
+    });
+    body.querySelector('[data-outreach-save]').addEventListener('click', async event => {
+      if (!state.selectedDate) return;
+      const button = event.currentTarget;
+      const result = body.querySelector('[data-outreach-result]');
+      button.disabled = true;
+      button.textContent = 'Сохраняем…';
+      const response = await manageOutreachSlot(state.mode, {
+        slotId: state.slot && state.slot.id,
+        mentorId: state.context.mentorId,
+        targetDate: state.selectedDate
+      });
+      if (!response.ok) {
+        button.disabled = false;
+        button.textContent = state.mode === 'move' ? 'Перенести' : 'Запланировать';
+        result.className = 'cli-outreach-error';
+        result.textContent = response.message;
+        return;
+      }
+      const context = state.context;
+      closeOutreachPlanner();
+      await refreshProfileOutreach(context);
+    });
+  }
+
+  function openOutreachPlanner(context, mode, slot) {
+    const modal = ensureOutreachPlannerModal();
+    const anchor = slot && slot.scheduled_date ? new Date(`${slot.scheduled_date}T12:00:00`) : new Date();
+    outreachPlannerState = {
+      context,
+      mode,
+      slot: slot || null,
+      month: new Date(anchor.getFullYear(), anchor.getMonth(), 1),
+      selectedDate: ''
+    };
+    modal.querySelector('[data-outreach-title]').textContent = mode === 'move'
+      ? 'Перенести отклик'
+      : 'Запланировать отклик';
+    modal.hidden = false;
+    renderOutreachPlannerCalendar();
+  }
+
+  function outreachPlannerHtml(anketa, outreachSlots, fallbackLimit) {
+    const canonicalAvailable = Array.isArray(outreachSlots);
+    let activeSlots;
+    if (canonicalAvailable) {
+      activeSlots = outreachSlots
+        .filter(row => row.mentor_id === anketa.mentorId && row.slot_status === 'scheduled')
+        .sort((left, right) => String(left.scheduled_date).localeCompare(String(right.scheduled_date)));
+    } else {
+      activeSlots = [];
+      (anketa.schedule || []).forEach((item, itemIndex) => {
+        for (let index = 0; index < Math.max(0, Number(item.count) || 0); index++) {
+          activeSlots.push({ id: null, scheduled_date: item.date, mentor_id: anketa.mentorId, legacyKey: `${itemIndex}-${index}` });
+        }
+      });
+    }
+    const limit = Number.isFinite(Number(anketa.scheduleLimit))
+      ? Math.max(0, Number(anketa.scheduleLimit))
+      : Math.max(0, Number(fallbackLimit) || 0);
+    const availableToAdd = Math.max(0, limit - activeSlots.length);
+    const rowsHtml = activeSlots.length
+      ? activeSlots.map(slot => `
+          <div class="cli-outreach-row">
+            <span class="cli-outreach-row__date">${fmtDate(slot.scheduled_date)}</span>
+            <span class="cli-outreach-row__state">Запланирован</span>
+            <div class="cli-outreach-row__actions">
+              <button type="button" data-outreach-move="${escapeAttr(slot.id || '')}"${slot.id ? '' : ' disabled'}>Перенести</button>
+              <button type="button" data-outreach-cancel="${escapeAttr(slot.id || '')}"${slot.id ? '' : ' disabled'}>Отменить</button>
+            </div>
+          </div>`).join('')
+      : '<div class="cli-empty cli-outreach-empty">Запланированных откликов пока нет.</div>';
+    return `
+      <section class="cli-outreach" data-outreach-section>
+        <div class="cli-outreach__head">
+          <div>
+            <h3>План откликов</h3>
+            <span>${activeSlots.length} запланировано · до 7 в день</span>
+          </div>
+          <button type="button" class="cli-outreach-primary" data-outreach-add${canonicalAvailable && availableToAdd > 0 ? '' : ' disabled'}>+ Запланировать</button>
+        </div>
+        <div class="cli-outreach__list">${rowsHtml}</div>
+        ${canonicalAvailable && availableToAdd <= 0 ? '<div class="cli-outreach__limit">Все доступные отклики уже распределены.</div>' : ''}
+        ${!canonicalAvailable ? '<div class="cli-outreach-error">План временно доступен только для просмотра. Обновите страницу.</div>' : ''}
+      </section>`;
+  }
+
+  function renderProfileDetail(payload, mentorId, orders, publicationRequests, outreachSlots) {
     const a = (payload.anketas || []).find(x => x.mentorId === mentorId);
     const root = document.querySelector('[data-cli-profile]');
     if (!root) return;
@@ -547,6 +921,16 @@
     const wDone = ordered ? Math.min(100, (effectiveDone / ordered) * 100) : 0;
     const wActive = ordered ? Math.min(100 - wDone, (br.active / ordered) * 100) : 0;
     const packagesHtml = _packageHistoryHtml(a, orders || [], br.active);
+    const outreachContext = { payload, mentorId, orders, publicationRequests, outreachSlots };
+    const outreachHtml = outreachPlannerHtml(
+      a,
+      outreachSlots,
+      Math.max(0, ordered - effectiveDone - br.active)
+    );
+    const requestsByStatus = new Map();
+    (publicationRequests || []).forEach(request => {
+      if (!requestsByStatus.has(request.status_id)) requestsByStatus.set(request.status_id, request);
+    });
     const totalsHtml = `
       <div class="cli-kpis" style="margin-bottom:16px">
         <div class="cli-kpi">
@@ -593,18 +977,92 @@
         </div>
       </div>
     `;
+    const requestForStatus = status => {
+      const stored = requestsByStatus.get(status.id);
+      return stored && String(stored.status_date || '').slice(0, 10) === String(status.date || '').slice(0, 10)
+        ? stored
+        : null;
+    };
+    const publicationControl = status => {
+      if (status.status !== '🏆 Выбран' || !status.id) return '<span class="cli-pub-empty">—</span>';
+      const request = requestForStatus(status);
+      if (request && request.request_status === 'accepted') {
+        return `<div class="cli-pub-confirmed"><strong>${fmtDate(request.requested_date)}</strong><span>Подтверждено</span></div>`;
+      }
+      const value = request && request.request_status === 'pending'
+        ? String(request.requested_date || '').slice(0, 10)
+        : '';
+      const state = request && request.request_status === 'pending'
+        ? '<span class="cli-pub-state is-pending">Ожидает подтверждения</span>'
+        : (request && request.request_status === 'rejected'
+            ? '<span class="cli-pub-state is-rejected">Выберите другую дату</span>'
+            : '<span class="cli-pub-state" data-publication-result></span>');
+      return `
+        <div class="cli-pub-control" data-publication-status="${escapeAttr(status.id)}">
+          <div class="cli-pub-actions">
+            <input type="date" class="cli-pub-date" min="${todayISO()}" value="${escapeAttr(value)}" aria-label="Дата публикации"/>
+            <button type="button" class="cli-pub-submit" data-publication-submit>${value ? 'Изменить' : 'Запланировать'}</button>
+          </div>
+          ${state}
+        </div>`;
+    };
+    const publicationSummary = status => {
+      if (status.status !== '🏆 Выбран' || !status.id) return '';
+      const request = requestForStatus(status);
+      if (!request) return '<span class="cli-status-mobile__request">Дата не выбрана</span>';
+      if (request.request_status === 'accepted') {
+        return `<span class="cli-status-mobile__request is-accepted">${fmtDate(request.requested_date)}</span>`;
+      }
+      if (request.request_status === 'pending') {
+        return `<span class="cli-status-mobile__request is-pending">${fmtDate(request.requested_date)} · на проверке</span>`;
+      }
+      if (request.request_status === 'rejected') {
+        return '<span class="cli-status-mobile__request is-rejected">Выбрать другую дату</span>';
+      }
+      return '';
+    };
     const statusesHtml = a.statuses && a.statuses.length ? `
       <h3 class="cli-section-title">Аккаунты в работе</h3>
-      <table class="cli-table">
-        <thead><tr><th>Аккаунт</th><th>Статус</th><th>Обновлён</th></tr></thead>
+      <div class="cli-table-wrap">
+      <table class="cli-table cli-status-table">
+        <thead><tr><th>Аккаунт</th><th>Статус</th><th>Обновлён</th><th>В статусе</th><th>Публикация</th></tr></thead>
         <tbody>${a.statuses.map(s => `
           <tr>
-            <td><strong>${escapeHtml(s.profileName || '—')}</strong></td>
-            <td><span class="cli-status-pill">${escapeHtml(s.status || '')}</span></td>
-            <td>${fmtDate(s.date)}</td>
+            <td data-label="Аккаунт"><strong>${escapeHtml(s.profileName || '—')}</strong></td>
+            <td data-label="Статус"><span class="cli-status-pill">${escapeHtml(s.status || '')}</span></td>
+            <td data-label="Обновлён">${fmtDate(s.date)}</td>
+            <td data-label="В статусе"><span class="cli-status-days"><strong>${daysSince(s.date)}</strong> дн.</span></td>
+            <td data-label="Публикация">${publicationControl(s)}</td>
           </tr>
         `).join('')}</tbody>
       </table>
+      </div>
+      <div class="cli-status-mobile">
+        ${a.statuses.map(s => `
+          <details class="cli-status-mobile__item"${requestForStatus(s) && requestForStatus(s).request_status === 'rejected' ? ' open' : ''}>
+            <summary class="cli-status-mobile__summary">
+              <span class="cli-status-mobile__identity">
+                <strong>${escapeHtml(s.profileName || '—')}</strong>
+                <span class="cli-status-pill">${escapeHtml(s.status || '')}</span>
+              </span>
+              <span class="cli-status-mobile__meta">
+                <span class="cli-status-days"><strong>${daysSince(s.date)}</strong> дн.</span>
+                ${publicationSummary(s)}
+              </span>
+            </summary>
+            <div class="cli-status-mobile__body">
+              <div class="cli-status-mobile__fact">
+                <span>Статус обновлён</span>
+                <strong>${fmtDate(s.date)}</strong>
+              </div>
+              <div class="cli-status-mobile__publication">
+                <span>Дата публикации</span>
+                ${publicationControl(s)}
+              </div>
+            </div>
+          </details>
+        `).join('')}
+      </div>
     ` : '';
     const paymentsHtml = a.payments && a.payments.length ? `
       <h3 class="cli-section-title">История оплат</h3>
@@ -638,11 +1096,71 @@
       <div class="cli-detail-sub">${escapeHtml(a.platform || '')}${a.tariff ? ' · ' + escapeHtml(a.tariff) : ''}${a.deadline ? ' · дедлайн ' + fmtDate(a.deadline) : ''}</div>
       ${totalsHtml}
       ${moneyHtml}
+      ${outreachHtml}
       ${packagesHtml}
       ${statusesHtml}
       ${paymentsHtml}
       ${reviewsHtml}
     `;
+
+    root.querySelectorAll('[data-publication-submit]').forEach(button => {
+      button.addEventListener('click', async () => {
+        const control = button.closest('[data-publication-status]');
+        const input = control && control.querySelector('.cli-pub-date');
+        const result = control && control.querySelector('[data-publication-result], .cli-pub-state');
+        const date = input && input.value;
+        if (!date || date < todayISO()) {
+          if (result) {
+            result.className = 'cli-pub-state is-rejected';
+            result.textContent = 'Выберите сегодняшнюю или будущую дату';
+          }
+          return;
+        }
+        button.disabled = true;
+        button.textContent = 'Сохраняю…';
+        const response = await submitPublicationRequest(control.dataset.publicationStatus, date);
+        if (!response.ok) {
+          button.disabled = false;
+          button.textContent = 'Запланировать';
+          if (result) {
+            result.className = 'cli-pub-state is-rejected';
+            result.textContent = response.message;
+          }
+          return;
+        }
+        const updatedRequests = await loadMyPublicationRequests();
+        renderProfileDetail(payload, mentorId, orders, updatedRequests, outreachSlots);
+      });
+    });
+
+    const activeOutreachSlots = Array.isArray(outreachSlots)
+      ? outreachSlots.filter(row => row.mentor_id === mentorId && row.slot_status === 'scheduled')
+      : [];
+    const slotsById = new Map(activeOutreachSlots.map(row => [String(row.id), row]));
+    const addOutreach = root.querySelector('[data-outreach-add]');
+    if (addOutreach && !addOutreach.disabled) {
+      addOutreach.addEventListener('click', () => openOutreachPlanner(outreachContext, 'add', null));
+    }
+    root.querySelectorAll('[data-outreach-move]').forEach(button => {
+      button.addEventListener('click', () => {
+        const slot = slotsById.get(button.dataset.outreachMove);
+        if (slot) openOutreachPlanner(outreachContext, 'move', slot);
+      });
+    });
+    root.querySelectorAll('[data-outreach-cancel]').forEach(button => {
+      button.addEventListener('click', async () => {
+        const slot = slotsById.get(button.dataset.outreachCancel);
+        if (!slot || !confirm(`Отменить отклик на ${fmtDate(slot.scheduled_date)}?`)) return;
+        button.disabled = true;
+        const response = await manageOutreachSlot('cancel', { slotId: slot.id });
+        if (!response.ok) {
+          button.disabled = false;
+          alert(response.message);
+          return;
+        }
+        await refreshProfileOutreach(outreachContext);
+      });
+    });
   }
 
   function escapeAttr(s) {
@@ -811,7 +1329,8 @@
     if (!cta) return;
     const pay = (payload && payload.payment) || {};
     const tariffs = pay.tariffs || [];
-    if (!tariffs.length) { cta.hidden = true; return; }
+    const anketas = (payload && payload.anketas) || [];
+    if (!tariffs.length || !anketas.length) { cta.hidden = true; return; }
     cta.hidden = false;
     const btn = document.getElementById('cliOrderBtn');
     if (btn && !btn._bound) { btn._bound = true; btn.addEventListener('click', openOrderModal); }
@@ -852,31 +1371,19 @@
       </div>`).join('');
   }
 
-  let _orderRowSequence = 0;
   function _orderPackageHtml(index, tariffs, anketas, suggestedIndex) {
-    const hasExisting = anketas.length > 0;
-    const targetName = `ordTarget${++_orderRowSequence}`;
     return `
       <section class="cli-cart-item" data-order-item>
         <div class="cli-cart-item__head">
-          <strong data-order-item-title>Пакет ${index + 1}</strong>
-          <button type="button" class="cli-cart-item__remove" data-order-remove title="Убрать пакет" aria-label="Убрать пакет">×</button>
+          <strong data-order-item-title>Заказ ${index + 1}</strong>
+          <button type="button" class="cli-cart-item__remove" data-order-remove title="Убрать из заказа" aria-label="Убрать из заказа">×</button>
         </div>
-        <div class="cli-cart-target">
-          <label class="cli-cart-target__option">
-            <input type="radio" name="${targetName}" value="existing" ${hasExisting ? 'checked' : 'disabled'}/>
-            <span>Существующая анкета</span>
-          </label>
-          <label class="cli-cart-target__option">
-            <input type="radio" name="${targetName}" value="new" ${hasExisting ? '' : 'checked'}/>
-            <span>Новая анкета</span>
-          </label>
-        </div>
-        <select class="cli-ord-input" data-order-existing ${hasExisting ? '' : 'disabled'}>
-          ${anketas.map((a, i) => `<option value="${i}" ${i === suggestedIndex ? 'selected' : ''}>${escapeHtml(a.code || '')}${a.name ? ' · ' + escapeHtml(a.name) : ''}</option>`).join('')}
-        </select>
-        <input type="text" class="cli-ord-input" data-order-new-name maxlength="120"
-          placeholder="ФИО новой анкеты" ${hasExisting ? 'disabled' : ''}/>
+        <label class="cli-cart-control">
+          <span>Анкета</span>
+          <select class="cli-ord-input" data-order-existing>
+            ${anketas.map((a, i) => `<option value="${i}" ${i === suggestedIndex ? 'selected' : ''}>${escapeHtml(a.code || '')}${a.name ? ' · ' + escapeHtml(a.name) : ''}</option>`).join('')}
+          </select>
+        </label>
         <div class="cli-cart-grid">
           <label class="cli-cart-control">
             <span>Тариф</span>
@@ -888,10 +1395,6 @@
             <small class="cli-cart-control__error" data-order-qty-error hidden></small>
           </label>
         </div>
-        <label class="cli-cart-control">
-          <span>Ссылка на профиль <small>(необязательно)</small></span>
-          <input type="url" class="cli-ord-input" data-order-profile-url placeholder="https://..."/>
-        </label>
         <div class="cli-cart-item__sum" data-order-item-sum></div>
       </section>`;
   }
@@ -909,22 +1412,15 @@
     const cart = window.MentoriOrderCart;
     if (!cart || !tariffs.length) return;
 
+    if (!anketas.length) return;
     body.innerHTML = `
-      <div class="cli-cart-intro">Добавь тарифы для нужных анкет — оплата будет одной суммой.</div>
       <div class="cli-cart-list" data-order-list></div>
-      <button type="button" class="cli-cart-add" data-order-add><span aria-hidden="true">+</span> Добавить пакет для другой анкеты</button>
+      <button type="button" class="cli-cart-add" data-order-add><span aria-hidden="true">+</span> Добавить отзывы для другой анкеты</button>
       <div class="cli-ord-field cli-cart-payment">
         <div class="cli-ord-label">Способ оплаты</div>
         <div class="cli-cart-target">
           <label class="cli-cart-target__option"><input type="radio" name="ordMethod" value="online" checked/><span>Онлайн: СБП или крипта</span></label>
           <label class="cli-cart-target__option"><input type="radio" name="ordMethod" value="card_transfer" ${manualEnabled ? '' : 'disabled'}/><span>Перевод · скидка 300 ₽</span></label>
-        </div>
-      </div>
-      <div class="cli-ord-field cli-cart-payment">
-        <div class="cli-ord-label">Размер оплаты</div>
-        <div class="cli-cart-target">
-          <label class="cli-cart-target__option"><input type="radio" name="ordPay" value="half" checked/><span>50% сейчас</span></label>
-          <label class="cli-cart-target__option"><input type="radio" name="ordPay" value="full"/><span>100% сейчас</span></label>
         </div>
       </div>
       <div class="cli-ord-amount cli-cart-total" id="ordAmount"></div>
@@ -955,20 +1451,15 @@
 
     const list = body.querySelector('[data-order-list]');
     const addButton = body.querySelector('[data-order-add]');
-    const isCartFull = () => (body.querySelector('input[name="ordPay"]:checked') || {}).value === 'full';
+    const isCartFull = () => false;
+    const maxOrderItems = Math.min(cart.MAX_ITEMS, anketas.length);
     const isManualTransfer = () => (body.querySelector('input[name="ordMethod"]:checked') || {}).value === 'card_transfer';
     const rowTariff = row => tariffs[Number(row.querySelector('[data-order-tariff]').value) || 0] || {};
     const nextSuggestedAnketa = () => {
       const used = new Set([...list.querySelectorAll('[data-order-item]')]
-        .filter(row => (row.querySelector('input[type="radio"]:checked') || {}).value === 'existing')
         .map(row => Number(row.querySelector('[data-order-existing]').value)));
       const free = anketas.findIndex((_, index) => !used.has(index));
       return free >= 0 ? free : 0;
-    };
-    const syncRowTarget = row => {
-      const isExisting = (row.querySelector('input[type="radio"]:checked') || {}).value === 'existing';
-      row.querySelector('[data-order-existing]').disabled = !isExisting;
-      row.querySelector('[data-order-new-name]').disabled = isExisting;
     };
     const recalc = () => {
       const rows = [...list.querySelectorAll('[data-order-item]')];
@@ -1004,14 +1495,14 @@
         qtyError.textContent = invalid ? validation.message : '';
         entry.row.querySelector('[data-order-item-sum]').textContent = invalid
           ? 'Укажите допустимое количество, чтобы рассчитать оплату.'
-          : `Пакет: ${fmtMoney(entry.pricing.amount)} · сейчас ${fmtMoney(entry.pricing.prepayAmount)}`
+          : `Стоимость: ${fmtMoney(entry.pricing.amount)} · к оплате ${fmtMoney(entry.pricing.prepayAmount)}`
             + (entry.pricing.discountAmount ? ` · скидка ${fmtMoney(entry.pricing.discountAmount)}` : '')
             + (entry.pricing.remainder ? ` · остаток ${fmtMoney(entry.pricing.remainder)}` : '');
       });
       const amountEl = document.getElementById('ordAmount');
       amountEl.innerHTML = hasInvalidQuantity
         ? '<b class="cli-cart-quantity-warning">Исправьте количество отзывов. Оплата пока недоступна.</b>'
-        : `<span>Стоимость пакетов: ${fmtMoney(summary.baseAmount)}</span>`
+        : `<span>Стоимость отзывов: ${fmtMoney(summary.baseAmount)}</span>`
           + (summary.discount ? `<span class="cli-cart-discount">Скидка за перевод: −${fmtMoney(summary.discount)}</span>` : '')
           + (summary.discount ? `<span>Стоимость со скидкой: ${fmtMoney(summary.amount)}</span>` : '')
           + `<b>К оплате сейчас: ${fmtMoney(summary.prepayAmount)}</b>`
@@ -1024,25 +1515,22 @@
         submit.disabled = hasInvalidQuantity;
       }
       rows.forEach((row, index) => {
-        row.querySelector('[data-order-item-title]').textContent = `Пакет ${index + 1}`;
+        row.querySelector('[data-order-item-title]').textContent = `Заказ ${index + 1}`;
         row.querySelector('[data-order-remove]').hidden = rows.length === 1;
       });
-      addButton.disabled = rows.length >= cart.MAX_ITEMS;
-      addButton.title = addButton.disabled ? `Не больше ${cart.MAX_ITEMS} пакетов в одном платеже` : '';
+      addButton.disabled = rows.length >= maxOrderItems;
+      addButton.title = addButton.disabled ? 'Все доступные анкеты уже добавлены' : '';
     };
     const addRow = () => {
       const count = list.querySelectorAll('[data-order-item]').length;
-      if (count >= cart.MAX_ITEMS) return;
+      if (count >= maxOrderItems) return;
       list.insertAdjacentHTML('beforeend', _orderPackageHtml(count, tariffs, anketas, nextSuggestedAnketa()));
-      const row = list.lastElementChild;
-      syncRowTarget(row);
       recalc();
     };
 
     list.addEventListener('change', event => {
       const row = event.target.closest('[data-order-item]');
       if (!row) return;
-      if (event.target.matches('input[type="radio"]')) syncRowTarget(row);
       recalc();
     });
     list.addEventListener('input', recalc);
@@ -1053,7 +1541,6 @@
       recalc();
     });
     addButton.addEventListener('click', addRow);
-    body.querySelectorAll('input[name="ordPay"]').forEach(input => input.addEventListener('change', recalc));
     body.querySelectorAll('input[name="ordMethod"]').forEach(input => input.addEventListener('change', recalc));
     body.querySelectorAll('.cli-req-row__copy').forEach(button => {
       button.addEventListener('click', async () => {
@@ -1134,50 +1621,36 @@
     const cart = window.MentoriOrderCart;
     const rows = [...document.querySelectorAll('[data-order-list] [data-order-item]')];
     const comment = (document.getElementById('ordComment').value || '').trim();
-    const pay_full = (document.querySelector('input[name="ordPay"]:checked') || {}).value === 'full';
+    const pay_full = false;
     const payment_method = (document.querySelector('input[name="ordMethod"]:checked') || {}).value === 'card_transfer'
       ? 'card_transfer'
       : 'online';
     if (!cart || !rows.length || rows.length > cart.MAX_ITEMS) {
       result.className = 'cli-ord-result is-err';
-      result.textContent = 'Добавь хотя бы один пакет.';
+      result.textContent = 'Выбери хотя бы одну анкету.';
       return;
     }
 
     const items = [];
-    const newNames = new Set();
-    let newCount = 0;
+    const selectedAnketas = new Set();
     for (const row of rows) {
       const tariff = tariffs[Number(row.querySelector('[data-order-tariff]').value) || 0] || {};
       if (!tariff.name) {
-        result.className = 'cli-ord-result is-err'; result.textContent = 'Выбери тариф для каждого пакета.'; return;
+        result.className = 'cli-ord-result is-err'; result.textContent = 'Выбери тариф для каждой анкеты.'; return;
       }
-      const target = (row.querySelector('input[type="radio"]:checked') || {}).value || 'new';
-      let anketa_code = '', anketa_name = '', is_new_anketa = target === 'new';
-      if (is_new_anketa) {
-        newCount++;
-        anketa_name = (row.querySelector('[data-order-new-name]').value || '').trim().replace(/\s+/g, ' ');
-        const key = anketa_name.toLowerCase();
-        if (anketa_name.length < 2) {
-          result.className = 'cli-ord-result is-err'; result.textContent = 'Впиши ФИО каждой новой анкеты.'; return;
-        }
-        if (newNames.has(key)) {
-          result.className = 'cli-ord-result is-err'; result.textContent = 'Одна новая анкета добавлена дважды.'; return;
-        }
-        newNames.add(key);
-      } else {
-        const selected = anketas[Number(row.querySelector('[data-order-existing]').value) || 0];
-        if (!selected) {
-          result.className = 'cli-ord-result is-err'; result.textContent = 'Выбери анкету для каждого пакета.'; return;
-        }
-        anketa_code = selected.code || '';
-        anketa_name = selected.name || selected.code || '';
+      const selected = anketas[Number(row.querySelector('[data-order-existing]').value) || 0];
+      if (!selected) {
+        result.className = 'cli-ord-result is-err'; result.textContent = 'Выбери анкету для каждого заказа.'; return;
       }
-      if (newCount > cart.MAX_NEW_ANKETAS) {
+      const anketa_code = selected.code || '';
+      const anketa_name = selected.name || selected.code || '';
+      const anketaKey = String(anketa_code || anketa_name).trim().toLowerCase();
+      if (selectedAnketas.has(anketaKey)) {
         result.className = 'cli-ord-result is-err';
-        result.textContent = `За один платёж можно создать не больше ${cart.MAX_NEW_ANKETAS} новых анкет.`;
+        result.textContent = 'Одна анкета добавлена в заказ дважды.';
         return;
       }
+      selectedAnketas.add(anketaKey);
       const pricing = cart.priceItem(tariff, Number(row.querySelector('[data-order-qty]').value) || 0, pay_full);
       const quantityValidation = cart.validateQuantity(tariff, row.querySelector('[data-order-qty]').value);
       if (!quantityValidation.valid) {
@@ -1187,18 +1660,17 @@
         qtyInput.focus();
         return;
       }
-      const profileUrl = (row.querySelector('[data-order-profile-url]').value || '').trim();
       items.push({
         anketa_code,
         anketa_name,
-        is_new_anketa,
+        is_new_anketa: false,
         tariff_id: tariff.id || null,
         tariff_name: tariff.name,
         qty: pricing.qty,
         amount: pricing.amount,
         pay_full: pricing.payFull,
         prepay_amount: pricing.prepayAmount,
-        profile_url: profileUrl || null
+        profile_url: null
       });
     }
     const summary = cart.summarize(items.map(item => ({
@@ -1269,7 +1741,7 @@
       client_name: Auth.name() || email,
       order_type: 'multi_order',
       anketa_name: items.map(item => item.anketa_name || item.anketa_code).join(', '),
-      tariff_name: items.length === 1 ? items[0].tariff_name : `Пакеты (${items.length})`,
+      tariff_name: items.length === 1 ? items[0].tariff_name : `Отзывы (${items.length} анкет)`,
       qty: items.reduce((sum, item) => sum + (Number(item.qty) || 0), 0),
       amount: summary.amount,
       pay_full,
@@ -1409,7 +1881,7 @@
       const childByItem = new Map((_myOrders || [])
         .filter(child => String(child.parent_order_id || '') === String(o.id))
         .map(child => [String(child.parent_item_id || ''), child]));
-      title = `Пакеты для ${items.length || 1} ${items.length === 1 ? 'анкеты' : 'анкет'}`;
+      title = `Отзывы для ${items.length || 1} ${items.length === 1 ? 'анкеты' : 'анкет'}`;
       sub = _fmtDateTime(o.created_at);
       let outstanding = 0;
       const packageLines = items.map(item => {
@@ -1447,7 +1919,7 @@
             ? `<div class="cli-order__pay">💳 Оплачено: ${fmtMoney(prepay)} (предоплата) · Остаток: <b>${fmtMoney(rest)}</b> после выполнения</div>`
             : `<div class="cli-order__pay">💳 Оплачено: ${fmtMoney(prepay)} + остаток ${fmtMoney(rest)}</div>`;
       } else if (o.status === 'new') {
-        payLine = `<div class="cli-order__pay">💳 К оплате: ${fmtMoney(prepay)}${o.pay_full ? ' (100%)' : ' (предоплата 50%)'}</div>`;
+        payLine = `<div class="cli-order__pay">💳 К оплате: ${fmtMoney(prepay)}</div>`;
       }
     }
     const consent = o.offer_agreed
@@ -1574,7 +2046,7 @@
       const date = _fmtDateTime(item.confirmed_at);
       const label = item.kind === 'legacy'
         ? `${item.code || item.name || 'Анкета'} · остаток по карточке`
-        : `${item.code || item.name || '—'} · ${item.tariff_name || 'Пакет'}${date ? ' · ' + date : ''}`;
+        : `${item.code || item.name || '—'} · ${item.tariff_name || 'Тариф'}${date ? ' · ' + date : ''}`;
       return { ...item, label };
     });
   }
@@ -1602,7 +2074,7 @@
     if (!items.length) return;
     body.innerHTML = `
       <div class="cli-ord-field">
-        <div class="cli-ord-label">Выбери пакеты для оплаты остатка</div>
+        <div class="cli-ord-label">Выбери заказы для оплаты остатка</div>
         ${items.map(item => `
           <label class="cli-remain-row">
             <input type="checkbox" class="cli-remain-chk"
@@ -1708,6 +2180,11 @@
     renderFeed,
     renderCalendar,
     renderProfileDetail,
+    loadMyPublicationRequests,
+    submitPublicationRequest,
+    loadMyOutreachSlots,
+    loadOutreachAvailability,
+    manageOutreachSlot,
     renderOrder,
     renderRemainder,
     openRemainModal,

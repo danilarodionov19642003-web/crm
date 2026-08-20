@@ -6,7 +6,6 @@
   'use strict';
 
   const MAX_ITEMS = 10;
-  const MAX_NEW_ANKETAS = 5;
   const MAX_ITEM_QTY = 500;
   const MANUAL_TRANSFER_DISCOUNT = 300;
 
@@ -23,7 +22,7 @@
       return { valid: false, qty, minimum, message: `Минимум ${minimum} отзывов. Оплата недоступна.` };
     }
     if (qty > MAX_ITEM_QTY) {
-      return { valid: false, qty, minimum, message: `Максимум ${MAX_ITEM_QTY} отзывов за один пакет.` };
+      return { valid: false, qty, minimum, message: `Максимум ${MAX_ITEM_QTY} отзывов в одном заказе.` };
     }
     return { valid: true, qty, minimum, message: '' };
   }
@@ -39,7 +38,7 @@
       qty = Math.max(0, Number(source.qty) || 0);
     }
     const amount = source.unit === 'per' ? price * qty : price;
-    const payFull = cartPayFull === true || source.fullOnly === true;
+    const payFull = cartPayFull === true;
     const prepayAmount = payFull ? amount : Math.round(amount / 2);
     return {
       qty,
@@ -91,7 +90,6 @@
 
   return {
     MAX_ITEMS,
-    MAX_NEW_ANKETAS,
     MAX_ITEM_QTY,
     MANUAL_TRANSFER_DISCOUNT,
     validateQuantity,

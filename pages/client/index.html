@@ -9,7 +9,7 @@
   <meta http-equiv="Expires" content="0"/>
   <title>Личный кабинет — Mentori</title>
   <link rel="stylesheet" href="../../css/styles.css?v=20260628a"/>
-  <link rel="stylesheet" href="client.css?v=20260805a"/>
+  <link rel="stylesheet" href="client.css?v=20260820g"/>
 </head>
 <body class="cli-body">
   <div data-cli-header></div>
@@ -24,10 +24,10 @@
     <div class="cli-cta-row">
       <div class="cli-order-cta" data-cli-order-cta hidden>
         <div class="cli-order-cta__text">
-          <div class="cli-order-cta__title">Пакеты для одной или нескольких анкет</div>
-          <div class="cli-order-cta__sub">Добавь нужные тарифы и оплати их одним платежом.</div>
+          <div class="cli-order-cta__title">Отзывы для одной или нескольких анкет</div>
+          <div class="cli-order-cta__sub">Выбери анкеты и тарифы для заказа.</div>
         </div>
-        <button class="cli-order-cta__btn" id="cliOrderBtn" type="button">Купить пакеты</button>
+        <button class="cli-order-cta__btn" id="cliOrderBtn" type="button">Купить отзывы</button>
       </div>
       <div class="cli-order-cta cli-remain-cta" data-cli-remain-cta hidden>
         <div class="cli-order-cta__text">
@@ -93,7 +93,7 @@
     <div class="cli-modal__backdrop" data-cli-order-close></div>
     <div class="cli-modal__box">
       <div class="cli-modal__head">
-        <h3>Пакеты для анкет</h3>
+        <h3>Купить отзывы</h3>
         <button class="cli-modal__x" type="button" data-cli-order-close>✕</button>
       </div>
       <div class="cli-modal__body" data-cli-order-body></div>
@@ -115,8 +115,8 @@
   <script src="../../js/supabase-client.js?v=20260726b"></script>
   <script src="./legal-content.js?v=20260713d"></script>
   <script src="./remainder-calculator.js?v=20260713a"></script>
-  <script src="./order-cart.js?v=20260805a"></script>
-  <script src="./client-app.js?v=20260820a"></script>
+  <script src="./order-cart.js?v=20260820b"></script>
+  <script src="./client-app.js?v=20260820h"></script>
   <script>
   (async () => {
     const ok = await window.ClientApp.requireLogin();
@@ -124,6 +124,7 @@
     await window.ClientApp.preloadLegalDocuments();
     const snap = await window.ClientApp.loadSnapshot();
     window.ClientApp.renderHeader(snap);
+    const outreachSlots = await window.ClientApp.loadMyOutreachSlots();
     if (!snap || !snap.payload) {
       document.querySelector('[data-cli-anketas]').innerHTML =
         '<div class="cli-empty">Данные ещё не загружены. Зайдите чуть позже или свяжитесь с менеджером.</div>';
@@ -132,7 +133,7 @@
     } else {
       window.ClientApp.renderTotals(snap.payload.totals, snap.payload.anketas);
       window.ClientApp.renderAnketas(snap.payload.anketas);
-      window.ClientApp.renderCalendar(snap.payload);
+      window.ClientApp.renderCalendar(snap.payload, outreachSlots);
       window.ClientApp.renderFeed(snap.payload.feed);
     }
     // Заказ отзывов (тарифы из снимка). Если тарифов нет — CTA скрыт.

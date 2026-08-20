@@ -42,6 +42,7 @@
       color:var(--accent); flex-shrink:0;
     }
     .task-card--system { border-left:3px solid var(--accent); }
+    .task-card--client-request { border-left:3px solid #22c55e; }
     .task-meta { display:flex; flex-direction:column; gap:4px; min-width:0; }
     .task-row1 { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
     .task-pill {
@@ -55,6 +56,7 @@
     .task-pill--overdue{ background: rgba(239,68,68,0.15); color: var(--red); }
     .task-pill--today  { background: rgba(34,197,94,0.18); color: #4ade80; }
     .task-pill--planned{ background: rgba(168,85,247,0.15); color: #c4b5fd; }
+    .task-pill--request{ background: rgba(34,197,94,0.14); color: #4ade80; }
     .task-note { color: var(--text); font-size: 14px; line-height: 1.4; word-break: break-word; }
     .task-actions { display:flex; gap:6px; flex-shrink:0; }
     .task-actions button { padding: 4px 8px; font-size: 12px; }
@@ -381,11 +383,12 @@
   </div>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260820d"></script>
+  <script src="../js/app.js?v=20260820f"></script>
   <script src="../js/supabase-client.js?v=20260726b"></script>
   <script src="../js/auth-gate.js?v=20260726a"></script>
-  <script src="../js/cloud-sync.js?v=20260726b"></script>
+  <script src="../js/cloud-sync.js?v=20260820c"></script>
   <script src="../js/reviews-sync.js?v=20260717a"></script>
+  <script src="../js/outreach-schedule-sync.js?v=20260820a"></script>
   <script src="../js/schedule-apply.js?v=20260522b"></script>
   <script src="../components/sidebar.js"></script>
   <script src="../components/header.js"></script>
@@ -393,7 +396,7 @@
 
   <script>
   document.addEventListener('DOMContentLoaded', () => {
-    const { Store, Modal, toast, todayISO, fmtDate, clientScheduleBreakdown } = window.App;
+    const { Store, Modal, toast, todayISO, fmtDate, clientScheduleBreakdown, STATUS_CHOSEN } = window.App;
     const { confirmDelete } = window.TableUtils;
 
     Store.load();
@@ -403,6 +406,8 @@
     const filters = { scope: 'today', manager: '', mentorId: '', q: '' };
     let editingId = null;
     let schedulingStatusId = null;
+    let publicationRequests = [];
+    let publicationSnapshotsRefreshed = false;
 
     function escapeHtml(s) {
       return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -434,6 +439,102 @@
       if (!p) return '—';
       const base = `${p.code || '—'}${p.city ? ' · ' + p.city : ''}`;
       return p.archived ? `🗑 ${base}` : base;
+    }
+
+    function publicationRequestTask(request) {
+      return {
+        id: `client-publication-request:${request.id}`,
+        source: 'client_publication_request',
+        requestId: request.id,
+        requestStatus: request.request_status,
+        statusId: request.status_id,
+        mentorId: request.mentor_id,
+        profileId: request.profile_id,
+        date: request.requested_date,
+        requestedDate: request.requested_date,
+        clientEmail: request.client_email || '',
+        accountOwner: request.account_name || '',
+        note: 'Клиент выбрал дату публикации отзыва',
+        manager: managerForMentor(request.mentor_id),
+        done: false,
+        createdAt: request.created_at || request.updated_at || ''
+      };
+    }
+
+    async function loadPublicationRequests() {
+      try {
+        const S = window.Supabase;
+        if (!S || !S.authFetch) return [];
+        const url = `${S.URL}/rest/v1/client_publication_requests`
+          + '?request_status=eq.pending'
+          + '&select=id,client_email,status_id,mentor_id,profile_id,anketa_code,anketa_name,account_name,requested_date,request_status,created_at,updated_at'
+          + '&order=created_at.asc';
+        const res = await S.authFetch(url, {
+          headers: { 'apikey': S.KEY, 'Accept': 'application/json' }
+        });
+        if (!res.ok) {
+          console.warn('[tasks] publication requests fetch failed', res.status);
+          return publicationRequests;
+        }
+        return await res.json();
+      } catch (error) {
+        console.warn('[tasks] publication requests fetch error', error);
+        return publicationRequests;
+      }
+    }
+
+    async function patchPublicationRequest(id, patch) {
+      const S = window.Supabase;
+      if (!S || !S.authFetch) return false;
+      const res = await S.authFetch(
+        `${S.URL}/rest/v1/client_publication_requests?id=eq.${encodeURIComponent(id)}`,
+        {
+          method: 'PATCH',
+          headers: {
+            'apikey': S.KEY,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=minimal'
+          },
+          body: JSON.stringify(patch)
+        }
+      );
+      if (!res.ok) console.warn('[tasks] publication request update failed', res.status, await res.text().catch(() => ''));
+      return res.ok;
+    }
+
+    async function resolvePublicationRequest(id, accepted) {
+      const request = publicationRequests.find(item => String(item.id) === String(id));
+      if (!request) return;
+      if (accepted) {
+        const status = (Store.state.profileStatuses || []).find(item => item.id === request.status_id);
+        if (!status || status.status !== STATUS_CHOSEN) {
+          toast('Статус аккаунта уже изменился. Запрос нельзя подтвердить.', 'error');
+          return;
+        }
+        const planned = Store.setProfileStatusTaskDate(request.status_id, request.requested_date);
+        if (!planned) {
+          toast('Не удалось записать задачу в CRM', 'error');
+          return;
+        }
+      }
+      const resolvedBy = (window.AuthGate && window.AuthGate.email && window.AuthGate.email()) || '';
+      const ok = await patchPublicationRequest(request.id, {
+        request_status: accepted ? 'accepted' : 'rejected',
+        resolved_at: new Date().toISOString(),
+        resolved_by: resolvedBy
+      });
+      if (!ok) {
+        toast(accepted
+          ? 'Задача записана, но запрос не закрылся. Обнови страницу.'
+          : 'Не удалось отклонить запрос', 'error');
+        return;
+      }
+      publicationRequests = publicationRequests.filter(item => item.id !== request.id);
+      toast(accepted
+        ? `Дата ${fmtDate(request.requested_date)} подтверждена и добавлена в календарь`
+        : 'Запрос клиента отклонён');
+      render();
+      renderSched();
     }
 
     function fillSelects() {
@@ -469,6 +570,7 @@
           const hay = [t.note, m && m.code, m && m.name, p && p.code].join(' ').toLowerCase();
           if (!hay.includes(filters.q)) return false;
         }
+        if (t.source === 'client_publication_request') return filters.scope !== 'done';
         switch (filters.scope) {
           case 'today':    return !t.done && (isToday(t.date) || isPast(t.date));
           case 'upcoming': return !t.done && isFuture(t.date);
@@ -484,7 +586,8 @@
       fillSelects();
       const manualTasks = (Store.state.dailyTasks || []).slice();
       const statusTasks = Store.listProfileStatusActionTasks(todayISO());
-      const all = manualTasks.concat(statusTasks)
+      const requestTasks = publicationRequests.map(publicationRequestTask);
+      const all = manualTasks.concat(statusTasks, requestTasks)
         .sort((a,b) => (a.date||'').localeCompare(b.date||'') || (a.createdAt||'').localeCompare(b.createdAt||''));
       const filtered = applyFilters(all);
       const managerScoped = all.filter(t => matchesManager(t.manager || managerForMentor(t.mentorId)));
@@ -551,13 +654,20 @@
       list.querySelectorAll('button[data-act="schedule-system"]').forEach(btn => {
         btn.addEventListener('click', () => openStatusSchedule(btn.dataset.statusId));
       });
+      list.querySelectorAll('button[data-act="accept-client-publication"]').forEach(btn => {
+        btn.addEventListener('click', () => resolvePublicationRequest(btn.dataset.requestId, true));
+      });
+      list.querySelectorAll('button[data-act="reject-client-publication"]').forEach(btn => {
+        btn.addEventListener('click', () => resolvePublicationRequest(btn.dataset.requestId, false));
+      });
     }
 
     function taskHtml(t) {
       const m = mentorById(t.mentorId);
       const p = profileById(t.profileId);
       const manager = t.manager || managerForMentor(t.mentorId);
-      const isSystem = t.source === 'profile_status_action';
+      const isClientRequest = t.source === 'client_publication_request';
+      const isSystem = t.source === 'profile_status_action' || isClientRequest;
       const datePill = t.date === todayISO() ? 'task-pill--today'
         : (isPast(t.date) && !t.done) ? 'task-pill--overdue'
         : 'task-pill--date';
@@ -568,18 +678,25 @@
       const openBtn = isSystem
         ? `<a class="btn btn--ghost task-open" href="statuses.html?profileId=${encodeURIComponent(t.profileId)}&mentorId=${encodeURIComponent(t.mentorId)}">Открыть →</a>`
         : '';
-      const scheduleBtn = isSystem
+      const scheduleBtn = isSystem && !isClientRequest
         ? `<button class="btn btn--ghost task-schedule" data-act="schedule-system" data-status-id="${escapeHtml(t.statusId)}">📅 ${t.plannedDate ? 'Перепланировать' : 'Запланировать'}</button>`
         : '';
-      const statusMeta = isSystem
+      const requestButtons = isClientRequest
+        ? `<button class="btn btn--primary" data-act="accept-client-publication" data-request-id="${escapeHtml(t.requestId)}">Подтвердить</button>
+           <button class="btn btn--ghost" data-act="reject-client-publication" data-request-id="${escapeHtml(t.requestId)}">Отклонить</button>`
+        : '';
+      const statusMeta = isSystem && !isClientRequest
         ? `<span class="task-pill task-pill--date">в статусе ${t.daysInStatus} дн.</span>`
         : '';
-      const planMeta = isSystem && t.plannedDate
+      const planMeta = isSystem && !isClientRequest && t.plannedDate
         ? `<span class="task-pill task-pill--planned">план: ${escapeHtml(fmtDate(t.plannedDate))}</span>`
         : '';
+      const requestMeta = isClientRequest
+        ? `<span class="task-pill task-pill--request">дата от клиента</span>`
+        : '';
       return `
-        <div class="task-card${t.done ? ' done' : ''}${isSystem ? ' task-card--system' : ''}">
-          ${isSystem ? '<div class="task-system-icon" title="Закроется после смены статуса">⏱</div>' : `<div class="task-check" data-id="${t.id}" title="${t.done ? 'Снять выполнение' : 'Отметить выполненным'}"></div>`}
+        <div class="task-card${t.done ? ' done' : ''}${isSystem ? ' task-card--system' : ''}${isClientRequest ? ' task-card--client-request' : ''}">
+          ${isSystem ? `<div class="task-system-icon" title="${isClientRequest ? 'Запрос клиента' : 'Закроется после смены статуса'}">${isClientRequest ? '📅' : '⏱'}</div>` : `<div class="task-check" data-id="${t.id}" title="${t.done ? 'Снять выполнение' : 'Отметить выполненным'}"></div>`}
           <div class="task-meta">
             <div class="task-row1">
               <span class="task-pill ${datePill}">📅 ${escapeHtml(fmtDate(t.date) || t.date || '—')}</span>
@@ -588,10 +705,11 @@
               ${accBlock}
               ${statusMeta}
               ${planMeta}
+              ${requestMeta}
             </div>
             <div class="task-note">${escapeHtml(t.note || '— без описания —')}</div>
           </div>
-          <div class="task-actions">${scheduleBtn}${openBtn}${editBtn}${delBtn}</div>
+          <div class="task-actions">${requestButtons}${scheduleBtn}${openBtn}${editBtn}${delBtn}</div>
         </div>`;
     }
 
@@ -849,6 +967,20 @@
           accountLabel: profileLabel(profile)
         });
       });
+      publicationRequests.forEach(request => {
+        const task = publicationRequestTask(request);
+        if (!task.date || !matchesManager(task.manager)) return;
+        const mentor = mentorById(task.mentorId);
+        const profile = profileById(task.profileId);
+        if (!mentor || !profile) return;
+        if (!map.has(task.date)) map.set(task.date, []);
+        map.get(task.date).push({
+          ...task,
+          code: mentor.code || request.anketa_code || '',
+          name: mentor.name || request.anketa_name || '',
+          accountLabel: request.account_name || profileLabel(profile)
+        });
+      });
       return map;
     }
 
@@ -1046,19 +1178,24 @@
               </div>
             `;
           }).join('');
-      const actionBody = actionRows.map(task => `
-        <div class="sched-row sched-row--task">
-          <span class="sched-row__dot" style="background:#a855f7"></span>
-          <div class="sched-row__name">
-            <strong>${escapeHtml(task.code || '')}</strong>
-            ${task.name ? ` · ${escapeHtml(task.name)}` : ''}
-            <span class="sched-row__progress">${escapeHtml(task.manager || 'не назначен')} · ${escapeHtml(task.accountLabel)} · срок ${escapeHtml(fmtDate(task.date))} · ${escapeHtml(task.note)}</span>
-          </div>
-          <span class="sched-row__task-label">СТАТУС</span>
-          <button class="sched-row__link" type="button" data-calendar-schedule-status="${escapeHtml(task.statusId)}">Перенести</button>
-          <a class="sched-row__link" href="statuses.html?profileId=${encodeURIComponent(task.profileId)}&mentorId=${encodeURIComponent(task.mentorId)}">Открыть →</a>
-        </div>
-      `).join('');
+      const actionBody = actionRows.map(task => {
+        const isClientRequest = task.source === 'client_publication_request';
+        return `
+          <div class="sched-row sched-row--task${isClientRequest ? ' task-card--client-request' : ''}">
+            <span class="sched-row__dot" style="background:${isClientRequest ? '#22c55e' : '#a855f7'}"></span>
+            <div class="sched-row__name">
+              <strong>${escapeHtml(task.code || '')}</strong>
+              ${task.name ? ` · ${escapeHtml(task.name)}` : ''}
+              <span class="sched-row__progress">${escapeHtml(task.manager || 'не назначен')} · ${escapeHtml(task.accountLabel)} · ${escapeHtml(task.note)}</span>
+            </div>
+            <span class="sched-row__task-label">${isClientRequest ? 'КЛИЕНТ' : 'СТАТУС'}</span>
+            ${isClientRequest
+              ? `<button class="sched-row__link" type="button" data-calendar-accept-publication="${escapeHtml(task.requestId)}">Подтвердить</button>
+                 <button class="sched-row__link" type="button" data-calendar-reject-publication="${escapeHtml(task.requestId)}">Отклонить</button>`
+              : `<button class="sched-row__link" type="button" data-calendar-schedule-status="${escapeHtml(task.statusId)}">Перенести</button>`}
+            <a class="sched-row__link" href="statuses.html?profileId=${encodeURIComponent(task.profileId)}&mentorId=${encodeURIComponent(task.mentorId)}">Открыть →</a>
+          </div>`;
+      }).join('');
       const body = reviewBody || actionBody
         ? reviewBody + actionBody
         : `<div class="sched-empty-day">На этот день ничего не запланировано.</div>`;
@@ -1071,6 +1208,12 @@
       `;
       document.querySelectorAll('[data-calendar-schedule-status]').forEach(btn => {
         btn.addEventListener('click', () => openStatusSchedule(btn.dataset.calendarScheduleStatus));
+      });
+      document.querySelectorAll('[data-calendar-accept-publication]').forEach(btn => {
+        btn.addEventListener('click', () => resolvePublicationRequest(btn.dataset.calendarAcceptPublication, true));
+      });
+      document.querySelectorAll('[data-calendar-reject-publication]').forEach(btn => {
+        btn.addEventListener('click', () => resolvePublicationRequest(btn.dataset.calendarRejectPublication, false));
       });
     }
 
@@ -1100,7 +1243,30 @@
     });
     window.addEventListener('cloudstate:updated', renderSched);
     window.addEventListener('store:reloaded', renderSched);
+    window.addEventListener('outreachschedule:updated', renderSched);
     renderSched();
+
+    async function refreshPublicationRequests() {
+      publicationRequests = await loadPublicationRequests();
+      render();
+      renderSched();
+    }
+    async function refreshPublicationSnapshotSchema() {
+      if (publicationSnapshotsRefreshed) return;
+      if (!window.CloudSync || !window.CloudSync.pushClientSnapshots) return;
+      publicationSnapshotsRefreshed = true;
+      try { await window.CloudSync.pushClientSnapshots(Store.state); }
+      catch (error) {
+        publicationSnapshotsRefreshed = false;
+        console.warn('[tasks] client snapshot refresh failed', error);
+      }
+    }
+    refreshPublicationRequests();
+    window.setInterval(refreshPublicationRequests, 60000);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') refreshPublicationRequests();
+    });
+    window.addEventListener('cloudstate:updated', refreshPublicationSnapshotSchema);
   });
   </script>
 </body>

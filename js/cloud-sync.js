@@ -971,6 +971,32 @@
     }
   }
 
+  /* ---- Закрытие выполненного отклика в каноническом графике ----
+     Вызывается при переходе аккаунта из «Запланировано» в рабочий статус.
+     Ошибка отдельной таблицы не должна отменять сохранение основного CRM state. */
+  async function completeOutreachSlot(mentorId, date) {
+    if (!mentorId || !date) return false;
+    try {
+      const res = await _fetch(`${_supaUrl()}/rest/v1/rpc/staff_complete_outreach_slot`, {
+        method: 'POST',
+        headers: { ...(_hdr()), 'Prefer': 'return=representation' },
+        body: JSON.stringify({ p_mentor_id: mentorId, p_date: date })
+      });
+      if (!res.ok) {
+        console.warn('[CloudSync] outreach completion failed', res.status, await res.text().catch(() => ''));
+        return false;
+      }
+      const completed = await res.json().catch(() => false);
+      if (window.OutreachScheduleSync && window.OutreachScheduleSync.refresh) {
+        window.OutreachScheduleSync.refresh().catch(() => {});
+      }
+      return completed === true;
+    } catch (error) {
+      console.warn('[CloudSync] outreach completion error', error);
+      return false;
+    }
+  }
+
   /* ---- Ручной бэкап: скачать текущий облачный state как JSON ----
      Удобно жать раз в день/после важной работы. Файл лежит у тебя локально
      и в случае любой проблемы с базой — восстанавливается одним SQL. */
@@ -1018,6 +1044,7 @@
     flushOnHide,
     pushClientSnapshots,    // ручной триггер: после CRUD над clientPortals
     queueTelegramNotification, // пишем строку в notification_outbox (читает бот)
+    completeOutreachSlot,   // закрыть слот, когда аккаунт перешёл в работу
     downloadBackup,         // ручной бэкап на диск (используется кнопкой в шапке)
     getConflictLog: () => {
       try { return JSON.parse(localStorage.getItem(CONFLICT_LOG_KEY) || '[]'); }

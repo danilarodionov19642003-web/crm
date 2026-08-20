@@ -116,6 +116,22 @@
         handledIds.push(r.id);
         continue;
       }
+      const scheduleSync = window.OutreachScheduleSync;
+      const mentorId = r.mentor_id || (scheduleSync && scheduleSync.mentorIdForClient(client));
+      if (scheduleSync && mentorId) {
+        try {
+          // The server table is canonical. Its refresh mirrors the result back
+          // into client.schedule, so applying the legacy mutation too would
+          // move the same slot twice.
+          await scheduleSync.moveStaff(mentorId, r.schedule_date, r.chosen_date);
+          handledIds.push(r.id);
+        } catch (error) {
+          // A full target day must remain pending instead of being silently
+          // marked as applied and disappearing from the operator's queue.
+          console.warn('[schedule-apply] canonical transfer failed', error);
+        }
+        continue;
+      }
       const moved = applyOneTransfer(client, r.schedule_date, r.chosen_date);
       if (moved) touched = true;
       handledIds.push(r.id);

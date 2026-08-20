@@ -45,10 +45,9 @@ assert.equal(result.items[0].pricing.discountAmount, 300);
 
 const privateTariff = { unit: 'package', qty: 1, price: 300, fullOnly: true };
 assert.deepEqual(cart.priceItem(privateTariff, 1, false), {
-  qty: 1, amount: 300, payFull: true, prepayAmount: 300, remainder: 0
+  qty: 1, amount: 300, payFull: false, prepayAmount: 150, remainder: 150
 });
 assert.equal(cart.MAX_ITEMS, 10);
-assert.equal(cart.MAX_NEW_ANKETAS, 5);
 assert.equal(cart.MANUAL_TRANSFER_DISCOUNT, 300);
 
 console.log('client multi-package cart: OK');

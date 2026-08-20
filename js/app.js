@@ -1760,6 +1760,15 @@
       // Уведомление в Telegram-очередь — best effort, не блокирует и не валит save.
       try { this._queueStatusNotification(mentorId, profileId, status, oldStatus, comment, isNew); }
       catch (e) { console.warn('[Store] queueStatusNotification failed', e); }
+      // Начало нового отклика закрывает один серверный слот графика. Дата
+      // публикации отзыва здесь не участвует: это отдельный следующий этап.
+      const outreachStarted = OUTREACH_WORK_STATUSES.has(status)
+        && !OUTREACH_WORK_STATUSES.has(oldStatus);
+      if (outreachStarted && window.CloudSync && window.CloudSync.completeOutreachSlot) {
+        window.CloudSync.completeOutreachSlot(mentorId, stamp).catch(error => {
+          console.warn('[Store] outreach slot completion failed', error);
+        });
+      }
       return rec;
     },
 
@@ -2179,6 +2188,9 @@
         .map(s => {
           const pr = this.getProfileOrArchived(s.profileId);
           return {
+            id: s.id,
+            mentorId: s.mentorId,
+            profileId: s.profileId,
             profileName: friendlyName(s.profileId),
             archived: pr ? !!pr.archived : false,
             status: s.status,
@@ -2236,6 +2248,7 @@
               .filter(item => item.remaining > 0)
               .map(item => ({ date: item.date, count: item.remaining }))
           : [],
+        scheduleLimit: client ? manualScheduleLimit(this.state, client) : 0,
         weeklyPace:  client ? Number(client.weeklyPace) || 0 : 0,
         packageExtras: client && Array.isArray(client.packageExtras) ? client.packageExtras : [],
         payments,

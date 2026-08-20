@@ -27,7 +27,7 @@
       .sort((a, b) => orderTime(a) - orderTime(b) || Number(a.id || 0) - Number(b.id || 0))
       .map(order => ({
         id: String(order.id || ''),
-        name: String(order.tariff_name || 'Пакет'),
+        name: String(order.tariff_name || 'Тариф'),
         qty: Math.max(0, Number(order.qty) || 0),
         date: order.confirmed_at || order.created_at || '',
         transferred: /TRANSFER[-_:]?A28|FROM[-_:]?A28/i.test(String(order.comment || '')),

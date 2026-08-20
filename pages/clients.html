@@ -479,12 +479,13 @@
   </div>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260820d"></script>
+  <script src="../js/app.js?v=20260820f"></script>
   <script src="../js/supabase-client.js?v=20260726b"></script>
   <script src="../js/auth-gate.js?v=20260726a"></script>
-  <script src="../js/cloud-sync.js?v=20260726b"></script>
+  <script src="../js/cloud-sync.js?v=20260820c"></script>
   <script src="../js/accounts-sync.js"></script>
   <script src="../js/reviews-sync.js?v=20260717a"></script>
+  <script src="../js/outreach-schedule-sync.js?v=20260820a"></script>
   <script src="../js/schedule-apply.js?v=20260522b"></script>
   <script src="../js/client-order-income-policy.js?v=20260714a"></script>
   <script src="../components/sidebar.js"></script>
@@ -557,6 +558,10 @@
     window.addEventListener('cloudstate:updated', () => { Store.load(); render(); });
     window.addEventListener('store:reloaded', render);
     window.addEventListener('reviews:updated', render);
+    window.addEventListener('outreachschedule:updated', () => {
+      render();
+      if (document.getElementById('scheduleModal').classList.contains('open')) renderScheduleModal();
+    });
 
     /* ---- Заполнение селектов в модалке ---- */
     document.getElementById('mPlatform').innerHTML =
@@ -1320,11 +1325,11 @@
         else if (plannedLeft > 0 && !isPast)  cls += ' has-planned';
         else if (plannedLeft > 0 && isPast)   cls += ' is-overdue';  // план был — не сделали
         const accHere = accMap[iso] || [];
-        // Загрузка дня: сколько РАЗНЫХ клиентов на этот день (по всем клиентам)
-        const dayClients = otherClientsOnDate(iso, c.id) + (planned > 0 ? 1 : 0);
-        const dayFull = dayClients >= MAX_CLIENTS_PER_DAY;
-        const loadBadge = dayClients > 0
-          ? ` <span style="font-size:9px;font-weight:700;color:${dayFull ? '#ef4444' : 'var(--text-mute)'}" title="Клиентов в этот день: ${dayClients} из ${MAX_CLIENTS_PER_DAY}">👥${dayClients}</span>`
+        // Загрузка дня считается по отдельным откликам, а не по числу клиентов.
+        const daySlots = outreachSlotsOnDate(iso);
+        const dayFull = daySlots >= MAX_OUTREACH_PER_DAY;
+        const loadBadge = daySlots > 0
+          ? ` <span style="font-size:9px;font-weight:700;color:${dayFull ? '#ef4444' : 'var(--text-mute)'}" title="Откликов в этот день: ${daySlots} из ${MAX_OUTREACH_PER_DAY}">📅${daySlots}/7</span>`
           : '';
         cells.push(`
           <div class="${cls}" data-date="${iso}">
@@ -1399,19 +1404,26 @@
       });
     }
 
-    /* Лимит загрузки дня: не больше N РАЗНЫХ клиентов на одну дату (по всем клиентам). */
-    const MAX_CLIENTS_PER_DAY = 5;
+    /* Общий предел на день: семь отдельных откликов по всем клиентам. */
+    const MAX_OUTREACH_PER_DAY = 7;
 
-    /** Сколько ДРУГИХ клиентов (кроме exceptId) уже запланировано на эту дату. */
-    function otherClientsOnDate(isoDate, exceptId) {
-      return (Store.state.clients || []).filter(cl =>
-        cl.id !== exceptId &&
-        clientScheduleBreakdown(Store.state, cl)
-          .some(item => item.date === isoDate && item.remaining > 0)
-      ).length;
+    function outreachSlotsOnDate(isoDate) {
+      return (Store.state.clients || []).reduce((total, client) => {
+        const day = clientScheduleBreakdown(Store.state, client)
+          .find(item => item.date === isoDate);
+        return total + (day ? Math.max(0, Number(day.remaining) || 0) : 0);
+      }, 0);
     }
 
-    function onDayClick(isoDate, delta) {
+    function outreachErrorText(error, isoDate) {
+      const raw = String(error && error.message || '');
+      const dmy = isoDate.split('-').reverse().join('.');
+      if (raw.includes('DAY_FULL')) return `На ${dmy} уже запланировано 7 откликов. Выбери другой день.`;
+      if (raw.includes('AUTH_REQUIRED')) return 'Сессия истекла. Обнови страницу и войди снова.';
+      return 'Не удалось изменить график. Проверь связь и попробуй ещё раз.';
+    }
+
+    async function onDayClick(isoDate, delta) {
       const c = Store.state.clients.find(x => x.id === curSchClientId);
       if (!c) return;
       const schedule = getSchedule(c).map(x => ({ ...x }));
@@ -1420,7 +1432,6 @@
       const completedStarts = day
         ? day.completedStarts
         : Math.max(0, Number(getDoneByDateMap(c)[isoDate]) || 0);
-      const alreadyOnDay = currentRemaining > 0;
 
       if (delta > 0) {
         const limit = manualScheduleLimit(Store.state, c);
@@ -1436,18 +1447,29 @@
         }
       }
 
-      // Лимит: если ДОБАВЛЯЕМ нового клиента на день, где уже MAX клиентов — блок.
-      // (Увеличение count тому, кто уже на этот день, не считается новым человеком.)
-      if (delta > 0 && !alreadyOnDay) {
-        const others = otherClientsOnDate(isoDate, c.id);
-        if (others >= MAX_CLIENTS_PER_DAY) {
-          const dmy = isoDate.split('-').reverse().join('.');
-          toast(`На ${dmy} уже ${others} клиентов (максимум ${MAX_CLIENTS_PER_DAY}). Выбери другой день.`, 'error');
-          return;
-        }
+      if (delta > 0 && outreachSlotsOnDate(isoDate) >= MAX_OUTREACH_PER_DAY) {
+        toast(outreachErrorText(new Error('DAY_FULL'), isoDate), 'error');
+        return;
       }
 
       if (delta < 0 && currentRemaining <= 0) return;
+
+      const scheduleSync = window.OutreachScheduleSync;
+      const mentorId = scheduleSync && scheduleSync.mentorIdForClient(c);
+      if (scheduleSync && mentorId) {
+        try {
+          await scheduleSync.adjustStaff(mentorId, isoDate, delta > 0 ? 1 : -1);
+          renderScheduleModal();
+          render();
+        } catch (error) {
+          console.warn('[clients] outreach schedule update failed', error);
+          toast(outreachErrorText(error, isoDate), 'error');
+        }
+        return;
+      }
+
+      // Compatibility fallback for an old cached page before the sync module
+      // has loaded. The next refresh will reconcile it with the server table.
       const nextRemaining = Math.max(0, currentRemaining + delta);
       const nextRawCount = completedStarts + nextRemaining;
       const nextSchedule = schedule.filter(item => item.date !== isoDate);
@@ -1467,11 +1489,24 @@
       curSchMonth = new Date(curSchMonth.getFullYear(), curSchMonth.getMonth() + 1, 1);
       renderScheduleModal();
     });
-    document.getElementById('schClear').addEventListener('click', () => {
+    document.getElementById('schClear').addEventListener('click', async () => {
       if (!confirm('Очистить ВЕСЬ план для этого клиента? Сделанные отзывы не пострадают.')) return;
-      updateSchedule(curSchClientId, []);
+      const client = Store.state.clients.find(item => item.id === curSchClientId);
+      const scheduleSync = window.OutreachScheduleSync;
+      const mentorId = client && scheduleSync && scheduleSync.mentorIdForClient(client);
+      if (scheduleSync && mentorId) {
+        try {
+          await scheduleSync.clearStaff(mentorId);
+        } catch (error) {
+          console.warn('[clients] outreach schedule clear failed', error);
+          toast('Не удалось очистить график. Проверь связь и попробуй ещё раз.', 'error');
+          return;
+        }
+      } else {
+        updateSchedule(curSchClientId, []);
+      }
       renderScheduleModal();
-      render();  // обновить счётчик «График (N)» в таблице
+      render();
     });
 
     // Когда закрываем модалку — обновить таблицу (счётчик в кнопке)
