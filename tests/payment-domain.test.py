@@ -117,6 +117,31 @@ class PaymentDomainTest(unittest.TestCase):
         self.assertEqual(len(state["income"]), 1)
         self.assertTrue(domain.apply_paid_order(state, order, "pay_multi")["already_applied"])
 
+    def test_referral_bonus_adds_one_review_without_changing_income(self):
+        state = self.base_state()
+        order = {
+            "id": 104,
+            "client_email": "client@example.com",
+            "order_type": "multi_order",
+            "_referral_bonus_qty": 1,
+            "items": [{
+                "item_id": "104-1", "anketa_code": "a21", "anketa_name": "Флагман",
+                "is_new_anketa": False, "tariff_name": "Поддержка", "qty": 6,
+                "amount": 8290, "prepay_amount": 4145, "pay_full": False,
+            }],
+        }
+
+        result = domain.apply_paid_order(
+            state, order, "pay_referral", "2026-08-20T12:00:00+00:00"
+        )
+
+        self.assertEqual(state["clients"][0]["ordered"], 17)
+        self.assertEqual(state["income"][0]["amount"], 4145)
+        self.assertEqual(result["referral_bonus"], {
+            "anketa_code": "A-21", "anketa_name": "Флагман", "qty": 1,
+        })
+        self.assertEqual(result["package_items"][0]["qty"], 6)
+
     def test_webhook_signature_uses_raw_body_and_timestamp(self):
         raw = b'{"status":"paid","amount":"100.00"}'
         timestamp = "1784030400"

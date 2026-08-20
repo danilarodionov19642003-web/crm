@@ -18,6 +18,11 @@ Telegram contacts, status/schedule fan-out and the review-text approval dialog.
 The bot resolves contacts through dedicated RPCs and remains read-only for
 `crm_state`.
 
+`client-referrals.patch` handles personal `ref_` links, records the first
+Telegram attribution, and credits one separate zero-value review only after the
+invitee's first paid order is confirmed. Apply it after
+`client-telegram-team.patch`.
+
 Apply from the bot repository root with zero-context support:
 
 ```bash

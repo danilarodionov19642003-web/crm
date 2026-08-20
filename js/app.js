@@ -1974,11 +1974,46 @@
     approveReview(id, moderatorEmail) {
       const r = (this.state.reviews || []).find(x => x.id === id);
       if (!r) return null;
+      const wasApproved = r.moderation === 'approved';
       r.moderation = 'approved';
       r.moderatedAt = new Date().toISOString();
       r.moderatedBy = moderatorEmail || null;
       this.save();
+      if (!wasApproved) {
+        try { this._queueClientProgressNotification(r); }
+        catch (e) { console.warn('[Store] queueClientProgressNotification failed', e); }
+      }
       return r;
+    },
+    _queueClientProgressNotification(review) {
+      if (!review || !window.CloudSync || !window.CloudSync.queueClientProgressNotification) return;
+      const client = clientForStatusMentor(this.state, review.mentorId);
+      if (!client || Math.max(0, Number(client.ordered) || 0) <= 0) return;
+      const remaining = clientRemainingReviews(client, this.state);
+      if (remaining !== 1 && remaining !== 0) return;
+
+      const portal = (this.state.clientPortals || [])
+        .find(item => Array.isArray(item.mentorIds) && item.mentorIds.includes(review.mentorId));
+      if (!portal || !portal.email) return;
+      const mentor = (this.state.mentors || []).find(item => item.id === review.mentorId);
+      const mentorLabel = mentor
+        ? `${mentor.code}${mentor.name ? ` «${mentor.name}»` : ''}`
+        : (client.code || 'анкете');
+      const completed = remaining === 0;
+      const kind = completed ? 'order_completed' : 'low_reviews';
+      const message = completed
+        ? `✅ По анкете ${mentorLabel} пакет выполнен.`
+        : `🔔 По анкете ${mentorLabel} в пакете остался 1 отзыв.`;
+
+      window.CloudSync.queueClientProgressNotification({
+        client_email: portal.email,
+        kind,
+        message,
+        mentor_id: review.mentorId,
+        profile_id: review.profileId,
+        action_ref: `review:${review.id}:remaining:${remaining}`,
+        created_by: review.moderatedBy || 'admin'
+      }).catch(error => console.warn('[Store] queueClientProgressNotification failed', error));
     },
     rejectReview(id, moderatorEmail, reason = '') {
       const r = (this.state.reviews || []).find(x => x.id === id);

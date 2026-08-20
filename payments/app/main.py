@@ -74,6 +74,44 @@ def db() -> psycopg.Connection:
     return psycopg.connect(DATABASE_URL, row_factory=dict_row)
 
 
+def reserve_referral_bonus(conn: psycopg.Connection, order: dict[str, Any]) -> dict[str, Any]:
+    row = conn.execute(
+        "select public.reserve_client_referral_bonus(%s) as result",
+        (order["id"],),
+    ).fetchone()
+    result = dict((row or {}).get("result") or {})
+    order["_referral_bonus_qty"] = int(result.get("bonus_qty") or 0)
+    return result
+
+
+def complete_referral_bonus(
+    conn: psycopg.Connection,
+    order: dict[str, Any],
+    applied: dict[str, Any],
+) -> None:
+    bonus = applied.get("referral_bonus") or {}
+    if int(bonus.get("qty") or 0) != 1:
+        return
+    row = conn.execute(
+        "select public.complete_client_referral_bonus(%s,%s,%s) as result",
+        (order["id"], bonus.get("anketa_code"), bonus.get("anketa_name")),
+    ).fetchone()
+    result = dict((row or {}).get("result") or {})
+    if not result.get("ok"):
+        raise PaymentApplyError(str(result.get("reason") or "referral bonus could not be completed"))
+
+
+def release_referral_bonus(conn: psycopg.Connection, order: dict[str, Any]) -> bool:
+    if int(order.get("_referral_bonus_qty") or 0) != 1:
+        return False
+    row = conn.execute(
+        "select public.release_client_referral_bonus(%s) as result",
+        (order["id"],),
+    ).fetchone()
+    order["_referral_bonus_qty"] = 0
+    return bool((row or {}).get("result"))
+
+
 async def current_user(authorization: str | None = Header(default=None)) -> dict[str, Any]:
     if not authorization or not authorization.lower().startswith("bearer "):
         raise HTTPException(status_code=401, detail="Authentication required")
@@ -698,6 +736,7 @@ async def confirm_manual_transfer(
             raise HTTPException(status_code=409, detail="Receipt is required")
 
         order = canonicalize_order(conn, order, str(order.get("client_email") or ""))
+        reserve_referral_bonus(conn, order)
         state_row = conn.execute(
             "select data from public.crm_state where id='main' for update"
         ).fetchone()
@@ -758,6 +797,7 @@ async def confirm_manual_transfer(
                 order["id"],
             ),
         )
+        complete_referral_bonus(conn, order, applied)
         refresh_snapshot(conn, str(order.get("client_email") or ""), state)
         notify_paid_order(
             conn,
@@ -906,6 +946,7 @@ def notify_paid_order(
         return
     applied = applied or {}
     packages = applied.get("package_items") or []
+    referral_bonus = applied.get("referral_bonus") or {}
     created = applied.get("created_anketas") or []
     if packages:
         target = "\n".join(
@@ -920,13 +961,16 @@ def notify_paid_order(
         created_line = "\n🆕 Созданы анкеты: " + ", ".join(
             f"{item.get('code')} — {item.get('name')}" for item in created
         )
+    bonus_line = ""
+    if int(referral_bonus.get("qty") or 0) == 1:
+        bonus_line = f"\n🎁 Реферальный бонус: 1 отзыв на {referral_bonus.get('anketa_code') or 'анкету'}"
     suffix = "\n⚠ Нужна ручная привязка заказа к карточке." if manual_review else "\n✅ CRM и финансы обновлены автоматически."
     message = (
         ("💳 Перевод по реквизитам подтверждён!\n" if manual_transfer else "💳 Онлайн-оплата получена!\n") +
         f"👤 {order.get('client_name') or order.get('client_email') or 'клиент'}\n"
         f"{'Пакеты' if packages else 'Анкета'}: {target}\n"
         f"Сумма: {money(amount):.0f} ₽"
-        f"{created_line}"
+        f"{created_line}{bonus_line}"
         f"{suffix}"
     )
     conn.execute(
@@ -1025,6 +1069,7 @@ def apply_provider_status(provider: dict[str, Any]) -> dict[str, Any]:
             raise PaymentApplyError("crm state not found")
         state = state_row["data"]
         paid_at = str(provider.get("paid_at") or datetime.now(timezone.utc).isoformat())
+        reserve_referral_bonus(conn, order)
         try:
             applied = apply_paid_order(
                 state,
@@ -1033,6 +1078,7 @@ def apply_provider_status(provider: dict[str, Any]) -> dict[str, Any]:
                 paid_at,
             )
         except PaymentApplyError as exc:
+            release_referral_bonus(conn, order)
             conn.execute(
                 "update public.payment_transactions set requires_manual_review=true, apply_note=%s where id=%s",
                 (str(exc), tx["id"]),
@@ -1085,6 +1131,7 @@ def apply_provider_status(provider: dict[str, Any]) -> dict[str, Any]:
                 order["id"],
             ),
         )
+        complete_referral_bonus(conn, order, applied)
         conn.execute(
             "update public.payment_transactions set business_applied_at=now(), apply_note='applied' where id=%s",
             (tx["id"],),

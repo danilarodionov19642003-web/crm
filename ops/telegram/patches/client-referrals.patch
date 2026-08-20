@@ -1,0 +1,115 @@
+--- a/backend/bot.py
++++ b/backend/bot.py
+@@ -985,0 +986,39 @@
++
++    # Stable referral link from a client cabinet. The click is recorded, but
++    # the gift is credited only after this Telegram is linked to a cabinet and
++    # that cabinet's first paid order is confirmed.
++    if arg.startswith("ref_") and m.chat.type == "private":
++        if _is_owner(m.chat.id, owner):
++            await m.answer("Реферальная ссылка предназначена для нового клиента.")
++            return
++        result = await crm_client.register_client_referral(
++            referral_code=arg[4:],
++            telegram_user_id=m.from_user.id,
++            telegram_chat_id=m.chat.id,
++            username=m.from_user.username,
++            first_name=m.from_user.first_name,
++            last_name=m.from_user.last_name,
++        )
++        if not result.get("ok"):
++            reason = str(result.get("reason") or "")
++            if "SELF_REFERRAL" in reason:
++                message = "Свою реферальную ссылку использовать нельзя."
++            elif "REFERRAL_ALREADY_ATTRIBUTED" in reason:
++                message = "За этим Telegram уже закреплена другая рекомендация."
++            elif "REFERRAL_NOT_FOUND" in reason:
++                message = "Реферальная ссылка не найдена. Попросите отправить её заново."
++            else:
++                message = "Не удалось закрепить рекомендацию. Попробуйте открыть ссылку ещё раз."
++            await m.answer(message)
++            return
++        await register_bot_user(m, is_owner=False)
++        await state.clear()
++        referrer = html.escape(str(result.get("referrer_name") or "клиента Mentori"))
++        await m.answer(
++            f"✅ Вы пришли по рекомендации <b>{referrer}</b>.\n\n"
++            "🎁 При первом оплаченном заказе вы получите один отзыв в подарок. "
++            "После создания личного кабинета подключите к нему этот Telegram, "
++            "чтобы подарок начислился автоматически."
++        )
++        await client_ui.entry_start(m, bot, state)
++        return
+@@ -1788,0 +1828 @@
++    bonus_qty = 0
+@@ -1791 +1831,3 @@
+-        res = await crm_apply_order_payment(code, d_ordered=qty, d_total=amount, d_paid=prepay,
++        bonus = await crm_client.reserve_client_referral_bonus(oid)
++        bonus_qty = 1 if int(bonus.get("bonus_qty") or 0) == 1 else 0
++        res = await crm_apply_order_payment(code, d_ordered=qty + bonus_qty, d_total=amount, d_paid=prepay,
+@@ -1793,0 +1836,2 @@
++            if bonus_qty:
++                await crm_client.release_client_referral_bonus(oid)
+@@ -1798,0 +1843,2 @@
++        if bonus_qty:
++            tail += "\n🎁 Реферальный бонус: ещё 1 отзыв"
+@@ -1809,0 +1856,6 @@
++    if code and qty > 0 and bonus_qty:
++        completed = await crm_client.complete_client_referral_bonus(
++            oid, str(res.get("code") or code), order.get("anketa_name")
++        )
++        if not completed.get("ok"):
++            tail += "\n\n⚠ Бонус начислен в CRM, но его строку в истории нужно проверить."
+--- a/backend/crm_client.py
++++ b/backend/crm_client.py
+@@ -277,0 +278,24 @@
++
++
++async def register_client_referral(
++    referral_code: str,
++    telegram_user_id: int,
++    telegram_chat_id: int,
++    username: str | None = None,
++    first_name: str | None = None,
++    last_name: str | None = None,
++) -> dict[str, Any]:
++    ok, body = await _rpc("register_client_referral", {
++        "p_referral_code": referral_code,
++        "p_telegram_user_id": int(telegram_user_id),
++        "p_telegram_chat_id": int(telegram_chat_id),
++        "p_username": username,
++        "p_first_name": first_name,
++        "p_last_name": last_name,
++    })
++    if ok and isinstance(body, dict):
++        return body
++    reason = ""
++    if isinstance(body, dict):
++        reason = str(body.get("message") or body.get("details") or "")
++    return {"ok": False, "reason": reason or "REFERRAL_FAILED"}
+@@ -279,0 +304,25 @@
++async def reserve_client_referral_bonus(order_id: int) -> dict[str, Any]:
++    ok, body = await _rpc("reserve_client_referral_bonus", {"p_order_id": int(order_id)})
++    return body if ok and isinstance(body, dict) else {"eligible": False, "bonus_qty": 0}
++
++
++async def release_client_referral_bonus(order_id: int) -> bool:
++    ok, body = await _rpc("release_client_referral_bonus", {"p_order_id": int(order_id)})
++    return bool(body) if ok else False
++
++
++async def complete_client_referral_bonus(
++    order_id: int,
++    anketa_code: str,
++    anketa_name: str | None = None,
++) -> dict[str, Any]:
++    ok, body = await _rpc("complete_client_referral_bonus", {
++        "p_order_id": int(order_id),
++        "p_anketa_code": anketa_code,
++        "p_anketa_name": anketa_name,
++    })
++    if ok and isinstance(body, dict):
++        return body
++    return {"ok": False, "reason": "BONUS_COMPLETE_FAILED"}
++
++

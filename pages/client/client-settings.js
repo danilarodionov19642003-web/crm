@@ -1,4 +1,4 @@
-/* Client cabinet settings: shared credentials and Telegram contacts. */
+/* Separate client-cabinet settings: profile, credentials, Telegram and referrals. */
 (function () {
   'use strict';
 
@@ -6,8 +6,15 @@
   if (!SB) return;
   const { Auth, authFetch } = SB;
   const root = () => document.querySelector('[data-cli-settings-body]');
+  const modal = () => document.querySelector('[data-cli-settings-modal]');
   let members = [];
+  let profile = { contact_name: '', phone: '' };
+  let referralDashboard = { referral_code: '', bot_username: 'MentoriTG_bot', referrals: [] };
+  let displayName = '';
+  let activeTab = 'profile';
   let pollTimer = null;
+  let closeTimer = null;
+  let initialized = false;
 
   function esc(value) {
     return String(value == null ? '' : value).replace(/[&<>"']/g, ch => ({
@@ -50,6 +57,8 @@
     if (raw.includes('NOTHING_TO_CHANGE')) return 'Укажите новый email или новый пароль.';
     if (raw.includes('MEMBER_NOT_FOUND')) return 'Контакт уже отключён. Обновите страницу.';
     if (raw.includes('TEXT_APPROVER_REQUIRED')) return 'Сначала отметьте другой Telegram, который будет согласовывать тексты.';
+    if (raw.includes('CONTACT_NAME_TOO_LONG')) return 'Имя контактного лица слишком длинное.';
+    if (raw.includes('PHONE_TOO_LONG') || raw.includes('PHONE_INVALID')) return 'Проверьте номер телефона.';
     return 'Не удалось сохранить. Проверьте связь и попробуйте ещё раз.';
   }
 
@@ -57,6 +66,27 @@
     const result = await rpc('list_my_client_telegram_members');
     members = Array.isArray(result) ? result : [];
     return members;
+  }
+
+  async function loadProfile() {
+    const result = await rpc('get_my_client_portal_profile');
+    profile = result && typeof result === 'object'
+      ? result
+      : { contact_name: '', phone: '' };
+    return profile;
+  }
+
+  async function loadReferralDashboard() {
+    const result = await rpc('get_my_client_referral_dashboard');
+    referralDashboard = result && typeof result === 'object'
+      ? result
+      : { referral_code: '', bot_username: 'MentoriTG_bot', referrals: [] };
+    if (!Array.isArray(referralDashboard.referrals)) referralDashboard.referrals = [];
+    return referralDashboard;
+  }
+
+  function checked(value) {
+    return value === false ? '' : 'checked';
   }
 
   function memberHtml(member) {
@@ -77,50 +107,58 @@
         </label>
         <div class="cli-settings__checks">
           <label><input type="checkbox" data-member-approver ${member.is_text_approver ? 'checked' : ''}/> Согласовывает тексты</label>
-          <label><input type="checkbox" data-member-status ${member.status_notifications ? 'checked' : ''}/> Статусы аккаунтов</label>
-          <label><input type="checkbox" data-member-schedule ${member.schedule_notifications ? 'checked' : ''}/> Расписание</label>
+          <label><input type="checkbox" data-member-status ${checked(member.status_notifications)}/> Изменения статусов</label>
+          <label><input type="checkbox" data-member-schedule ${checked(member.schedule_notifications)}/> Ежедневный план откликов</label>
+          <label><input type="checkbox" data-member-low ${checked(member.low_reviews_notifications)}/> Остался один отзыв</label>
+          <label><input type="checkbox" data-member-completed ${checked(member.order_completed_notifications)}/> Пакет выполнен</label>
         </div>
         <div class="cli-tg-member__actions">
           <button type="submit" class="cli-settings__button">Сохранить</button>
           <button type="button" class="cli-settings__button cli-settings__button--danger" data-member-revoke>Отключить</button>
-          <span class="cli-settings__result" data-member-result></span>
+          <span class="cli-settings__result" data-member-result aria-live="polite"></span>
         </div>
       </form>`;
   }
 
-  function render() {
-    const host = root();
-    if (!host) return;
-    const hasTextApprover = members.some(member => member.is_text_approver);
-    host.innerHTML = `
-      <div class="cli-settings__block">
-        <div class="cli-settings__title-row">
-          <h3>Telegram</h3>
-          <span>${members.length}/6</span>
+  function profilePanel() {
+    return `
+      <section class="cli-settings-panel" aria-labelledby="cliSettingsProfileTitle">
+        <div class="cli-settings-panel__intro">
+          <h3 id="cliSettingsProfileTitle">Контактные данные</h3>
+          <p>Эти данные относятся только к вашему кабинету и не меняют анкету.</p>
         </div>
-        <div class="cli-tg-list">
-          ${members.length ? members.map(memberHtml).join('') : '<div class="cli-settings__empty">Telegram пока не подключён.</div>'}
-        </div>
-        <form class="cli-tg-connect" data-tg-connect>
+        <form class="cli-settings-form" data-profile-form>
+          ${displayName ? `
+            <div class="cli-settings-readonly">
+              <span>Название кабинета</span>
+              <strong>${esc(displayName)}</strong>
+            </div>` : ''}
           <label class="cli-field">
-            <span>Контактное лицо (чей Telegram)</span>
-            <input type="text" maxlength="100" required data-tg-label placeholder="Например, Анна, менеджер"/>
+            <span>Контактное лицо</span>
+            <input type="text" maxlength="100" autocomplete="name" data-profile-name value="${esc(profile.contact_name || '')}" placeholder="Имя человека для связи"/>
           </label>
-          <label class="cli-check-row">
-            <input type="checkbox" data-tg-approver ${hasTextApprover ? '' : 'checked'}/>
-            <span>Согласовывает тексты</span>
+          <label class="cli-field">
+            <span>Телефон</span>
+            <input type="tel" maxlength="32" autocomplete="tel" inputmode="tel" data-profile-phone value="${esc(profile.phone || '')}" placeholder="+7 999 000-00-00"/>
           </label>
-          <button type="submit" class="cli-settings__button cli-settings__button--primary">Подключить Telegram</button>
-          <div class="cli-tg-link" data-tg-link hidden></div>
-          <div class="cli-settings__result" data-tg-result></div>
+          <div class="cli-settings-form__actions">
+            <button type="submit" class="cli-settings__button cli-settings__button--primary">Сохранить контакты</button>
+            <span class="cli-settings__result" data-profile-result aria-live="polite"></span>
+          </div>
         </form>
-      </div>
+      </section>`;
+  }
 
-      <details class="cli-settings__block cli-credentials">
-        <summary>Изменить общий логин или пароль</summary>
-        <form data-credentials-form>
+  function credentialsPanel() {
+    return `
+      <section class="cli-settings-panel" aria-labelledby="cliSettingsCredentialsTitle">
+        <div class="cli-settings-panel__intro">
+          <h3 id="cliSettingsCredentialsTitle">Вход и пароль</h3>
+          <p>После изменения данных входа кабинет попросит авторизоваться заново.</p>
+        </div>
+        <form class="cli-settings-form" data-credentials-form>
           <label class="cli-field">
-            <span>Новый email для входа</span>
+            <span>Email для входа</span>
             <input type="email" autocomplete="email" data-new-email value="${esc(Auth.email() || '')}"/>
           </label>
           <label class="cli-field">
@@ -137,12 +175,180 @@
               <input type="password" minlength="8" autocomplete="new-password" data-new-password-repeat/>
             </label>
           </div>
-          <button type="submit" class="cli-settings__button">Сохранить вход</button>
-          <div class="cli-settings__result" data-credentials-result></div>
+          <div class="cli-settings-form__actions">
+            <button type="submit" class="cli-settings__button cli-settings__button--primary">Сохранить вход</button>
+            <span class="cli-settings__result" data-credentials-result aria-live="polite"></span>
+          </div>
         </form>
-      </details>`;
+      </section>`;
+  }
 
-    bindEvents(host);
+  function telegramPanel() {
+    const hasTextApprover = members.some(member => member.is_text_approver);
+    const canAdd = members.length < 6;
+    return `
+      <section class="cli-settings-panel" aria-labelledby="cliSettingsTelegramTitle">
+        <div class="cli-settings-panel__intro cli-settings-panel__intro--split">
+          <div>
+            <h3 id="cliSettingsTelegramTitle">Telegram и уведомления</h3>
+            <p>Можно подключить до шести контактов и выбрать уведомления для каждого.</p>
+          </div>
+          <span class="cli-settings-count">${members.length}/6</span>
+        </div>
+        <div class="cli-tg-list">
+          ${members.length ? members.map(memberHtml).join('') : '<div class="cli-settings__empty">Telegram пока не подключён.</div>'}
+        </div>
+        ${canAdd ? `
+          <form class="cli-tg-connect" data-tg-connect>
+            <h4>Подключить ещё один Telegram</h4>
+            <label class="cli-field">
+              <span>Контактное лицо (чей Telegram)</span>
+              <input type="text" maxlength="100" required data-tg-label placeholder="Например, Анна, менеджер"/>
+            </label>
+            <label class="cli-check-row">
+              <input type="checkbox" data-tg-approver ${hasTextApprover ? '' : 'checked'}/>
+              <span>Согласовывает тексты</span>
+            </label>
+            <button type="submit" class="cli-settings__button cli-settings__button--primary">Подключить Telegram</button>
+            <div class="cli-tg-link" data-tg-link hidden></div>
+            <div class="cli-settings__result" data-tg-result aria-live="polite"></div>
+          </form>` : '<div class="cli-settings__limit">Подключено максимальное число Telegram-контактов.</div>'}
+      </section>`;
+  }
+
+  function referralPerson(referral) {
+    if (referral.username) return `@${referral.username}`;
+    return [referral.first_name, referral.last_name].filter(Boolean).join(' ') || 'Пользователь Telegram';
+  }
+
+  function referralState(referral) {
+    if (referral.status === 'applied') return { label: 'Бонус начислен', cls: 'is-applied' };
+    if (referral.status === 'reserved') return { label: 'Заказ подтверждается', cls: 'is-reserved' };
+    if (referral.status === 'rejected_self') return { label: 'Не засчитан', cls: 'is-rejected' };
+    if (referral.linked_at) return { label: 'Кабинет подключён', cls: 'is-linked' };
+    return { label: 'Перешёл в бота', cls: 'is-pending' };
+  }
+
+  function referralPanel() {
+    const bot = referralDashboard.bot_username || 'MentoriTG_bot';
+    const code = referralDashboard.referral_code || '';
+    const link = code ? `https://t.me/${encodeURIComponent(bot)}?start=ref_${encodeURIComponent(code)}` : '';
+    const referrals = referralDashboard.referrals || [];
+    return `
+      <section class="cli-settings-panel" aria-labelledby="cliSettingsReferralTitle">
+        <div class="cli-settings-panel__intro">
+          <h3 id="cliSettingsReferralTitle">Реферальная программа</h3>
+          <p>Друг получит один отзыв в подарок после оплаты первого заказа.</p>
+        </div>
+        <div class="cli-referral-link">
+          <span>Ваша ссылка</span>
+          <div class="cli-referral-link__row">
+            <input type="text" readonly data-referral-link value="${esc(link)}" aria-label="Реферальная ссылка"/>
+            <button type="button" class="cli-settings__button cli-settings__button--primary" data-referral-copy>Скопировать</button>
+            <a class="cli-settings__button" href="${esc(link)}" target="_blank" rel="noopener">Открыть</a>
+          </div>
+          <div class="cli-settings__result" data-referral-result aria-live="polite"></div>
+        </div>
+        <div class="cli-referral-list">
+          <div class="cli-referral-list__head">
+            <h4>Приглашённые</h4>
+            <span>${referrals.length}</span>
+          </div>
+          ${referrals.length ? referrals.map(referral => {
+            const state = referralState(referral);
+            return `
+              <div class="cli-referral-person">
+                <div>
+                  <strong>${esc(referralPerson(referral))}</strong>
+                  <span>${referral.joined_at ? new Date(referral.joined_at).toLocaleDateString('ru-RU') : ''}</span>
+                </div>
+                <span class="cli-referral-person__state ${state.cls}">${state.label}</span>
+              </div>`;
+          }).join('') : '<div class="cli-settings__empty">Переходов по ссылке пока нет.</div>'}
+        </div>
+      </section>`;
+  }
+
+  function panelHtml() {
+    if (activeTab === 'credentials') return credentialsPanel();
+    if (activeTab === 'telegram') return telegramPanel();
+    if (activeTab === 'referral') return referralPanel();
+    return profilePanel();
+  }
+
+  function render() {
+    const host = root();
+    if (!host) return;
+    host.innerHTML = `
+      <div class="cli-settings-shell">
+        <nav class="cli-settings-nav" role="tablist" aria-label="Разделы настроек">
+          <button type="button" role="tab" data-settings-tab="profile" aria-selected="${activeTab === 'profile'}" class="${activeTab === 'profile' ? 'is-active' : ''}">Контактные данные</button>
+          <button type="button" role="tab" data-settings-tab="credentials" aria-selected="${activeTab === 'credentials'}" class="${activeTab === 'credentials' ? 'is-active' : ''}">Вход и пароль</button>
+          <button type="button" role="tab" data-settings-tab="telegram" aria-selected="${activeTab === 'telegram'}" class="${activeTab === 'telegram' ? 'is-active' : ''}">Telegram</button>
+          <button type="button" role="tab" data-settings-tab="referral" aria-selected="${activeTab === 'referral'}" class="${activeTab === 'referral' ? 'is-active' : ''}">Реферальная программа</button>
+        </nav>
+        <div class="cli-settings-content" role="tabpanel">${panelHtml()}</div>
+      </div>`;
+    bindTabEvents(host);
+    if (activeTab === 'profile') bindProfileEvents(host);
+    if (activeTab === 'credentials') bindCredentialsEvents(host);
+    if (activeTab === 'telegram') bindTelegramEvents(host);
+    if (activeTab === 'referral') bindReferralEvents(host);
+  }
+
+  function bindTabEvents(host) {
+    host.querySelectorAll('[data-settings-tab]').forEach(button => {
+      button.addEventListener('click', () => {
+        activeTab = button.dataset.settingsTab || 'profile';
+        render();
+        const active = root().querySelector(`[data-settings-tab="${activeTab}"]`);
+        if (active) active.focus();
+      });
+    });
+  }
+
+  function bindProfileEvents(host) {
+    const form = host.querySelector('[data-profile-form]');
+    if (!form) return;
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      const button = form.querySelector('button[type="submit"]');
+      const result = form.querySelector('[data-profile-result]');
+      button.disabled = true;
+      result.textContent = 'Сохраняем…';
+      result.className = 'cli-settings__result';
+      try {
+        profile = await rpc('update_my_client_portal_profile', {
+          p_contact_name: form.querySelector('[data-profile-name]').value.trim(),
+          p_phone: form.querySelector('[data-profile-phone]').value.trim()
+        });
+        result.textContent = 'Контактные данные сохранены.';
+        result.className = 'cli-settings__result is-success';
+      } catch (error) {
+        result.textContent = errorMessage(error);
+        result.className = 'cli-settings__result is-error';
+      } finally {
+        button.disabled = false;
+      }
+    });
+  }
+
+  function bindReferralEvents(host) {
+    const input = host.querySelector('[data-referral-link]');
+    const button = host.querySelector('[data-referral-copy]');
+    const result = host.querySelector('[data-referral-result]');
+    if (!input || !button || !result) return;
+    button.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(input.value);
+        result.textContent = 'Ссылка скопирована.';
+        result.className = 'cli-settings__result is-success';
+      } catch (_) {
+        input.focus();
+        input.select();
+        result.textContent = 'Ссылка выделена.';
+      }
+    });
   }
 
   function stopPolling() {
@@ -167,7 +373,7 @@
     }, 4000);
   }
 
-  function bindEvents(host) {
+  function bindTelegramEvents(host) {
     host.querySelectorAll('[data-member-approver]').forEach(input => {
       input.addEventListener('change', () => {
         if (!input.checked) {
@@ -196,19 +402,20 @@
         result.textContent = 'Сохраняем…';
         result.className = 'cli-settings__result';
         try {
-          await rpc('update_my_client_telegram_member', {
+          await rpc('update_my_client_telegram_settings', {
             p_member_id: Number(form.dataset.memberId),
             p_contact_label: form.querySelector('[data-member-label]').value.trim(),
             p_is_text_approver: form.querySelector('[data-member-approver]').checked,
             p_status_notifications: form.querySelector('[data-member-status]').checked,
-            p_schedule_notifications: form.querySelector('[data-member-schedule]').checked
+            p_schedule_notifications: form.querySelector('[data-member-schedule]').checked,
+            p_low_reviews_notifications: form.querySelector('[data-member-low]').checked,
+            p_order_completed_notifications: form.querySelector('[data-member-completed]').checked
           });
           await loadMembers();
           render();
         } catch (error) {
           result.textContent = errorMessage(error);
           result.className = 'cli-settings__result is-error';
-        } finally {
           button.disabled = false;
         }
       });
@@ -230,6 +437,7 @@
     });
 
     const connect = host.querySelector('[data-tg-connect]');
+    if (!connect) return;
     connect.addEventListener('submit', async event => {
       event.preventDefault();
       const button = connect.querySelector('button[type="submit"]');
@@ -266,8 +474,11 @@
         button.disabled = false;
       }
     });
+  }
 
+  function bindCredentialsEvents(host) {
     const credentials = host.querySelector('[data-credentials-form]');
+    if (!credentials) return;
     credentials.addEventListener('submit', async event => {
       event.preventDefault();
       const result = credentials.querySelector('[data-credentials-result]');
@@ -301,10 +512,56 @@
     });
   }
 
-  async function init() {
+  function open(tab) {
+    const box = modal();
+    if (!box) return;
+    if (closeTimer) clearTimeout(closeTimer);
+    closeTimer = null;
+    if (tab) activeTab = tab;
+    render();
+    box.hidden = false;
+    box.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('cli-settings-open');
+    requestAnimationFrame(() => {
+      box.classList.add('is-open');
+      const selected = box.querySelector('[data-settings-tab][aria-selected="true"]');
+      if (selected) selected.focus();
+    });
+  }
+
+  function close() {
+    const box = modal();
+    if (!box || box.hidden) return;
+    stopPolling();
+    box.classList.remove('is-open');
+    box.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('cli-settings-open');
+    closeTimer = setTimeout(() => {
+      box.hidden = true;
+      closeTimer = null;
+    }, 180);
+    const trigger = document.getElementById('cliSettingsOpen');
+    if (trigger) trigger.focus();
+  }
+
+  function bindModalEvents() {
+    const box = modal();
+    if (!box || initialized) return;
+    initialized = true;
+    box.querySelectorAll('[data-cli-settings-close]').forEach(button => {
+      button.addEventListener('click', close);
+    });
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && !box.hidden) close();
+    });
+  }
+
+  async function init(options = {}) {
     if (!root()) return;
+    displayName = String(options.displayName || '').trim();
+    bindModalEvents();
     try {
-      await loadMembers();
+      await Promise.all([loadMembers(), loadProfile(), loadReferralDashboard()]);
       render();
     } catch (error) {
       root().innerHTML = `<div class="cli-settings__result is-error">${esc(errorMessage(error))}</div>`;
@@ -312,5 +569,7 @@
   }
 
   window.addEventListener('pagehide', stopPolling);
-  window.ClientSettings = { init, loadMembers };
+  window.ClientSettings = {
+    init, open, close, loadMembers, loadProfile, loadReferralDashboard
+  };
 })();

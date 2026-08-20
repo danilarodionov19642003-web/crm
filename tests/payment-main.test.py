@@ -39,6 +39,16 @@ class QueryResult:
         return self.many
 
 
+class ReferralConnection:
+    def __init__(self, results):
+        self.results = list(results)
+        self.calls = []
+
+    def execute(self, query, params):
+        self.calls.append((query, params))
+        return QueryResult(one={"result": self.results.pop(0)})
+
+
 class CancelConnection:
     def __init__(self, order, transactions):
         self.order = order
@@ -103,6 +113,34 @@ class PaymentMainTest(unittest.TestCase):
                 "user_metadata": {"role": "owner"},
             })
         )
+
+    def test_referral_bonus_is_reserved_and_completed_through_database_rpcs(self):
+        conn = ReferralConnection([
+            {"eligible": True, "bonus_qty": 1},
+            {"ok": True, "bonus_order_id": 501, "bonus_qty": 1},
+        ])
+        order = {"id": 50}
+        reserved = main.reserve_referral_bonus(conn, order)
+        main.complete_referral_bonus(conn, order, {
+            "referral_bonus": {"qty": 1, "anketa_code": "a21", "anketa_name": "Флагман"}
+        })
+
+        self.assertTrue(reserved["eligible"])
+        self.assertEqual(order["_referral_bonus_qty"], 1)
+        sql = "\n".join(query for query, _ in conn.calls)
+        self.assertIn("reserve_client_referral_bonus", sql)
+        self.assertIn("complete_client_referral_bonus", sql)
+
+    def test_referral_reservation_is_released_after_failed_business_apply(self):
+        conn = ReferralConnection([True])
+        order = {"id": 50, "_referral_bonus_qty": 1}
+        released = main.release_referral_bonus(conn, order)
+
+        self.assertTrue(released)
+        self.assertEqual(order["_referral_bonus_qty"], 0)
+        self.assertIn("release_client_referral_bonus", conn.calls[0][0])
+        source = inspect.getsource(main.apply_provider_status)
+        self.assertIn("except PaymentApplyError as exc:\n            release_referral_bonus(conn, order)", source)
 
     def test_owner_can_cancel_unpaid_online_order_without_deleting_audit_rows(self):
         conn = CancelConnection(

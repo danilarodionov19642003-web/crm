@@ -211,6 +211,7 @@ def apply_paid_order(
     affected_codes: list[str] = []
     created_anketas: list[dict[str, Any]] = []
     package_items: list[dict[str, Any]] = []
+    referral_bonus: dict[str, Any] | None = None
 
     if order.get("order_type") == "remainder":
         for raw_item in order.get("items") or []:
@@ -286,6 +287,22 @@ def apply_paid_order(
         affected_codes.append(str(client.get("code") or ""))
         comment = "Оплата заказа (100%)" if bool(order.get("pay_full")) else "Предоплата заказа (50%)"
 
+    bonus_qty = int(order.get("_referral_bonus_qty") or 0)
+    if bonus_qty not in (0, 1):
+        raise PaymentApplyError("invalid referral bonus quantity")
+    if bonus_qty:
+        if order.get("order_type") == "remainder" or not affected_codes:
+            raise PaymentApplyError("referral bonus has no target card")
+        bonus_client = _find_client(state, affected_codes[0])
+        if not bonus_client:
+            raise PaymentApplyError("referral bonus target card not found")
+        bonus_client["ordered"] = int(bonus_client.get("ordered") or 0) + bonus_qty
+        referral_bonus = {
+            "anketa_code": str(bonus_client.get("code") or affected_codes[0]),
+            "anketa_name": str(bonus_client.get("name") or ""),
+            "qty": bonus_qty,
+        }
+
     if not allocations:
         raise PaymentApplyError("order has no payable items")
 
@@ -314,6 +331,7 @@ def apply_paid_order(
         "affected_codes": affected_codes,
         "created_anketas": created_anketas,
         "package_items": package_items,
+        "referral_bonus": referral_bonus,
         "income": income,
     }
 

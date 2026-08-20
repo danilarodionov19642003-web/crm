@@ -247,15 +247,24 @@
     el.innerHTML = `
       <header class="cli-header">
         <div class="cli-header__brand">
-          <div class="cli-header__logo">${escapeHtml(initial)}</div>
+          <div class="cli-header__logo">M</div>
           <div>
             <div class="cli-header__hello">${escapeHtml(name)}</div>
             <div class="cli-header__sub">Личный кабинет · ${escapeHtml(Auth.email() || '')}</div>
           </div>
         </div>
-        <button class="cli-header__logout" id="cliLogout">Выйти</button>
+        <div class="cli-header__actions">
+          <button class="cli-header__profile" id="cliSettingsOpen" type="button" aria-label="Открыть настройки" aria-haspopup="dialog" aria-controls="cliSettingsModal">
+            <span class="cli-header__avatar" aria-hidden="true">${escapeHtml(initial)}</span>
+            <span class="cli-header__profile-label">Настройки</span>
+          </button>
+          <button class="cli-header__logout" id="cliLogout" type="button">Выйти</button>
+        </div>
       </header>
     `;
+    document.getElementById('cliSettingsOpen').addEventListener('click', () => {
+      if (window.ClientSettings && window.ClientSettings.open) window.ClientSettings.open();
+    });
     document.getElementById('cliLogout').addEventListener('click', () => {
       if (!confirm('Выйти из кабинета?')) return;
       try { Auth.signOut(); } catch (_) {}

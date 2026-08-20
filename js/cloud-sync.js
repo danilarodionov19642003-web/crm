@@ -1009,6 +1009,36 @@
     return queueTelegramNotification(legacyRow);
   }
 
+  /** Поставить уведомление о прогрессе пакета. Сервер сам учитывает настройку
+   *  каждого Telegram-контакта и не создаёт дубль для того же отзыва. */
+  async function queueClientProgressNotification(row) {
+    if (!row || !row.client_email || !row.message || !row.action_ref) return false;
+    try {
+      const res = await _fetch(`${_supaUrl()}/rest/v1/rpc/queue_client_progress_notification`, {
+        method: 'POST',
+        headers: { ...(_hdr()), 'Prefer': 'return=representation' },
+        body: JSON.stringify({
+          p_portal_email: row.client_email,
+          p_kind: row.kind,
+          p_message: row.message,
+          p_mentor_id: row.mentor_id || null,
+          p_profile_id: row.profile_id || null,
+          p_action_ref: row.action_ref,
+          p_created_by: row.created_by || null
+        })
+      });
+      if (!res.ok) {
+        console.warn('[CloudSync] client progress notification failed', res.status,
+          await res.text().catch(() => ''));
+        return false;
+      }
+      return Number(await res.json().catch(() => 0)) > 0;
+    } catch (error) {
+      console.warn('[CloudSync] client progress notification error', error);
+      return false;
+    }
+  }
+
   /* ---- Закрытие выполненного отклика в каноническом графике ----
      Вызывается при переходе аккаунта из «Запланировано» в рабочий статус.
      Ошибка отдельной таблицы не должна отменять сохранение основного CRM state. */
@@ -1083,6 +1113,7 @@
     pushClientSnapshots,    // ручной триггер: после CRUD над clientPortals
     queueTelegramNotification, // пишем строку в notification_outbox (читает бот)
     queueClientTelegramNotification, // fan-out по подключённым контактам клиента
+    queueClientProgressNotification, // «остался 1» / «пакет выполнен» с дедупом
     completeOutreachSlot,   // закрыть слот, когда аккаунт перешёл в работу
     downloadBackup,         // ручной бэкап на диск (используется кнопкой в шапке)
     getConflictLog: () => {

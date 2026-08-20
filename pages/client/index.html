@@ -16,7 +16,7 @@
   <meta http-equiv="Expires" content="0"/>
   <title>Личный кабинет — Mentori</title>
   <link rel="stylesheet" href="../../css/styles.css?v=20260628a"/>
-  <link rel="stylesheet" href="client.css?v=20260820k"/>
+  <link rel="stylesheet" href="client.css?v=20260820n"/>
 </head>
 <body class="cli-body">
   <div data-cli-header></div>
@@ -70,18 +70,6 @@
         <h2 class="cli-section-title">Календарь</h2>
         <div class="cli-cal" data-cli-calendar></div>
 
-        <section class="cli-settings" data-cli-settings>
-          <div class="cli-settings__head">
-            <div>
-              <h2 class="cli-section-title">Настройки и уведомления</h2>
-              <p class="cli-settings__sub">Telegram-контакты и общий вход в кабинет</p>
-            </div>
-          </div>
-          <div data-cli-settings-body>
-            <div class="cli-empty">Загрузка…</div>
-          </div>
-        </section>
-
         <div data-cli-feed style="margin-top:22px"></div>
       </div>
     </div>
@@ -94,6 +82,22 @@
       <a class="cli-foot__link" href="../../legal/offer.html" target="_blank" rel="noopener">Публичная оферта</a>
     </footer>
   </main>
+
+  <div class="cli-settings-modal" id="cliSettingsModal" data-cli-settings-modal hidden aria-hidden="true">
+    <button class="cli-settings-modal__backdrop" type="button" data-cli-settings-close aria-label="Закрыть настройки"></button>
+    <section class="cli-settings-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="cliSettingsTitle">
+      <header class="cli-settings-modal__head">
+        <div>
+          <h2 id="cliSettingsTitle">Настройки кабинета</h2>
+          <p>Контакты, вход и уведомления</p>
+        </div>
+        <button class="cli-settings-modal__close" type="button" data-cli-settings-close aria-label="Закрыть">✕</button>
+      </header>
+      <div class="cli-settings-modal__body" data-cli-settings-body>
+        <div class="cli-empty">Загрузка…</div>
+      </div>
+    </section>
+  </div>
 
   <!-- Условия заказа (оферта): открывается по ссылке из галочки и из футера. -->
   <div class="cli-modal" id="cliTermsModal" hidden style="z-index:120">
@@ -135,8 +139,8 @@
   <script src="./legal-content.js?v=20260713d"></script>
   <script src="./remainder-calculator.js?v=20260713a"></script>
   <script src="./order-cart.js?v=20260820b"></script>
-  <script src="./client-app.js?v=20260820n"></script>
-  <script src="./client-settings.js?v=20260820b"></script>
+  <script src="./client-app.js?v=20260820p"></script>
+  <script src="./client-settings.js?v=20260820d"></script>
   <script>
   (async () => {
     const ok = await window.ClientApp.requireLogin();
@@ -167,7 +171,9 @@
     window.ClientApp.renderRemainder(snap && snap.payload, myOrders);
     document.querySelectorAll('[data-cli-remain-close]').forEach(el => el.addEventListener('click', () => window.ClientApp.closeRemainModal()));
     window.ClientApp.renderMyOrders(myOrders);
-    await window.ClientSettings.init();
+    await window.ClientSettings.init({
+      displayName: snap && snap.payload ? snap.payload.name : ''
+    });
     await window.ClientApp.handlePaymentReturn();
     // Условия заказа — открытие модалки по ссылке (футер + ссылка в галочке) и закрытие
     document.querySelectorAll('[data-cli-terms]').forEach(el => el.addEventListener('click', e => { e.preventDefault(); window.ClientApp.openTerms(); }));
