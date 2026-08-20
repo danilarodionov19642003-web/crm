@@ -308,6 +308,17 @@
     },
 
     email() { const u = this.user(); return u ? u.email : null; },
+    /**
+     * Постоянный ключ клиентского кабинета. Логин-email можно поменять, но
+     * снимки, заказы, графики и чеки продолжают ссылаться на исходный ключ.
+     * Старые сессии без portal_email безопасно используют текущий email.
+     */
+    portalEmail() {
+      const u = this.user();
+      if (!u) return null;
+      const appMeta = u.app_metadata || {};
+      return String(appMeta.portal_email || u.email || '').toLowerCase().trim() || null;
+    },
     rate()  { const u = this.user(); return u && u.user_metadata ? Number(u.user_metadata.rate) || 0 : 0; },
     name()  { const u = this.user(); return u && u.user_metadata && u.user_metadata.name || (u ? u.email : ''); },
     /** Роль выдаётся только сервером через app_metadata. */

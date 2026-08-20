@@ -971,6 +971,44 @@
     }
   }
 
+  /** Поставить клиентское уведомление через серверную таблицу контактов.
+   *  RPC сам размножает одну бизнес-событие по активным Telegram-контактам.
+   *  Старый прямой chat_id используется только как переходный fallback, если
+   *  новая миграция ещё не применена или RPC временно недоступен. */
+  async function queueClientTelegramNotification(row) {
+    if (!row || !row.client_email || !row.message) return false;
+    try {
+      const res = await _fetch(`${_supaUrl()}/rest/v1/rpc/queue_client_telegram_notification`, {
+        method: 'POST',
+        headers: { ...(_hdr()), 'Prefer': 'return=representation' },
+        body: JSON.stringify({
+          p_portal_email: row.client_email,
+          p_kind: row.kind || 'status_change',
+          p_message: row.message,
+          p_mentor_id: row.mentor_id || null,
+          p_profile_id: row.profile_id || null,
+          p_new_status: row.new_status || null,
+          p_old_status: row.old_status || null,
+          p_created_by: row.created_by || null
+        })
+      });
+      if (res.ok) {
+        const queued = Number(await res.json().catch(() => 0));
+        if (queued > 0 || !row.telegram_chat_id) return queued > 0;
+        console.warn('[CloudSync] no normalized Telegram recipients, using legacy fallback');
+      } else {
+        console.warn('[CloudSync] client Telegram fan-out failed', res.status,
+          await res.text().catch(() => ''));
+      }
+    } catch (error) {
+      console.warn('[CloudSync] client Telegram fan-out error', error);
+    }
+
+    if (!row.telegram_chat_id) return false;
+    const { created_by: _ignoredCreatedBy, ...legacyRow } = row;
+    return queueTelegramNotification(legacyRow);
+  }
+
   /* ---- Закрытие выполненного отклика в каноническом графике ----
      Вызывается при переходе аккаунта из «Запланировано» в рабочий статус.
      Ошибка отдельной таблицы не должна отменять сохранение основного CRM state. */
@@ -1044,6 +1082,7 @@
     flushOnHide,
     pushClientSnapshots,    // ручной триггер: после CRUD над clientPortals
     queueTelegramNotification, // пишем строку в notification_outbox (читает бот)
+    queueClientTelegramNotification, // fan-out по подключённым контактам клиента
     completeOutreachSlot,   // закрыть слот, когда аккаунт перешёл в работу
     downloadBackup,         // ручной бэкап на диск (используется кнопкой в шапке)
     getConflictLog: () => {

@@ -13,6 +13,11 @@ this bot. Apply it after `client-publication-approval.patch`. Client requests,
 channel post delivery, the CRM schedule, payment actions, and system
 notifications remain enabled.
 
+`client-telegram-team.patch` adds secure one-time cabinet linking for multiple
+Telegram contacts, status/schedule fan-out and the review-text approval dialog.
+The bot resolves contacts through dedicated RPCs and remains read-only for
+`crm_state`.
+
 Apply from the bot repository root with zero-context support:
 
 ```bash

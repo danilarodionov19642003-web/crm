@@ -21,6 +21,46 @@
     .rv-meta { font-size:12px; color:var(--text-mute); margin-top:8px; display:flex; gap:14px; flex-wrap:wrap; }
     .rv-actions { display:flex; gap:8px; margin-top:10px; }
     .rv-empty { text-align:center; padding:40px; color:var(--text-mute); }
+    .rv-approval-root { margin: 18px 0 20px; padding: 16px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+    .rv-approval-head { display:flex; align-items:flex-start; justify-content:space-between; gap:14px; }
+    .rv-approval-head h2 { margin:0; font-size:16px; }
+    .rv-approval-head p { margin:4px 0 0; color:var(--text-mute); font-size:12px; }
+    .rv-approval-pending { margin-top:10px; color:var(--accent); font-size:12px; font-weight:700; }
+    .rv-approval-compose { margin-top:14px; padding:14px; border:1px solid var(--border); border-radius:8px; background:rgba(255,255,255,.02); }
+    .rv-approval-compose__grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+    .rv-approval-compose label > span { display:block; margin-bottom:5px; color:var(--text-mute); font-size:11px; }
+    .rv-approval-compose__field { display:block; margin-top:10px; }
+    .rv-approval-compose textarea { width:100%; resize:vertical; min-height:120px; }
+    .rv-approval-compose__approver { margin-top:10px; padding:9px 10px; border-left:3px solid var(--green); background:rgba(34,197,94,.06); font-size:12px; }
+    .rv-approval-compose__approver.is-missing { border-color:var(--red); background:rgba(239,68,68,.06); color:var(--red); }
+    .rv-approval-compose__actions { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin-top:12px; }
+    .rv-approval-compose__actions span { color:var(--red); font-size:12px; }
+    .rv-approval-list { display:flex; flex-direction:column; gap:7px; margin-top:14px; }
+    .rv-approval-item { padding:11px 12px; border:1px solid var(--border); border-radius:8px; }
+    .rv-approval-item__head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+    .rv-approval-item__head strong,.rv-approval-item__head span { display:block; }
+    .rv-approval-item__head strong { font-size:13px; }
+    .rv-approval-item__head div > span { margin-top:2px; color:var(--text-mute); font-size:11px; }
+    .rv-approval-status { flex:none; padding:4px 7px; border-radius:999px; font-size:10px; font-weight:750; }
+    .rv-approval-status.is-pending { color:var(--accent); background:rgba(255,122,0,.12); }
+    .rv-approval-status.is-approved { color:var(--green); background:rgba(34,197,94,.12); }
+    .rv-approval-status.is-changes { color:var(--red); background:rgba(239,68,68,.12); }
+    .rv-approval-status.is-cancelled { color:var(--text-mute); background:rgba(127,127,127,.12); }
+    .rv-approval-item details { margin-top:7px; }
+    .rv-approval-item summary { color:var(--text-mute); font-size:11px; cursor:pointer; }
+    .rv-approval-item__body,.rv-approval-item__comment { margin-top:7px; white-space:pre-wrap; overflow-wrap:anywhere; font-size:12px; line-height:1.5; }
+    .rv-approval-item__comment { padding:8px 10px; border-left:3px solid var(--accent); background:rgba(255,122,0,.06); }
+    .rv-approval-item__foot { display:flex; align-items:center; flex-wrap:wrap; gap:8px 12px; margin-top:8px; color:var(--text-mute); font-size:10.5px; }
+    .rv-approval-item__foot .btn { margin-left:auto; }
+    .rv-approval-empty { padding:16px 0; color:var(--text-mute); font-size:12px; }
+    .rv-approval-empty.is-error { color:var(--red); }
+    @media (max-width:640px) {
+      .rv-approval-head { align-items:stretch; flex-direction:column; }
+      .rv-approval-head .btn { align-self:flex-start; }
+      .rv-approval-compose__grid { grid-template-columns:1fr; }
+      .rv-approval-item__head { flex-direction:column; }
+      .rv-approval-item__foot .btn { margin-left:0; }
+    }
   </style>
 </head>
 <body>
@@ -39,6 +79,8 @@
         </div>
 
         <section class="cards" id="rKpis"></section>
+
+        <section class="rv-approval-root" id="textApprovalsRoot" hidden></section>
 
         <div class="filters">
           <select id="fStatus" class="select">
@@ -65,11 +107,12 @@
   </div>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260820g"></script>
-  <script src="../js/supabase-client.js?v=20260726b"></script>
+  <script src="../js/app.js?v=20260820h"></script>
+  <script src="../js/supabase-client.js?v=20260820d"></script>
   <script src="../js/auth-gate.js?v=20260726a"></script>
-  <script src="../js/cloud-sync.js?v=20260820c"></script>
+  <script src="../js/cloud-sync.js?v=20260820d"></script>
   <script src="../js/reviews-sync.js?v=20260717a"></script>
+  <script src="../js/client-text-approvals.js?v=20260820a"></script>
   <script src="../components/sidebar.js?v=20260820b"></script>
   <script src="../components/header.js"></script>
 
@@ -86,6 +129,9 @@
     if (!isOwner) {
       document.getElementById('pgTitle').textContent = 'Мои отзывы';
       document.getElementById('pgSubtitle').textContent = 'Здесь видны отзывы, которые ты сдала на модерацию. Одобренные засчитываются в зарплату.';
+    }
+    if (isOwner && window.ClientTextApprovals) {
+      window.ClientTextApprovals.init({ Store, toast });
     }
 
     const filters = { status: 'pending', author: '', period: 'week', q: '' };

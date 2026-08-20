@@ -1804,11 +1804,11 @@
     /** Кладёт уведомление о смене статуса в notification_outbox (Supabase).
      *  Бот в /Users/mentori/tg/ опрашивает таблицу и шлёт сообщение клиенту в TG.
      *  Не падает если: нет CloudSync, нет clientPortal-владельца этой анкеты,
-     *  у клиента не задан telegram_chat_id, статус не изменился, или это
+     *  у кабинета нет подключённых Telegram-контактов, статус не изменился, или это
      *  создание записи со статусом «Запланировано» (первое назначение).
      */
     _queueStatusNotification(mentorId, profileId, newStatus, oldStatus, comment, isNew) {
-      if (!window.CloudSync || !window.CloudSync.queueTelegramNotification) return;
+      if (!window.CloudSync) return;
       // Не уведомляем если статус по факту не сменился
       if (!isNew && oldStatus === newStatus) return;
       // Не уведомляем при ПЕРВОМ назначении статуса «Запланировано» — это просто
@@ -1819,7 +1819,7 @@
       const portal = (this.state.clientPortals || [])
         .find(p => Array.isArray(p.mentorIds) && p.mentorIds.includes(mentorId));
       if (!portal) return;                          // нет привязанного клиента — ничего не шлём
-      if (!portal.telegramChatId) return;           // chat_id не задан — нечего слать
+      if (!portal.email) return;                    // нет стабильного ключа кабинета
 
       const mentor  = (this.state.mentors  || []).find(m => m.id === mentorId);
       const profile = (this.state.profiles || []).find(p => p.id === profileId);
@@ -1843,8 +1843,12 @@
       }
       if (comment) message += `\n\n💬 ${comment}`;
 
-      window.CloudSync.queueTelegramNotification({
+      const queue = window.CloudSync.queueClientTelegramNotification
+        || window.CloudSync.queueTelegramNotification;
+      if (!queue) return;
+      queue({
         client_email:      portal.email || null,
+        // Переходный fallback до применения серверной миграции.
         telegram_chat_id:  portal.telegramChatId,
         telegram_username: portal.telegramUsername || null,
         kind:              'status_change',

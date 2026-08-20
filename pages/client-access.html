@@ -53,6 +53,11 @@
       margin-top: 8px;
       font-size: 12px;
     }
+    .cp-tg-summary { display:flex; flex-direction:column; gap:4px; min-width:170px; }
+    .cp-tg-summary__row { display:flex; align-items:center; flex-wrap:wrap; gap:4px 6px; font-size:12px; }
+    .cp-tg-summary__approver { padding:2px 5px; border-radius:999px; background:rgba(255,122,0,.12); color:#ff7a00; font-size:9px; font-weight:700; }
+    .cp-login-email { display:block; overflow-wrap:anywhere; }
+    .cp-portal-key { display:block; margin-top:3px; color:var(--text-mute); font-size:10px; overflow-wrap:anywhere; }
     @media (max-width: 640px) {
       .cp-mentors { max-height: 280px; }
       .cp-mentor-fields { grid-template-columns: minmax(0, 1fr); }
@@ -161,10 +166,10 @@
   </div>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260820g"></script>
-  <script src="../js/supabase-client.js?v=20260726b"></script>
+  <script src="../js/app.js?v=20260820h"></script>
+  <script src="../js/supabase-client.js?v=20260820d"></script>
   <script src="../js/auth-gate.js?v=20260726a"></script>
-  <script src="../js/cloud-sync.js?v=20260820c"></script>
+  <script src="../js/cloud-sync.js?v=20260820d"></script>
   <script src="../components/sidebar.js?v=20260820b"></script>
   <script src="../components/header.js"></script>
 
@@ -174,6 +179,8 @@
     Store.load();
 
     let editingId = null;
+    let telegramMembers = [];
+    let loginByPortal = new Map();
 
     function escapeHtml(s) {
       return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
@@ -304,20 +311,30 @@
           .filter(Boolean)
           .map(m => `<span class="badge" style="background:#f0f5ff;color:#1d39c4;border:1px solid #adc6ff;padding:2px 8px;border-radius:999px;font-size:12px">${escapeHtml(m.code)}</span>`)
           .join(' ');
-        // TG: показываем @username если есть, и зелёный значок если chat_id задан
-        const tgChat = p.telegramChatId;
-        const tgUser = p.telegramUsername;
+        const normalizedMembers = telegramMembers.filter(member =>
+          String(member.portal_email || '').toLowerCase() === String(p.email || '').toLowerCase()
+        );
         let tgCell;
-        if (tgChat) {
-          tgCell = `<span title="Уведомления будут отправляться" style="color:#389e0d;font-weight:600">✓ ${tgUser ? '@' + escapeHtml(tgUser) : escapeHtml(String(tgChat))}</span>`;
-        } else if (tgUser) {
-          tgCell = `<span title="Нет chat_id — клиент должен написать /start боту" style="color:#fa8c16">@${escapeHtml(tgUser)} <small>(нет chat_id)</small></span>`;
+        if (normalizedMembers.length) {
+          tgCell = `<div class="cp-tg-summary">${normalizedMembers.map(member => `
+            <div class="cp-tg-summary__row">
+              <span style="color:#389e0d;font-weight:700">✓</span>
+              <span>${escapeHtml(member.contact_label || (member.telegram_username ? '@' + member.telegram_username : 'Контакт'))}</span>
+              ${member.telegram_username ? `<span style="color:var(--text-mute)">@${escapeHtml(member.telegram_username)}</span>` : ''}
+              ${member.is_text_approver ? '<span class="cp-tg-summary__approver">согласует тексты</span>' : ''}
+            </div>`).join('')}</div>`;
+        } else if (p.telegramChatId) {
+          tgCell = `<span title="Старое подключение будет перенесено автоматически" style="color:#fa8c16;font-weight:600">Старый контакт · ожидает перенос</span>`;
         } else {
-          tgCell = `<span style="color:var(--text-mute)">— нет —</span>`;
+          tgCell = `<span style="color:var(--text-mute)">Подключается клиентом в кабинете</span>`;
         }
+        const loginEmail = loginByPortal.get(String(p.email || '').toLowerCase()) || p.email;
+        const loginCell = String(loginEmail || '').toLowerCase() === String(p.email || '').toLowerCase()
+          ? `<code class="cp-login-email">${escapeHtml(loginEmail)}</code>`
+          : `<code class="cp-login-email">${escapeHtml(loginEmail)}</code><span class="cp-portal-key">Ключ данных: ${escapeHtml(p.email)}</span>`;
         return `<tr>
           <td>${escapeHtml(p.name || '—')}</td>
-          <td><code>${escapeHtml(p.email)}</code></td>
+          <td>${loginCell}</td>
           <td>${codes || '<span style="color:var(--text-mute)">— нет —</span>'}</td>
           <td>${tgCell}</td>
           <td>${escapeHtml(p.note || '')}</td>
@@ -374,7 +391,7 @@
       editingId = id;
       document.getElementById('cpModalTitle').textContent = 'Редактирование доступа';
       document.getElementById('cpName').value = p.name || '';
-      document.getElementById('cpEmail').value = p.email || '';
+      document.getElementById('cpEmail').value = loginByPortal.get(String(p.email || '').toLowerCase()) || p.email || '';
       document.getElementById('cpEmail').disabled = true; // email = первичный ключ снимка
       document.getElementById('cpPassword').value = '';
       document.getElementById('cpPassword').placeholder = 'Оставь пустым чтобы не менять. Введи новый чтобы сбросить.';
@@ -413,6 +430,21 @@
         throw new Error(msg);
       }
       return data;
+    }
+
+    async function loadAccessMeta() {
+      try {
+        const [members, logins] = await Promise.all([
+          callAuthRpc('list_client_telegram_members_for_owner', { p_portal_email: null }),
+          callAuthRpc('list_client_login_accounts', {})
+        ]);
+        telegramMembers = Array.isArray(members) ? members : [];
+        loginByPortal = new Map((Array.isArray(logins) ? logins : []).map(item => [
+          String(item.portal_email || '').toLowerCase(), item.login_email
+        ]));
+      } catch (error) {
+        console.warn('[client-access] contact metadata unavailable', error);
+      }
     }
 
     document.getElementById('cpSave').addEventListener('click', async () => {
@@ -525,6 +557,7 @@
     window.addEventListener('store:reloaded', render);
 
     render();
+    loadAccessMeta().then(render);
   });
   </script>
 </body>

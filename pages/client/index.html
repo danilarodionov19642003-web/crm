@@ -16,7 +16,7 @@
   <meta http-equiv="Expires" content="0"/>
   <title>Личный кабинет — Mentori</title>
   <link rel="stylesheet" href="../../css/styles.css?v=20260628a"/>
-  <link rel="stylesheet" href="client.css?v=20260820j"/>
+  <link rel="stylesheet" href="client.css?v=20260820k"/>
 </head>
 <body class="cli-body">
   <div data-cli-header></div>
@@ -70,6 +70,18 @@
         <h2 class="cli-section-title">Календарь</h2>
         <div class="cli-cal" data-cli-calendar></div>
 
+        <section class="cli-settings" data-cli-settings>
+          <div class="cli-settings__head">
+            <div>
+              <h2 class="cli-section-title">Настройки и уведомления</h2>
+              <p class="cli-settings__sub">Telegram-контакты и общий вход в кабинет</p>
+            </div>
+          </div>
+          <div data-cli-settings-body>
+            <div class="cli-empty">Загрузка…</div>
+          </div>
+        </section>
+
         <div data-cli-feed style="margin-top:22px"></div>
       </div>
     </div>
@@ -119,11 +131,12 @@
     </div>
   </div>
 
-  <script src="../../js/supabase-client.js?v=20260726b"></script>
+  <script src="../../js/supabase-client.js?v=20260820d"></script>
   <script src="./legal-content.js?v=20260713d"></script>
   <script src="./remainder-calculator.js?v=20260713a"></script>
   <script src="./order-cart.js?v=20260820b"></script>
-  <script src="./client-app.js?v=20260820k"></script>
+  <script src="./client-app.js?v=20260820n"></script>
+  <script src="./client-settings.js?v=20260820b"></script>
   <script>
   (async () => {
     const ok = await window.ClientApp.requireLogin();
@@ -154,6 +167,7 @@
     window.ClientApp.renderRemainder(snap && snap.payload, myOrders);
     document.querySelectorAll('[data-cli-remain-close]').forEach(el => el.addEventListener('click', () => window.ClientApp.closeRemainModal()));
     window.ClientApp.renderMyOrders(myOrders);
+    await window.ClientSettings.init();
     await window.ClientApp.handlePaymentReturn();
     // Условия заказа — открытие модалки по ссылке (футер + ссылка в галочке) и закрытие
     document.querySelectorAll('[data-cli-terms]').forEach(el => el.addEventListener('click', e => { e.preventDefault(); window.ClientApp.openTerms(); }));

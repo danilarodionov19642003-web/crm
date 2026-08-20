@@ -43,6 +43,6 @@ assert.ok(searchable.includes(normalizeSearchText('25 1')),
 const statuses = fs.readFileSync(path.join(root, 'pages/statuses.html'), 'utf8');
 assert.match(statuses, /filters\.q = normalizeSearchText\(e\.target\.value\)/);
 assert.match(statuses, /const blob = normalizeSearchText\(/);
-assert.match(statuses, /app\.js\?v=20260820g/);
+assert.match(statuses, /app\.js\?v=20260820h/);
 
 console.log('account search normalization: OK');

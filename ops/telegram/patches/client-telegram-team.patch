@@ -1,0 +1,492 @@
+diff --git a/backend/bot.py b/backend/bot.py
+index 849c7d9..8714140 100644
+--- a/backend/bot.py
++++ b/backend/bot.py
+@@ -10,6 +10,7 @@
+ from __future__ import annotations
+ 
+ import asyncio
++import html
+ import logging
+ from datetime import datetime, timedelta, timezone
+ 
+@@ -38,6 +39,7 @@ from .config import settings
+ from .database import AsyncSessionLocal, init_db
+ from . import models
+ from . import client_ui
++from . import crm_client
+ from . import schedule_reminder
+ from .schedule_states import ScheduleTimeFSM
+ 
+@@ -942,6 +944,10 @@ def make_bot() -> Bot:
+ dp = Dispatcher(storage=MemoryStorage())
+ 
+ 
++class TextApprovalFSM(StatesGroup):
++    awaiting_comment = State()
++
++
+ # ─────────────────────────────────────────────
+ # Helpers
+ # ─────────────────────────────────────────────
+@@ -976,8 +982,47 @@ async def _show_view(view: str, bot: Bot, chat_id: int) -> None:
+ async def cmd_start(m: Message, bot: Bot, state: FSMContext, command: CommandObject = None):
+     owner = await get_owner_chat_id()
+ 
+-    # ── Лид-магнит: вход по deep-link ?start=razbor (из рассылки) ──
+     arg = (command.args or "").strip().lower() if command else ""
++
++    # Secure one-time Telegram link created inside an authenticated cabinet.
++    # This branch must run before the ordinary client/lead routing.
++    if arg.startswith("link_") and m.chat.type == "private":
++        if _is_owner(m.chat.id, owner):
++            await m.answer("Эта ссылка предназначена для Telegram-контакта клиента.")
++            return
++        token = arg[5:]
++        result = await crm_client.link_client_telegram_member(
++            token=token,
++            telegram_user_id=m.from_user.id,
++            telegram_chat_id=m.chat.id,
++            username=m.from_user.username,
++            first_name=m.from_user.first_name,
++            last_name=m.from_user.last_name,
++        )
++        if not result.get("ok"):
++            reason = str(result.get("reason") or "")
++            if "INVITE_ALREADY_USED" in reason:
++                message = "Эта ссылка уже использована. Создайте новую в личном кабинете."
++            elif "INVITE_EXPIRED" in reason or "INVITE_NOT_FOUND" in reason:
++                message = "Ссылка устарела. Создайте новую в личном кабинете."
++            elif "TELEGRAM_ALREADY_LINKED" in reason:
++                message = "Этот Telegram уже подключён к другому кабинету."
++            elif "MEMBER_LIMIT_REACHED" in reason:
++                message = "К кабинету уже подключено максимальное число контактов."
++            else:
++                message = "Не удалось подключить Telegram. Создайте новую ссылку и повторите."
++            await m.answer(message)
++            return
++        await register_bot_user(m, is_owner=False)
++        await state.clear()
++        label = result.get("contact_label") or m.from_user.first_name or "контакт"
++        role_note = ("\nВы отмечены как контакт для согласования текстов."
++                     if result.get("is_text_approver") else "")
++        await m.answer(f"✅ Telegram подключён. Контакт: <b>{html.escape(str(label))}</b>.{role_note}")
++        await client_ui.entry_start(m, bot, state)
++        return
++
++    # ── Лид-магнит: вход по deep-link ?start=razbor (из рассылки) ──
+     if arg == "razbor" and not _is_owner(m.chat.id, owner):
+         await register_bot_user(m, is_owner=False)
+         await _delete_msg(m)
+@@ -1489,6 +1534,145 @@ async def _safe_edit_corder(cb: CallbackQuery, text: str) -> None:
+         log.warning("corder edit_text failed", exc_info=True)
+ 
+ 
++def _text_approval_markup(request_id: int) -> InlineKeyboardMarkup:
++    return InlineKeyboardMarkup(inline_keyboard=[[
++        InlineKeyboardButton(text="✓ Согласовать", callback_data=f"ctxt:a:{request_id}"),
++        InlineKeyboardButton(text="✏ Нужны правки", callback_data=f"ctxt:r:{request_id}"),
++    ]])
++
++
++async def _finish_text_approval_message(
++    bot: Bot,
++    chat_id: int,
++    message_id: int,
++    original_html: str,
++    tail: str,
++) -> None:
++    try:
++        await bot.edit_message_text(
++            chat_id=chat_id,
++            message_id=message_id,
++            text=f"{original_html}\n\n{tail}",
++            reply_markup=None,
++        )
++    except Exception:
++        log.warning("text approval edit failed", exc_info=True)
++
++
++@dp.callback_query(F.data.startswith("ctxt:"))
++async def on_client_text_approval_callback(
++    cb: CallbackQuery,
++    bot: Bot,
++    state: FSMContext,
++) -> None:
++    """The primary client contact approves text or starts a correction reply."""
++    parts = (cb.data or "").split(":")
++    if len(parts) != 3 or parts[1] not in ("a", "r", "x"):
++        await cb.answer()
++        return
++    try:
++        request_id = int(parts[2])
++    except ValueError:
++        await cb.answer()
++        return
++    if not cb.message or cb.message.chat.type != "private":
++        await cb.answer("Откройте сообщение в личном чате с ботом.", show_alert=True)
++        return
++
++    original_html = getattr(cb.message, "html_text", None) or cb.message.text or ""
++    if parts[1] == "x":
++        await state.clear()
++        try:
++            await cb.message.edit_reply_markup(reply_markup=_text_approval_markup(request_id))
++        except Exception:
++            pass
++        await cb.answer("Ввод правок отменён")
++        return
++
++    if parts[1] == "r":
++        await state.set_state(TextApprovalFSM.awaiting_comment)
++        await state.update_data(
++            text_approval_request_id=request_id,
++            text_approval_message_id=cb.message.message_id,
++            text_approval_original_html=original_html,
++        )
++        try:
++            await cb.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
++                InlineKeyboardButton(
++                    text="Отменить ввод правок",
++                    callback_data=f"ctxt:x:{request_id}",
++                )
++            ]]))
++        except Exception:
++            pass
++        await cb.message.answer("Напишите одним сообщением, что нужно изменить в тексте.")
++        await cb.answer()
++        return
++
++    result = await crm_client.resolve_client_text_approval(
++        request_id=request_id,
++        decision="approved",
++        telegram_user_id=cb.from_user.id,
++        telegram_chat_id=cb.message.chat.id,
++    )
++    if not result.get("ok"):
++        reason = str(result.get("reason") or "")
++        message = ("Этот запрос уже обработан."
++                   if "ALREADY_RESOLVED" in reason
++                   else "Подтвердить может только назначенный контакт.")
++        await cb.answer(message, show_alert=True)
++        return
++    await state.clear()
++    await _finish_text_approval_message(
++        bot, cb.message.chat.id, cb.message.message_id,
++        original_html, "✅ <b>Текст согласован</b>",
++    )
++    await cb.answer("Текст согласован")
++
++
++@dp.message(TextApprovalFSM.awaiting_comment)
++async def on_client_text_approval_comment(m: Message, bot: Bot, state: FSMContext) -> None:
++    comment = (m.text or m.caption or "").strip()
++    if not comment:
++        await m.answer("Напишите правки текстом одним сообщением.")
++        return
++    if len(comment) > 1500:
++        await m.answer("Комментарий слишком длинный. Сократите его до 1500 символов.")
++        return
++    data = await state.get_data()
++    request_id = data.get("text_approval_request_id")
++    message_id = data.get("text_approval_message_id")
++    original_html = data.get("text_approval_original_html") or ""
++    if not request_id:
++        await state.clear()
++        await m.answer("Запрос устарел. Нажмите кнопку под текстом ещё раз.")
++        return
++    result = await crm_client.resolve_client_text_approval(
++        request_id=int(request_id),
++        decision="changes_requested",
++        telegram_user_id=m.from_user.id,
++        telegram_chat_id=m.chat.id,
++        comment=comment,
++    )
++    if not result.get("ok"):
++        await state.clear()
++        reason = str(result.get("reason") or "")
++        await m.answer("Запрос уже обработан." if "ALREADY_RESOLVED" in reason
++                       else "Отправить правки может только назначенный контакт.")
++        return
++    await state.clear()
++    try:
++        await m.delete()
++    except Exception:
++        pass
++    if message_id:
++        await _finish_text_approval_message(
++            bot, m.chat.id, int(message_id), original_html,
++            "✏️ <b>Правки отправлены менеджеру</b>",
++        )
++    await m.answer("✅ Комментарий с правками отправлен менеджеру.")
++
++
+ @dp.callback_query(F.data.startswith("cpub:"))
+ async def on_client_publication_callback(cb: CallbackQuery) -> None:
+     """Owner approves or rejects the publication date selected in a client cabinet."""
+diff --git a/backend/crm_client.py b/backend/crm_client.py
+index 5011ef6..9d5602a 100644
+--- a/backend/crm_client.py
++++ b/backend/crm_client.py
+@@ -235,23 +235,141 @@ async def resolve_client_publication_request(request_id: int, accepted: bool) ->
+         return {"ok": False, "reason": str(e)}
+ 
+ 
++async def _rpc(name: str, payload: dict[str, Any]) -> tuple[bool, Any]:
++    """Call a service-role RPC without ever touching the CRM blob."""
++    if not settings.supabase_url or not settings.supabase_service_key:
++        return False, {"message": "CRM_NOT_CONFIGURED"}
++    url = f"{settings.supabase_url}/rest/v1/rpc/{name}"
++    try:
++        async with aiohttp.ClientSession(timeout=REST_TIMEOUT) as session:
++            async with session.post(url, headers=_headers(), json=payload) as response:
++                body = await response.json(content_type=None)
++                if response.status != 200:
++                    log.warning("rpc %s %s: %s", name, response.status, body)
++                    return False, body
++                return True, body
++    except Exception as exc:
++        log.warning("rpc %s error: %s", name, exc)
++        return False, {"message": str(exc)}
++
++
++async def link_client_telegram_member(
++    token: str,
++    telegram_user_id: int,
++    telegram_chat_id: int,
++    username: str | None = None,
++    first_name: str | None = None,
++    last_name: str | None = None,
++) -> dict[str, Any]:
++    ok, body = await _rpc("link_client_telegram_member", {
++        "p_token": token,
++        "p_telegram_user_id": int(telegram_user_id),
++        "p_telegram_chat_id": int(telegram_chat_id),
++        "p_username": username,
++        "p_first_name": first_name,
++        "p_last_name": last_name,
++    })
++    if ok and isinstance(body, dict):
++        return body
++    reason = ""
++    if isinstance(body, dict):
++        reason = str(body.get("message") or body.get("details") or "")
++    return {"ok": False, "reason": reason or "LINK_FAILED"}
++
++
++async def resolve_client_telegram_context(
++    telegram_user_id: int,
++    telegram_chat_id: int,
++) -> dict[str, Any] | None:
++    ok, body = await _rpc("resolve_client_telegram_context", {
++        "p_telegram_user_id": int(telegram_user_id),
++        "p_telegram_chat_id": int(telegram_chat_id),
++    })
++    return body if ok and isinstance(body, dict) and body.get("portal_email") else None
++
++
++async def get_client_telegram_recipients(
++    portal_email: str | None = None,
++    kind: str = "status",
++) -> list[dict[str, Any]]:
++    ok, body = await _rpc("get_client_telegram_recipients", {
++        "p_portal_email": portal_email,
++        "p_kind": kind,
++    })
++    return body if ok and isinstance(body, list) else []
++
++
++async def resolve_client_text_approval(
++    request_id: int,
++    decision: str,
++    telegram_user_id: int,
++    telegram_chat_id: int,
++    comment: str | None = None,
++) -> dict[str, Any]:
++    ok, body = await _rpc("resolve_client_text_approval", {
++        "p_request_id": int(request_id),
++        "p_decision": decision,
++        "p_telegram_user_id": int(telegram_user_id),
++        "p_telegram_chat_id": int(telegram_chat_id),
++        "p_comment": comment,
++    })
++    if ok and isinstance(body, dict):
++        return body
++    reason = ""
++    if isinstance(body, dict):
++        reason = str(body.get("message") or body.get("details") or "")
++    return {"ok": False, "reason": reason or "RESOLVE_FAILED"}
++
++
+ async def list_clients_with_tg() -> list[dict[str, Any]]:
+-    """Список clientPortals у которых задан telegramChatId.
+-    Для рассылки постов канала + личного кабинета."""
++    """One broadcast row per linked Telegram contact, with legacy fallback."""
+     state = await fetch_crm_state()
+     if not state:
+         return []
+     portals = state.get("clientPortals") or []
++    by_email = {
++        str(portal.get("email") or "").strip().lower(): portal
++        for portal in portals if portal.get("email")
++    }
++    recipients = await get_client_telegram_recipients(kind="broadcast")
+     out = []
++    seen: set[int] = set()
++    for recipient in recipients:
++        try:
++            chat_id = int(recipient.get("telegram_chat_id"))
++        except (TypeError, ValueError):
++            continue
++        if chat_id in seen:
++            continue
++        seen.add(chat_id)
++        portal = by_email.get(str(recipient.get("portal_email") or "").lower()) or {}
++        out.append({
++            "id": portal.get("id"),
++            "name": portal.get("name") or recipient.get("contact_label") or "",
++            "email": portal.get("email") or recipient.get("portal_email") or "",
++            "chat_id": chat_id,
++            "username": recipient.get("telegram_username") or "",
++            "mentor_ids": list(portal.get("mentorIds") or []),
++        })
++
++    # Before the migration is installed, or for a malformed legacy row, keep
++    # the old connection alive without duplicating normalized recipients.
+     for p in portals:
+         chat_id = p.get("telegramChatId")
+         if not chat_id:
+             continue
++        try:
++            chat_id = int(chat_id)
++        except (TypeError, ValueError):
++            continue
++        if chat_id in seen:
++            continue
++        seen.add(chat_id)
+         out.append({
+             "id": p.get("id"),
+             "name": p.get("name") or "",
+             "email": p.get("email") or "",
+-            "chat_id": int(chat_id),
++            "chat_id": chat_id,
+             "username": p.get("telegramUsername") or "",
+             "mentor_ids": list(p.get("mentorIds") or []),
+         })
+@@ -259,13 +377,27 @@ async def list_clients_with_tg() -> list[dict[str, Any]]:
+ 
+ 
+ async def find_client_by_chat_id(chat_id: int) -> dict[str, Any] | None:
+-    """Ищет clientPortal по telegramChatId. Возвращает запись или None."""
++    """Resolve a normalized Telegram member, then map it to clientPortal."""
+     state = await fetch_crm_state()
+     if not state:
+         return None
++    context = await resolve_client_telegram_context(chat_id, chat_id)
++    if context:
++        portal_email = str(context.get("portal_email") or "").lower()
++        for portal in (state.get("clientPortals") or []):
++            if str(portal.get("email") or "").lower() == portal_email:
++                result = dict(portal)
++                result["telegramMember"] = context
++                return result
++        return None
++
++    # Transition fallback until every legacy chat is normalized.
+     for p in (state.get("clientPortals") or []):
+-        if p.get("telegramChatId") and int(p["telegramChatId"]) == chat_id:
+-            return p
++        try:
++            if p.get("telegramChatId") and int(p["telegramChatId"]) == chat_id:
++                return p
++        except (TypeError, ValueError):
++            continue
+     return None
+ 
+ 
+@@ -392,16 +524,12 @@ async def build_client_view(chat_id: int) -> dict[str, Any] | None:
+     по каждой — заказано/сделано/в работе/готово, остаток к оплате.
+     Возвращает None если клиент не найден.
+     """
++    portal = await find_client_by_chat_id(chat_id)
++    if not portal:
++        return None
+     state = await fetch_crm_state()
+     if not state:
+         return None
+-    portal = None
+-    for p in (state.get("clientPortals") or []):
+-        if p.get("telegramChatId") and int(p["telegramChatId"]) == chat_id:
+-            portal = p
+-            break
+-    if not portal:
+-        return None
+ 
+     mentor_ids = set(portal.get("mentorIds") or [])
+     mentors = [m for m in (state.get("mentors") or []) if m.get("id") in mentor_ids]
+diff --git a/backend/notifier.py b/backend/notifier.py
+index 1f52ae1..f92968d 100644
+--- a/backend/notifier.py
++++ b/backend/notifier.py
+@@ -143,6 +143,12 @@ async def _process_one(session: aiohttp.ClientSession, row: dict[str, Any]) -> N
+             {"text": "✓ Подтвердить дату", "callback_data": f"cpub:c:{request_id}"},
+             {"text": "✕ Отклонить", "callback_data": f"cpub:r:{request_id}"},
+         ]]}
++    elif row.get("kind") == "client_text_approval" and row.get("action_ref"):
++        request_id = str(row["action_ref"])
++        reply_markup = {"inline_keyboard": [[
++            {"text": "✓ Согласовать", "callback_data": f"ctxt:a:{request_id}"},
++            {"text": "✏ Нужны правки", "callback_data": f"ctxt:r:{request_id}"},
++        ]]}
+     try:
+         await bot_notify.send_order_status_message(int(chat_id), message, reply_markup=reply_markup)
+         await _mark_sent(session, row_id)
+diff --git a/backend/schedule_reminder.py b/backend/schedule_reminder.py
+index 0a66c00..5012b11 100644
+--- a/backend/schedule_reminder.py
++++ b/backend/schedule_reminder.py
+@@ -407,6 +407,27 @@ async def send_client_poll(bot: Bot, client: dict[str, Any], today_iso: str) ->
+         return False
+ 
+ 
++async def _schedule_recipient_chats(client: dict[str, Any]) -> list[int]:
++    """All linked contacts that opted into schedule notifications."""
++    recipients = await crm_client.get_client_telegram_recipients(
++        client.get("portalEmail"), "schedule"
++    ) if client.get("portalEmail") else []
++    chat_ids: list[int] = []
++    for recipient in recipients:
++        try:
++            chat_id = int(recipient.get("telegram_chat_id"))
++        except (TypeError, ValueError):
++            continue
++        if chat_id > 0 and chat_id not in chat_ids:
++            chat_ids.append(chat_id)
++    if not chat_ids and client.get("telegramChatId"):
++        try:
++            chat_ids.append(int(client["telegramChatId"]))
++        except (TypeError, ValueError):
++            pass
++    return chat_ids
++
++
+ # ── Уведомления владельцу ────────────────────────────────────────────────────
+ 
+ async def _notify_owner_final(bot: Bot, owner_chat_id: int | None, *,
+@@ -982,11 +1003,11 @@ async def run_morning_now(bot: Bot, owner_chat_id: int,
+             )
+     polls = 0
+     for c in clients_today:
+-        if not c.get("telegramChatId"):
+-            continue
+-        if await send_client_poll(bot, c, today_iso):
+-            polls += 1
+-        await asyncio.sleep(0.2)
++        for chat_id in await _schedule_recipient_chats(c):
++            recipient_client = {**c, "telegramChatId": chat_id}
++            if await send_client_poll(bot, recipient_client, today_iso):
++                polls += 1
++            await asyncio.sleep(0.2)
+     await _set_last_sent_date(today_iso)
+     return (len(clients_today), polls)
+ 

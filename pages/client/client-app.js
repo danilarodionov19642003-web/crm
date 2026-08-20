@@ -97,7 +97,7 @@
   async function loadSnapshot() {
     const token = accessToken();
     if (!token) return null;
-    const email = (Auth.email() || '').toLowerCase();
+    const email = (Auth.portalEmail() || '').toLowerCase();
     if (!email) return null;
     // Ходим под JWT: RLS на client_snapshots отдаст только строку,
     // где email = auth.jwt() ->> 'email'. Указываем фильтр для надёжности.
@@ -120,7 +120,7 @@
 
   async function loadMyPublicationRequests() {
     const token = accessToken();
-    const email = (Auth.email() || '').toLowerCase();
+    const email = (Auth.portalEmail() || '').toLowerCase();
     if (!token || !email) return [];
     try {
       const url = `${_url()}/rest/v1/client_publication_requests`
@@ -170,7 +170,7 @@
 
   async function loadMyOutreachSlots() {
     const token = accessToken();
-    const email = (Auth.email() || '').toLowerCase();
+    const email = (Auth.portalEmail() || '').toLowerCase();
     if (!token || !email) return null;
     try {
       const url = `${_url()}/rest/v1/client_outreach_slots`
@@ -1979,7 +1979,7 @@
 
     btn.disabled = true;
     btn.textContent = payment_method === 'card_transfer' ? 'Отправляю чек…' : 'Создаю платёж…';
-    const email = (Auth.email() || '').toLowerCase();
+    const email = (Auth.portalEmail() || '').toLowerCase();
     const order = await submitOrder({
       client_email: email,
       client_name: Auth.name() || email,
@@ -2080,7 +2080,7 @@
   /* ---- Мои заказы (история заявок клиента со статусом) ---- */
   async function loadMyOrders() {
     const token = accessToken();
-    const email = (Auth.email() || '').toLowerCase();
+    const email = (Auth.portalEmail() || '').toLowerCase();
     if (!token || !email) return [];
     try {
       const url = `${_url()}/rest/v1/client_orders`
@@ -2387,7 +2387,7 @@
 
     btn.disabled = true;
     btn.textContent = 'Создаю платёж…';
-    const email = (Auth.email() || '').toLowerCase();
+    const email = (Auth.portalEmail() || '').toLowerCase();
     const order = await submitOrder({
       client_email: email,
       client_name: Auth.name() || email,
