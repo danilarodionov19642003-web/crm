@@ -21,45 +21,18 @@
     .rv-meta { font-size:12px; color:var(--text-mute); margin-top:8px; display:flex; gap:14px; flex-wrap:wrap; }
     .rv-actions { display:flex; gap:8px; margin-top:10px; }
     .rv-empty { text-align:center; padding:40px; color:var(--text-mute); }
-    .rv-approval-root { margin: 18px 0 20px; padding: 16px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
-    .rv-approval-head { display:flex; align-items:flex-start; justify-content:space-between; gap:14px; }
-    .rv-approval-head h2 { margin:0; font-size:16px; }
-    .rv-approval-head p { margin:4px 0 0; color:var(--text-mute); font-size:12px; }
-    .rv-approval-pending { margin-top:10px; color:var(--accent); font-size:12px; font-weight:700; }
-    .rv-approval-compose { margin-top:14px; padding:14px; border:1px solid var(--border); border-radius:8px; background:rgba(255,255,255,.02); }
-    .rv-approval-compose__grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
-    .rv-approval-compose label > span { display:block; margin-bottom:5px; color:var(--text-mute); font-size:11px; }
-    .rv-approval-compose__field { display:block; margin-top:10px; }
-    .rv-approval-compose textarea { width:100%; resize:vertical; min-height:120px; }
-    .rv-approval-compose__approver { margin-top:10px; padding:9px 10px; border-left:3px solid var(--green); background:rgba(34,197,94,.06); font-size:12px; }
-    .rv-approval-compose__approver.is-missing { border-color:var(--red); background:rgba(239,68,68,.06); color:var(--red); }
-    .rv-approval-compose__actions { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin-top:12px; }
-    .rv-approval-compose__actions span { color:var(--red); font-size:12px; }
-    .rv-approval-list { display:flex; flex-direction:column; gap:7px; margin-top:14px; }
-    .rv-approval-item { padding:11px 12px; border:1px solid var(--border); border-radius:8px; }
-    .rv-approval-item__head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
-    .rv-approval-item__head strong,.rv-approval-item__head span { display:block; }
-    .rv-approval-item__head strong { font-size:13px; }
-    .rv-approval-item__head div > span { margin-top:2px; color:var(--text-mute); font-size:11px; }
-    .rv-approval-status { flex:none; padding:4px 7px; border-radius:999px; font-size:10px; font-weight:750; }
-    .rv-approval-status.is-pending { color:var(--accent); background:rgba(255,122,0,.12); }
-    .rv-approval-status.is-approved { color:var(--green); background:rgba(34,197,94,.12); }
-    .rv-approval-status.is-changes { color:var(--red); background:rgba(239,68,68,.12); }
-    .rv-approval-status.is-cancelled { color:var(--text-mute); background:rgba(127,127,127,.12); }
-    .rv-approval-item details { margin-top:7px; }
-    .rv-approval-item summary { color:var(--text-mute); font-size:11px; cursor:pointer; }
-    .rv-approval-item__body,.rv-approval-item__comment { margin-top:7px; white-space:pre-wrap; overflow-wrap:anywhere; font-size:12px; line-height:1.5; }
-    .rv-approval-item__comment { padding:8px 10px; border-left:3px solid var(--accent); background:rgba(255,122,0,.06); }
-    .rv-approval-item__foot { display:flex; align-items:center; flex-wrap:wrap; gap:8px 12px; margin-top:8px; color:var(--text-mute); font-size:10.5px; }
-    .rv-approval-item__foot .btn { margin-left:auto; }
-    .rv-approval-empty { padding:16px 0; color:var(--text-mute); font-size:12px; }
-    .rv-approval-empty.is-error { color:var(--red); }
+    .rv-client-approval { margin-top:10px; padding:10px 12px; border:1px solid var(--border); border-radius:8px; background:rgba(255,255,255,.018); }
+    .rv-client-approval__head { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+    .rv-client-approval__title { color:var(--text-mute); font-size:11px; font-weight:700; text-transform:uppercase; }
+    .rv-client-approval__status { padding:4px 7px; border-radius:999px; font-size:10px; font-weight:750; }
+    .rv-client-approval__status.is-pending,.rv-client-approval__status.is-portal-only { color:var(--accent); background:rgba(255,122,0,.12); }
+    .rv-client-approval__status.is-approved { color:var(--green); background:rgba(34,197,94,.12); }
+    .rv-client-approval__status.is-changes,.rv-client-approval__status.is-missing { color:var(--red); background:rgba(239,68,68,.12); }
+    .rv-client-approval__status.is-cancelled { color:var(--text-mute); background:rgba(127,127,127,.12); }
+    .rv-client-approval__meta { margin-top:6px; color:var(--text-mute); font-size:11px; }
+    .rv-client-approval__comment { margin-top:7px; padding:8px 10px; border-left:3px solid var(--accent); background:rgba(255,122,0,.06); white-space:pre-wrap; overflow-wrap:anywhere; font-size:12px; }
     @media (max-width:640px) {
-      .rv-approval-head { align-items:stretch; flex-direction:column; }
-      .rv-approval-head .btn { align-self:flex-start; }
-      .rv-approval-compose__grid { grid-template-columns:1fr; }
-      .rv-approval-item__head { flex-direction:column; }
-      .rv-approval-item__foot .btn { margin-left:0; }
+      .rv-actions { flex-wrap:wrap; }
     }
   </style>
 </head>
@@ -79,8 +52,6 @@
         </div>
 
         <section class="cards" id="rKpis"></section>
-
-        <section class="rv-approval-root" id="textApprovalsRoot" hidden></section>
 
         <div class="filters">
           <select id="fStatus" class="select">
@@ -107,12 +78,12 @@
   </div>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260820i"></script>
+  <script src="../js/app.js?v=20260820k"></script>
   <script src="../js/supabase-client.js?v=20260820d"></script>
   <script src="../js/auth-gate.js?v=20260726a"></script>
   <script src="../js/cloud-sync.js?v=20260820d"></script>
   <script src="../js/reviews-sync.js?v=20260717a"></script>
-  <script src="../js/client-text-approvals.js?v=20260820a"></script>
+  <script src="../js/client-text-approvals.js?v=20260820b"></script>
   <script src="../components/sidebar.js?v=20260820b"></script>
   <script src="../components/header.js"></script>
 
@@ -130,11 +101,9 @@
       document.getElementById('pgTitle').textContent = 'Мои отзывы';
       document.getElementById('pgSubtitle').textContent = 'Здесь видны отзывы, которые ты сдала на модерацию. Одобренные засчитываются в зарплату.';
     }
-    if (isOwner && window.ClientTextApprovals) {
-      window.ClientTextApprovals.init({ Store, toast });
-    }
-
     const filters = { status: 'pending', author: '', period: 'week', q: '' };
+    let approvalByReview = new Map();
+    let approvalLoadFailed = false;
 
     function escapeHtml(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
@@ -258,6 +227,53 @@
       return `<span class="badge badge--orange"><span class="dot"></span>На модерации</span>`;
     }
 
+    function clientApprovalHtml(review) {
+      const row = approvalByReview.get(String(review.id));
+      if (!review.clientApprovalRequired && !row) return '';
+      if (approvalLoadFailed && !row) {
+        return `<div class="rv-client-approval">
+          <div class="rv-client-approval__head">
+            <span class="rv-client-approval__title">Согласование клиента</span>
+            <span class="rv-client-approval__status is-missing">Статус временно недоступен</span>
+          </div>
+        </div>`;
+      }
+      const meta = window.ClientTextApprovals
+        ? window.ClientTextApprovals.statusMeta(row)
+        : { label: 'Не отправлен клиенту', cls: 'is-missing', key: 'missing' };
+      const detail = row && row.resolved_at
+        ? `Ответ: ${escapeHtml(fmtDate(row.resolved_at))}${row.resolved_by_label ? ` · ${escapeHtml(row.resolved_by_label)}` : ''}`
+        : row && row.created_at
+          ? `Отправлен: ${escapeHtml(fmtDate(row.created_at))}`
+          : review.clientApprovalLastError
+            ? 'Отправка не завершена. Текст сохранён в CRM.'
+            : '';
+      const comment = row && row.resolution_comment
+        ? `<div class="rv-client-approval__comment"><strong>Комментарий клиента:</strong><br>${escapeHtml(row.resolution_comment)}</div>`
+        : '';
+      return `<div class="rv-client-approval">
+        <div class="rv-client-approval__head">
+          <span class="rv-client-approval__title">Согласование клиента</span>
+          <span class="rv-client-approval__status ${meta.cls}">${escapeHtml(meta.label)}</span>
+        </div>
+        ${detail ? `<div class="rv-client-approval__meta">${detail}</div>` : ''}
+        ${comment}
+      </div>`;
+    }
+
+    async function refreshClientApprovals(options = {}) {
+      if (!window.ClientTextApprovals) return;
+      try {
+        const rows = await window.ClientTextApprovals.loadRequests();
+        approvalByReview = window.ClientTextApprovals.latestByReview(rows);
+        approvalLoadFailed = false;
+      } catch (error) {
+        approvalLoadFailed = true;
+        if (!options.silent) console.warn('[reviews] client approvals load failed', error);
+      }
+      render();
+    }
+
     function render() {
       renderKPIs();
       refreshFilterOptions();
@@ -301,6 +317,19 @@
             <button class="btn btn--ghost btn--sm" data-act="reopen" data-id="${r.id}">↺ Вернуть на модерацию</button>
             <button class="btn btn--ghost btn--sm" data-act="del"    data-id="${r.id}" style="color:var(--red)">🗑 Удалить</button>
           </div>` : '';
+        const approval = approvalByReview.get(String(r.id));
+        const approvalMeta = window.ClientTextApprovals
+          ? window.ClientTextApprovals.statusMeta(approval)
+          : { key: 'missing' };
+        const clientActions = isOwner && r.clientApprovalRequired && (
+          approvalMeta.key === 'missing' || approvalMeta.key === 'portal_only' || approvalMeta.key === 'cancelled'
+        ) ? `
+          <div class="rv-actions">
+            <button class="btn btn--ghost btn--sm" data-act="send-client" data-id="${r.id}">${approvalMeta.key === 'portal_only' ? 'Отправить в Telegram' : 'Повторить отправку клиенту'}</button>
+          </div>` : isOwner && approvalMeta.key === 'changes_requested' ? `
+          <div class="rv-actions">
+            <button class="btn btn--ghost btn--sm" data-act="revise-client" data-id="${r.id}">Исправить и отправить снова</button>
+          </div>` : '';
         return `
           <article class="rv-card">
             <div class="rv-head">
@@ -311,6 +340,7 @@
               ${moderationBadge(r.moderation)}
             </div>
             <div class="rv-text">${escapeHtml(r.text || '')}</div>
+            ${clientApprovalHtml(r)}
             <div class="rv-meta">
               <span>👤 ${escapeHtml(r.authorEmail || '—')}</span>
               <span>📅 Сдан: ${escapeHtml(fmtDate(r.submittedAt))}</span>
@@ -318,7 +348,7 @@
               <span>💵 Ставка: ${Number(r.rate) || RATE_DEFAULT} ₽</span>
               ${creditLabel}
             </div>
-            ${actions}${ownerExtra}
+            ${actions}${ownerExtra}${clientActions}
           </article>`;
       }).join('');
 
@@ -327,7 +357,7 @@
       });
     }
 
-    function act(action, id) {
+    async function act(action, id) {
       const r = (Store.state.reviews || []).find(x => x.id === id);
       if (!r) return;
       if (action === 'approve') {
@@ -346,8 +376,43 @@
         toast('Возвращён на модерацию');
       } else if (action === 'del') {
         if (!confirm('Удалить отзыв навсегда? Это действие нельзя отменить.')) return;
+        if (r.clientApprovalRequired && !window.ClientTextApprovals) {
+          toast('Модуль согласования не загрузился. Обновите страницу и повторите.', 'error');
+          return;
+        }
+        if (r.clientApprovalRequired) {
+          const cancellation = await window.ClientTextApprovals.cancelReview(r.id);
+          if (!cancellation.ok) { toast(cancellation.message, 'error'); return; }
+        }
         Store.deleteReview(id);
         toast('Удалён');
+      } else if (action === 'send-client') {
+        if (!window.ClientTextApprovals) { toast('Модуль согласования не загрузился', 'error'); return; }
+        const delivery = await window.ClientTextApprovals.sendReview(Store, r);
+        if (!delivery.ok) toast(delivery.message, 'error');
+        else if (delivery.telegramDelivered) toast('Текст отправлен клиенту в Telegram');
+        else toast('Текст доступен в кабинете. Ответственный Telegram пока не подключён');
+        await refreshClientApprovals({ silent: true });
+        return;
+      } else if (action === 'revise-client') {
+        const nextText = window.prompt('Исправьте текст и отправьте клиенту повторно:', r.text || '');
+        if (nextText === null) return;
+        const cleanText = nextText.trim();
+        if (!cleanText) { toast('Текст не может быть пустым', 'error'); return; }
+        if (cleanText === String(r.text || '').trim()) { toast('Измените текст перед повторной отправкой', 'error'); return; }
+        r.text = cleanText;
+        r.moderation = 'pending';
+        r.moderatedAt = null;
+        r.moderatedBy = null;
+        r.rejectReason = '';
+        r.clientApprovalLastError = '';
+        Store.save();
+        const delivery = await window.ClientTextApprovals.sendReview(Store, r);
+        if (!delivery.ok) toast(delivery.message, 'error');
+        else if (delivery.telegramDelivered) toast('Исправленный текст отправлен клиенту');
+        else toast('Исправленный текст добавлен в кабинет. Telegram пока не подключён');
+        await refreshClientApprovals({ silent: true });
+        return;
       }
       // Пересчитать зарплату/счётчики у сотрудника прямо сейчас
       // (иначе придётся ждать тика setInterval / обновления страницы).
@@ -361,9 +426,17 @@
     document.getElementById('fSearch').addEventListener('input',   e => { filters.q = e.target.value.trim().toLowerCase(); render(); });
     window.onGlobalSearch = q => { filters.q = q; document.getElementById('fSearch').value = q; render(); };
 
-    window.addEventListener('cloudstate:updated', () => { Store.load(); render(); });
+    window.addEventListener('cloudstate:updated', () => {
+      Store.load();
+      render();
+      refreshClientApprovals({ silent: true });
+    });
 
     render();
+    refreshClientApprovals();
+    window.setInterval(() => {
+      if (document.visibilityState === 'visible') refreshClientApprovals({ silent: true });
+    }, 30000);
   });
   </script>
 </body>

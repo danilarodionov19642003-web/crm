@@ -293,6 +293,20 @@
     const configured = config && Number(config.daysToPublish);
     return configured > 0 ? configured : STATUS_CHOSEN_FALLBACK_DAYS;
   }
+
+  function clientPublicationMinimumDays(state, client) {
+    if (!client) return 0;
+    const niche = String(client.niche || '').trim();
+    const config = niche && state && state.nicheConfig && state.nicheConfig[niche];
+    const explicit = config && Number(config.clientMinPublicationDays);
+    if (explicit >= 0 && Number.isFinite(explicit)) return explicit;
+    // Для ремонта внутренний контроль остаётся на 30-м дне, но клиент может
+    // предложить дату начиная с 20-го дня. Для остальных ниш минимум совпадает
+    // с обычной паузой «Выбран → Опубликован».
+    if (niche === 'remont') return 20;
+    const configured = config && Number(config.daysToPublish);
+    return configured > 0 ? configured : 0;
+  }
   function deriveStatusAction(rec, state, today = todayISO()) {
     const targetStatus = statusActionTarget(rec && rec.status);
     if (!rec || !targetStatus) return null;
@@ -422,12 +436,12 @@
       // Используется ботом для напоминаний публиковать отзыв (см. A3).
       // ⭐ ключ — это код категории, который проставляется у клиента (clients[].niche).
       this.state.nicheConfig ??= {
-        repetitor: { label: 'Репетитор',  daysToPublish: 2  },
-        design:    { label: 'Дизайн интерьера', daysToPublish: 5  },
-        remont:    { label: 'Ремонт квартир', daysToPublish: 30 },
-        beauty:    { label: 'Косметология', daysToPublish: 3  },
-        legal:     { label: 'Юридические услуги', daysToPublish: 7  },
-        other:     { label: 'Другое',  daysToPublish: 5  },
+        repetitor: { label: 'Репетитор', daysToPublish: 2, clientMinPublicationDays: 2 },
+        design:    { label: 'Дизайн интерьера', daysToPublish: 5, clientMinPublicationDays: 5 },
+        remont:    { label: 'Ремонт квартир', daysToPublish: 30, clientMinPublicationDays: 20 },
+        beauty:    { label: 'Косметология', daysToPublish: 3, clientMinPublicationDays: 3 },
+        legal:     { label: 'Юридические услуги', daysToPublish: 7, clientMinPublicationDays: 7 },
+        other:     { label: 'Другое', daysToPublish: 5, clientMinPublicationDays: 5 },
       };
       this._migrateSeparatedTaskPlanDate();
       this._migrateNormalizePhones();
@@ -1952,12 +1966,11 @@
       this.save();
     },
 
-    /* ---------- Reviews (модерация опубликованных отзывов) ----------
-       Когда менеджер выставляет статус «🎯 Готов», он обязан
-       вставить текст опубликованного отзыва. Отзыв попадает сюда со
-       статусом 'pending', владелец на странице reviews.html нажимает
-       «Проверен» → moderation='approved' → засчитывается зарплата
-       (rate ₽) и отзыв учитывается в счётчике «Сделано» у клиента. */
+    /* ---------- Reviews (согласование клиента + внутренняя модерация) ----------
+       Когда менеджер выставляет статус «🎯 Готов», он вставляет текст.
+       Запись сохраняется в CRM, а серверный запрос согласования связан с
+       review.id. Внутренняя moderation по-прежнему отдельно отвечает за
+       зарплату и счётчик «Сделано». */
     addReview(rec) {
       const item = Object.assign({
         id: uid(),
@@ -1970,6 +1983,10 @@
         moderatedAt: null,
         moderatedBy: null,
         rate: 300,                 // ставка фиксируется в момент создания
+        clientApprovalRequired: false,
+        clientApprovalRequestId: null,
+        clientApprovalSentAt: null,
+        clientApprovalLastError: '',
       }, rec);
       this.state.reviews ??= [];
       this.state.reviews.push(item);
@@ -2271,6 +2288,10 @@
       // Для исключительных случаев (например, профиль утрачен после частично
       // выполненного пакета) владелец может зафиксировать неснижаемый минимум.
       const effectiveDone = Math.max(realDone, Number(client && client.manualDone) || 0);
+      const publicationWaitDays = clientPublicationMinimumDays(this.state, client);
+      const nicheConfig = client && client.niche
+        ? (this.state.nicheConfig && this.state.nicheConfig[client.niche])
+        : null;
       return {
         mentorId,
         code: mentor.code || '',
@@ -2278,6 +2299,9 @@
         profileUrl: client ? (client.profileUrl || '') : (mentor.profileUrl || ''),
         avatarUrl: client ? (client.avatarUrl || '') : (mentor.avatarUrl || ''),
         platform: client ? (client.platform || '') : '',
+        niche: client ? (client.niche || '') : '',
+        nicheLabel: nicheConfig ? (nicheConfig.label || client.niche || '') : '',
+        publicationWaitDays,
         tariff: client ? (client.tariff || '') : '',
         ordered: client ? Number(client.ordered) || 0 : 0,
         done: effectiveDone,

@@ -153,8 +153,48 @@ select pg_temp.assert_true(
 
 select pg_temp.assert_true(
   (select status = 'applied' and bonus_applied_at is not null
+      and referrer_bonus_qty = 1 and referrer_bonus_used_qty = 0
+      and referrer_bonus_awarded_at is not null
    from public.client_referrals where telegram_user_id = :'referral_telegram_id'::bigint),
-  'referral was not marked as applied'
+  'referral or referrer bonus was not marked as applied'
+);
+
+-- A repeated provider callback must not award a second review.
+set local role authenticated;
+select public.complete_client_referral_bonus(
+  :'referral_first_order_id'::bigint, 'a999', 'Проверочная анкета'
+);
+reset role;
+
+select pg_temp.assert_true(
+  (select referrer_bonus_qty = 1
+   from public.client_referrals where telegram_user_id = :'referral_telegram_id'::bigint),
+  'repeated payment callback duplicated the referrer bonus'
+);
+
+select set_config('request.jwt.claim.role', 'authenticated', true);
+select set_config(
+  'request.jwt.claims',
+  jsonb_build_object(
+    'sub', :'referral_referrer_uid',
+    'email', :'referral_referrer_email',
+    'role', 'authenticated',
+    'app_metadata', jsonb_build_object(
+      'role', 'client',
+      'portal_email', :'referral_referrer_email'
+    )
+  )::text,
+  true
+);
+set local role authenticated;
+select (public.get_my_client_referral_dashboard() ->> 'bonus_available')::int
+  as referrer_bonus_available
+\gset referral_
+reset role;
+
+select pg_temp.assert_true(
+  :'referral_referrer_bonus_available'::int = 1,
+  'referrer dashboard did not expose the earned review'
 );
 
 set local role service_role;

@@ -485,9 +485,9 @@
         <div class="field" style="margin-top:12px"><label>Комментарий</label><input type="text" id="addComment" class="input"/></div>
         <div class="field" style="margin-top:12px"><label>Кто делал · для ЗП</label><select id="addPerformer" class="select"></select></div>
         <div class="field" id="addReviewWrap" style="margin-top:12px;display:none">
-          <label>Текст опубликованного отзыва <span style="color:var(--red)">*</span></label>
-          <textarea id="addReviewText" class="input" rows="5" placeholder="Вставьте текст отзыва, который был опубликован на площадке" style="resize:vertical;min-height:90px;font-family:inherit"></textarea>
-          <div style="font-size:11px;color:var(--text-mute);margin-top:4px">Отзыв отправится владельцу на модерацию. После одобрения засчитается в зарплату.</div>
+          <label>Текст отзыва для согласования <span style="color:var(--red)">*</span></label>
+          <textarea id="addReviewText" class="input" rows="5" placeholder="Вставьте текст, который нужно согласовать с клиентом" style="resize:vertical;min-height:90px;font-family:inherit"></textarea>
+          <div style="font-size:11px;color:var(--text-mute);margin-top:4px">Текст появится в личном кабинете и уйдёт ответственному контакту в Telegram. Внутренняя проверка останется в разделе «Отзывы».</div>
         </div>
       </div>
       <div class="modal__footer">
@@ -521,9 +521,9 @@
              через innerHTML, иначе на повторное открытие модалки textarea
              не находится и весь обработчик падает с null. -->
         <div class="field" id="chgReviewWrap" style="margin-top:12px;display:none">
-          <label>Текст опубликованного отзыва <span style="color:var(--red)">*</span></label>
-          <textarea id="chgReviewText" class="input" rows="5" placeholder="Вставьте текст отзыва, который был опубликован на площадке" style="resize:vertical;min-height:90px;font-family:inherit"></textarea>
-          <div style="font-size:11px;color:var(--text-mute);margin-top:4px">Отзыв отправится владельцу на модерацию. После одобрения засчитается в зарплату.</div>
+          <label>Текст отзыва для согласования <span style="color:var(--red)">*</span></label>
+          <textarea id="chgReviewText" class="input" rows="5" placeholder="Вставьте текст, который нужно согласовать с клиентом" style="resize:vertical;min-height:90px;font-family:inherit"></textarea>
+          <div style="font-size:11px;color:var(--text-mute);margin-top:4px">Текст появится в личном кабинете и уйдёт ответственному контакту в Telegram. Внутренняя проверка останется в разделе «Отзывы».</div>
         </div>
         <!-- Отдельный контейнер для отображения СУЩЕСТВУЮЩЕГО отзыва
              (одобренного или на модерации) — чтобы не ломать textarea выше. -->
@@ -609,12 +609,13 @@
   </style>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260820i"></script>
+  <script src="../js/app.js?v=20260820k"></script>
   <script src="../js/supabase-client.js?v=20260820d"></script>
   <script src="../js/auth-gate.js?v=20260726a"></script>
   <script src="../js/cloud-sync.js?v=20260820d"></script>
   <script src="../js/accounts-sync.js"></script>
   <script src="../js/reviews-sync.js?v=20260717a"></script>
+  <script src="../js/client-text-approvals.js?v=20260820b"></script>
   <script src="../components/sidebar.js?v=20260820b"></script>
   <script src="../components/header.js"></script>
   <script src="../components/table.js"></script>
@@ -1326,7 +1327,7 @@
       w.style.display = 'block';
     }
 
-    document.getElementById('addSave').addEventListener('click', () => {
+    document.getElementById('addSave').addEventListener('click', async event => {
       const mid = document.getElementById('addMentor').value;
       if (!mid || !addProfileId) { toast('Выберите клиента', 'error'); return; }
       const res = Store.canAddMentorToProfile(mid, addProfileId);
@@ -1338,7 +1339,7 @@
       let reviewText = '';
       if (status === DONE_STATUS) {
         reviewText = document.getElementById('addReviewText').value.trim();
-        if (!reviewText) { toast('Вставьте текст опубликованного отзыва', 'error'); return; }
+        if (!reviewText) { toast('Вставьте текст отзыва для согласования', 'error'); return; }
       }
       const profile = profileById(addProfileId);
       profile.mentorIds = [...(profile.mentorIds || []), mid];
@@ -1349,9 +1350,10 @@
       Store.setProfileStatus(mid, addProfileId, status, comment, date, performer, nextActionDate, nextActionMode);
       if (reviewText) {
         const myEmail = (window.AuthGate && window.AuthGate.email && window.AuthGate.email()) || '';
-        Store.addReview({
+        const review = Store.addReview({
           profileId: addProfileId, mentorId: mid,
           text: reviewText, authorEmail: myEmail,
+          clientApprovalRequired: true,
           // submittedAt = МОМЕНТ отправки на модерацию (всегда сейчас).
           // Дата статуса (date) — это дата публикации на площадке, она
           // отдельно живёт в profileStatus.date и не привязана к
@@ -1360,7 +1362,15 @@
           // модерацию их сдали сегодня.
           submittedAt: new Date().toISOString(),
         });
-        toast('Отзыв отправлен на модерацию');
+        const button = event.currentTarget;
+        button.disabled = true;
+        const delivery = window.ClientTextApprovals
+          ? await window.ClientTextApprovals.sendReview(Store, review)
+          : { ok: false, message: 'Модуль согласования не загрузился. Повторите отправку в разделе «Отзывы».' };
+        button.disabled = false;
+        if (!delivery.ok) toast(delivery.message, 'error');
+        else if (delivery.telegramDelivered) toast('Текст добавлен в кабинет и отправлен клиенту в Telegram');
+        else toast('Текст добавлен в кабинет. Ответственный Telegram пока не подключён');
       } else {
         toast('Привязано');
       }
@@ -1420,7 +1430,7 @@
       } else { histDiv.innerHTML = ''; }
       Modal.open('chgStatusModal');
     }
-    document.getElementById('chgSave').addEventListener('click', () => {
+    document.getElementById('chgSave').addEventListener('click', async event => {
       if (!chgPid || !chgMid) return;
       const newStatus = document.getElementById('chgStatus').value;
       const newComment = document.getElementById('chgComment').value.trim();
@@ -1434,7 +1444,7 @@
       let newReviewText = '';
       if (newStatus === DONE_STATUS && !existingReview) {
         newReviewText = document.getElementById('chgReviewText').value.trim();
-        if (!newReviewText) { toast('Вставьте текст опубликованного отзыва', 'error'); return; }
+        if (!newReviewText) { toast('Вставьте текст отзыва для согласования', 'error'); return; }
       }
       // Если статус УХОДИТ с «Готов» на любой другой — это значит, что отзыв
       // больше не считается опубликованным. Снимаем зачёт у клиента и
@@ -1448,6 +1458,16 @@
           ? 'Снять статус «Готов»? Связанный одобренный отзыв удалится, зарплата за него спишется.'
           : 'Снять статус «Готов»? Связанный отзыв на модерации удалится.';
         if (!confirmDelete(msg)) return;
+        if (existingReview.clientApprovalRequired && !window.ClientTextApprovals) {
+          toast('Модуль согласования не загрузился. Обновите страницу и повторите.', 'error');
+          return;
+        }
+        if (existingReview.clientApprovalRequired) {
+          event.currentTarget.disabled = true;
+          const cancellation = await window.ClientTextApprovals.cancelReview(existingReview.id);
+          event.currentTarget.disabled = false;
+          if (!cancellation.ok) { toast(cancellation.message, 'error'); return; }
+        }
       }
       // Если статус/комментарий не поменялись — обновляем только дату и/или
       // исполнителя (без новой записи в истории, чтобы её не засорять).
@@ -1463,14 +1483,22 @@
       }
       if (newReviewText) {
         const myEmail = (window.AuthGate && window.AuthGate.email && window.AuthGate.email()) || '';
-        Store.addReview({
+        const review = Store.addReview({
           profileId: chgPid, mentorId: chgMid,
           text: newReviewText, authorEmail: myEmail,
+          clientApprovalRequired: true,
           // submittedAt = «сейчас». Дата статуса (newDate) — это когда
           // отзыв ОПУБЛИКОВАН на площадке, отдельно от модерации.
           submittedAt: new Date().toISOString(),
         });
-        toast('Отзыв отправлен на модерацию');
+        event.currentTarget.disabled = true;
+        const delivery = window.ClientTextApprovals
+          ? await window.ClientTextApprovals.sendReview(Store, review)
+          : { ok: false, message: 'Модуль согласования не загрузился. Повторите отправку в разделе «Отзывы».' };
+        event.currentTarget.disabled = false;
+        if (!delivery.ok) toast(delivery.message, 'error');
+        else if (delivery.telegramDelivered) toast('Текст добавлен в кабинет и отправлен клиенту в Telegram');
+        else toast('Текст добавлен в кабинет. Ответственный Telegram пока не подключён');
       } else if (goingAway) {
         toast('Статус снят, отзыв удалён');
       } else {
@@ -1479,7 +1507,7 @@
       Modal.close('chgStatusModal');
       renderAll();
     });
-    document.getElementById('chgRemove').addEventListener('click', () => {
+    document.getElementById('chgRemove').addEventListener('click', async event => {
       if (!chgPid || !chgMid) return;
       // Если у пары уже есть отзыв — предупреждаем, что он тоже исчезнет
       // (иначе он остался бы в модерации и числился в «Сделано» у клиента).
@@ -1490,6 +1518,16 @@
         ? 'Отвязать клиента от аккаунта? Связанный отзыв тоже будет удалён (включая запись на модерации и зачёт в «Сделано»).'
         : 'Отвязать клиента от аккаунта (статус удалится)?';
       if (!confirmDelete(msg)) return;
+      if (linkedReview && linkedReview.clientApprovalRequired && !window.ClientTextApprovals) {
+        toast('Модуль согласования не загрузился. Обновите страницу и повторите.', 'error');
+        return;
+      }
+      if (linkedReview && linkedReview.clientApprovalRequired) {
+        event.currentTarget.disabled = true;
+        const cancellation = await window.ClientTextApprovals.cancelReview(linkedReview.id);
+        event.currentTarget.disabled = false;
+        if (!cancellation.ok) { toast(cancellation.message, 'error'); return; }
+      }
       const profile = profileById(chgPid);
       profile.mentorIds = (profile.mentorIds || []).filter(id => id !== chgMid);
       Store.updateProfile(profile.id, { mentorIds: profile.mentorIds });

@@ -19,6 +19,10 @@ const hardeningMigration = fs.readFileSync(
   path.join(root, 'sql/migrations/2026-08-20_client_planning_hardening.sql'),
   'utf8'
 );
+const minimumMigration = fs.readFileSync(
+  path.join(root, 'sql/migrations/2026-08-20_client_publication_minimum.sql'),
+  'utf8'
+);
 const telegramPatch = fs.readFileSync(
   path.join(root, 'ops/telegram/patches/client-publication-approval.patch'),
   'utf8'
@@ -49,7 +53,10 @@ vm.runInContext(appSource, context);
 const { Store, STATUS_CHOSEN } = context.window.App;
 Store.state = {
   mentors: [{ id: 'mentor-a21', code: 'a21', name: 'Столичный уют' }],
-  clients: [{ id: 'client-a21', code: 'a21', name: 'Столичный уют', ordered: 2 }],
+  clients: [{ id: 'client-a21', code: 'a21', name: 'Столичный уют', ordered: 2, niche: 'remont' }],
+  nicheConfig: {
+    remont: { label: 'Ремонт квартир', daysToPublish: 30, clientMinPublicationDays: 20 }
+  },
   profiles: [{ id: 'profile-1', code: '8-8' }, { id: 'profile-2', code: '8-9' }],
   archivedProfiles: [],
   accountRegs: [
@@ -79,6 +86,8 @@ assert.equal(snapshot.statuses[0].profileId, 'profile-1');
 assert.equal(snapshot.statuses[0].profileName, 'Александр');
 assert.equal(snapshot.reviews[0].profileId, 'profile-2');
 assert.equal(snapshot.reviews[0].profileName, 'Ольга');
+assert.equal(snapshot.niche, 'remont');
+assert.equal(snapshot.publicationWaitDays, 20);
 
 assert.match(migration, /security definer/i);
 assert.match(migration, /client_snapshots/);
@@ -101,12 +110,21 @@ assert.match(hardeningMigration, /revoke update on public\.client_publication_re
   'прямое закрытие запроса без атомарной правки CRM должно быть запрещено');
 assert.match(hardeningMigration, /action_ref/);
 
+assert.match(minimumMigration, /client_publication_wait_days/);
+assert.match(minimumMigration, /clientMinPublicationDays/);
+assert.match(minimumMigration, /v_niche = 'remont'[\s\S]*v_wait := 20/);
+assert.match(minimumMigration, /PUBLICATION_TOO_EARLY/);
+assert.match(minimumMigration, /before insert or update of requested_date, request_status, status_date/i);
+
 assert.match(clientApp, /status\.status !== '🏆 Выбран'/);
 assert.match(clientApp, /request_client_publication_date/);
 assert.match(clientApp, /Ожидает подтверждения/);
 assert.match(clientApp, /const isReadyStatus = status => status\.status === '🎯 Готов'/);
 assert.match(clientApp, /Опубликовано/);
 assert.match(clientApp, /statusAge\(s\)/);
+assert.match(clientApp, /publicationMinimumDate\(a, status\)/);
+assert.match(clientApp, /data-publication-min/);
+assert.match(clientApp, /PUBLICATION_TOO_EARLY/);
 assert.match(profileHtml, /loadMyPublicationRequests/);
 assert.match(clientApp, /request\.request_status === 'accepted'/);
 assert.match(clientApp, /kind: 'publication'/);

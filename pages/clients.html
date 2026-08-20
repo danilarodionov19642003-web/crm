@@ -113,6 +113,12 @@
     .cl-list__actions { display: grid; grid-template-columns: repeat(6, minmax(30px, auto)); gap: 4px; justify-content: end; }
     .cl-list__actions .btn { min-width: 30px; padding: 5px; justify-content: center; }
 
+    .niche-config-row {
+      display: grid; grid-template-columns: minmax(90px,1fr) minmax(150px,2fr) 110px 130px auto;
+      gap: 8px; align-items: center; padding: 8px 10px;
+      border: 1px solid var(--border); border-radius: 8px; background: rgba(255,255,255,.02);
+    }
+
     @media (max-width: 900px) {
       .cl-page-actions { width: 100%; justify-content: flex-start; }
       .filters .cl-view-toggle { order: 4; }
@@ -126,6 +132,12 @@
       }
       .cl-list__client, .cl-list__progress, .cl-list__actions { grid-column: 1 / -1; }
       .cl-list__actions { justify-content: start; }
+    }
+    @media (max-width: 620px) {
+      .niche-config-row { grid-template-columns: minmax(0,1fr) minmax(0,1fr); }
+      .niche-config-row [data-nf="daysToPublish"] { grid-column: 1; }
+      .niche-config-row [data-nf="clientMinPublicationDays"] { grid-column: 2; }
+      .niche-config-row [data-act="del-niche"] { grid-column: 2; justify-self: end; }
     }
 
     /* Календарь графика отзывов в модалке */
@@ -454,7 +466,7 @@
   <!-- Справочник ниш: ниша → дни от «Выбран» до «Опубликован». Бот использует
        это чтобы напоминать вовремя через A3 (фоновая задача в schedule_reminder). -->
   <div class="modal-backdrop" id="nicheModal">
-    <div class="modal" style="max-width:560px">
+    <div class="modal" style="max-width:760px">
       <div class="modal__header">
         <h3>Справочник ниш</h3>
         <button class="btn--icon" data-close>
@@ -463,7 +475,7 @@
       </div>
       <div class="modal__body">
         <div style="font-size:12px;color:var(--text-mute);margin-bottom:12px">
-          Каждая ниша задаёт <b>паузу в днях</b> между статусом «🏆 Выбран» и публикацией отзыва. Бот напомнит опубликовать через эти N дней.
+          «Срок CRM» задаёт дату внутреннего напоминания. «Минимум клиенту» запрещает выбрать публикацию раньше указанного числа дней после статуса «🏆 Выбран».
         </div>
         <div id="nicheList" style="display:flex;flex-direction:column;gap:8px"></div>
         <button class="btn btn--ghost" id="nicheAdd" style="margin-top:12px;width:100%">+ Добавить нишу</button>
@@ -531,7 +543,7 @@
   </div>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260820i"></script>
+  <script src="../js/app.js?v=20260820k"></script>
   <script src="../js/supabase-client.js?v=20260820d"></script>
   <script src="../js/auth-gate.js?v=20260726a"></script>
   <script src="../js/cloud-sync.js?v=20260820d"></script>
@@ -1621,10 +1633,11 @@
         return;
       }
       wrap.innerHTML = entries.map(([key, val]) => `
-        <div data-niche-row="${escapeHtml(key)}" style="display:grid;grid-template-columns:1fr 2fr 100px auto;gap:8px;align-items:center;background:rgba(255,255,255,0.02);border:1px solid var(--border);border-radius:8px;padding:8px 10px">
+        <div class="niche-config-row" data-niche-row="${escapeHtml(key)}">
           <input type="text" class="input" data-nf="key" placeholder="код" value="${escapeHtml(key)}" style="padding:6px 8px;font-size:13px"/>
           <input type="text" class="input" data-nf="label" placeholder="название" value="${escapeHtml(val.label || '')}" style="padding:6px 8px;font-size:13px"/>
-          <input type="number" class="input" data-nf="daysToPublish" placeholder="дней" value="${val.daysToPublish || 0}" min="0" max="365" style="padding:6px 8px;font-size:13px"/>
+          <input type="number" class="input" data-nf="daysToPublish" title="Срок CRM" placeholder="срок CRM" value="${val.daysToPublish || 0}" min="0" max="365" style="padding:6px 8px;font-size:13px"/>
+          <input type="number" class="input" data-nf="clientMinPublicationDays" title="Минимум дней до даты, которую может выбрать клиент" placeholder="мин. клиенту" value="${val.clientMinPublicationDays != null ? val.clientMinPublicationDays : (key === 'remont' ? 20 : (val.daysToPublish || 0))}" min="0" max="365" style="padding:6px 8px;font-size:13px"/>
           <button class="btn btn--ghost" data-act="del-niche" style="color:var(--red);padding:4px 10px">🗑</button>
         </div>
       `).join('');
@@ -1643,12 +1656,13 @@
       const wrap = document.getElementById('nicheList');
       const newKey = 'niche_' + Math.random().toString(36).slice(2, 7);
       const div = document.createElement('div');
+      div.className = 'niche-config-row';
       div.dataset.nicheRow = newKey;
-      div.style.cssText = 'display:grid;grid-template-columns:1fr 2fr 100px auto;gap:8px;align-items:center;background:rgba(255,255,255,0.02);border:1px solid var(--border);border-radius:8px;padding:8px 10px';
       div.innerHTML = `
         <input type="text" class="input" data-nf="key" placeholder="код" value="${newKey}" style="padding:6px 8px;font-size:13px"/>
         <input type="text" class="input" data-nf="label" placeholder="название" value="" style="padding:6px 8px;font-size:13px"/>
-        <input type="number" class="input" data-nf="daysToPublish" placeholder="дней" value="5" min="0" max="365" style="padding:6px 8px;font-size:13px"/>
+        <input type="number" class="input" data-nf="daysToPublish" title="Срок CRM" placeholder="срок CRM" value="5" min="0" max="365" style="padding:6px 8px;font-size:13px"/>
+        <input type="number" class="input" data-nf="clientMinPublicationDays" title="Минимум дней до даты, которую может выбрать клиент" placeholder="мин. клиенту" value="5" min="0" max="365" style="padding:6px 8px;font-size:13px"/>
         <button class="btn btn--ghost" data-act="del-niche" style="color:var(--red);padding:4px 10px">🗑</button>`;
       div.querySelector('[data-act="del-niche"]').addEventListener('click', () => div.remove());
       wrap.appendChild(div);
@@ -1660,7 +1674,8 @@
         if (!key) return;
         const label = row.querySelector('[data-nf="label"]').value.trim();
         const days = Math.max(0, Math.min(365, Number(row.querySelector('[data-nf="daysToPublish"]').value) || 0));
-        newCfg[key] = { label: label || key, daysToPublish: days };
+        const clientMinDays = Math.max(0, Math.min(365, Number(row.querySelector('[data-nf="clientMinPublicationDays"]').value) || 0));
+        newCfg[key] = { label: label || key, daysToPublish: days, clientMinPublicationDays: clientMinDays };
       });
       Store.state.nicheConfig = newCfg;
       Store.save();

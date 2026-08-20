@@ -9,7 +9,10 @@
   const modal = () => document.querySelector('[data-cli-settings-modal]');
   let members = [];
   let profile = { contact_name: '', phone: '' };
-  let referralDashboard = { referral_code: '', bot_username: 'MentoriTG_bot', referrals: [] };
+  let referralDashboard = {
+    referral_code: '', bot_username: 'MentoriTG_bot',
+    bonus_earned: 0, bonus_used: 0, bonus_available: 0, referrals: []
+  };
   let displayName = '';
   let activeTab = 'profile';
   let pollTimer = null;
@@ -80,7 +83,10 @@
     const result = await rpc('get_my_client_referral_dashboard');
     referralDashboard = result && typeof result === 'object'
       ? result
-      : { referral_code: '', bot_username: 'MentoriTG_bot', referrals: [] };
+      : {
+          referral_code: '', bot_username: 'MentoriTG_bot',
+          bonus_earned: 0, bonus_used: 0, bonus_available: 0, referrals: []
+        };
     if (!Array.isArray(referralDashboard.referrals)) referralDashboard.referrals = [];
     return referralDashboard;
   }
@@ -222,7 +228,8 @@
   }
 
   function referralState(referral) {
-    if (referral.status === 'applied') return { label: 'Бонус начислен', cls: 'is-applied' };
+    if (Number(referral.referrer_bonus_qty) > 0) return { label: 'Бонус начислен: +1 отзыв вам', cls: 'is-applied' };
+    if (referral.status === 'applied') return { label: 'Бонус начисляется', cls: 'is-reserved' };
     if (referral.status === 'reserved') return { label: 'Заказ подтверждается', cls: 'is-reserved' };
     if (referral.status === 'rejected_self') return { label: 'Не засчитан', cls: 'is-rejected' };
     if (referral.linked_at) return { label: 'Кабинет подключён', cls: 'is-linked' };
@@ -234,11 +241,17 @@
     const code = referralDashboard.referral_code || '';
     const link = code ? `https://t.me/${encodeURIComponent(bot)}?start=ref_${encodeURIComponent(code)}` : '';
     const referrals = referralDashboard.referrals || [];
+    const bonusAvailable = Math.max(0, Number(referralDashboard.bonus_available) || 0);
+    const bonusEarned = Math.max(0, Number(referralDashboard.bonus_earned) || 0);
     return `
       <section class="cli-settings-panel" aria-labelledby="cliSettingsReferralTitle">
         <div class="cli-settings-panel__intro">
           <h3 id="cliSettingsReferralTitle">Реферальная программа</h3>
-          <p>Друг получит один отзыв в подарок после оплаты первого заказа.</p>
+          <p>После первой оплаты друг получит один отзыв в подарок, и ещё один бонусный отзыв начислится вам.</p>
+        </div>
+        <div class="cli-referral-bonus" aria-label="Баланс бонусных отзывов">
+          <div><strong>${bonusAvailable}</strong><span>доступно</span></div>
+          <p>Бонусных отзывов на вашем балансе${bonusEarned ? ` · всего начислено ${bonusEarned}` : ''}</p>
         </div>
         <div class="cli-referral-link">
           <span>Ваша ссылка</span>
@@ -260,7 +273,9 @@
               <div class="cli-referral-person">
                 <div>
                   <strong>${esc(referralPerson(referral))}</strong>
-                  <span>${referral.joined_at ? new Date(referral.joined_at).toLocaleDateString('ru-RU') : ''}</span>
+                  <span>${referral.referrer_bonus_awarded_at
+                    ? `Оплатил заказ ${new Date(referral.referrer_bonus_awarded_at).toLocaleDateString('ru-RU')}`
+                    : (referral.joined_at ? new Date(referral.joined_at).toLocaleDateString('ru-RU') : '')}</span>
                 </div>
                 <span class="cli-referral-person__state ${state.cls}">${state.label}</span>
               </div>`;

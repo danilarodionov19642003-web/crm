@@ -483,7 +483,7 @@
   </div>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260820i"></script>
+  <script src="../js/app.js?v=20260820k"></script>
   <script src="../js/supabase-client.js?v=20260820d"></script>
   <script src="../js/auth-gate.js?v=20260726a"></script>
   <script src="../js/cloud-sync.js?v=20260820d"></script>
@@ -690,6 +690,8 @@
         const raw = String(error && error.message || '');
         const message = raw.includes('STATUS_NOT_AVAILABLE')
           ? 'Статус аккаунта уже изменился. Запрос нельзя подтвердить.'
+          : raw.includes('PUBLICATION_TOO_EARLY')
+            ? 'Клиент выбрал слишком раннюю дату: минимальная пауза после статуса «Выбран» ещё не прошла.'
           : raw.includes('REQUEST_ALREADY_RESOLVED')
             ? 'Этот запрос уже обработан. Обновляю список.'
             : 'Не удалось обработать запрос. Проверь связь и попробуй ещё раз.';

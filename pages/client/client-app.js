@@ -39,6 +39,17 @@
     const pad = n => String(n).padStart(2, '0');
     return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
   }
+  function addDaysISO(iso, days) {
+    const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ''));
+    if (!match) return '';
+    const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+    date.setUTCDate(date.getUTCDate() + Math.max(0, Number(days) || 0));
+    return date.toISOString().slice(0, 10);
+  }
+  function publicationMinimumDate(anketa, status) {
+    const byStatus = addDaysISO(status && status.date, Number(anketa && anketa.publicationWaitDays) || 0);
+    return byStatus && byStatus > todayISO() ? byStatus : todayISO();
+  }
   function daysSince(iso) {
     const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ''));
     if (!match) return 0;
@@ -169,6 +180,194 @@
     }
   }
 
+  async function loadMyTextApprovals() {
+    const token = accessToken();
+    const email = (Auth.portalEmail() || '').toLowerCase();
+    if (!token || !email) return [];
+    try {
+      const params = new URLSearchParams({
+        portal_email: `eq.${email}`,
+        select: 'id,mentor_id,anketa_code,anketa_name,title,body,request_status,created_at,resolved_at,resolved_by_label,resolution_comment,source_review_id,source_revision',
+        order: 'created_at.desc',
+        limit: '50'
+      });
+      const res = await authFetch(`${_url()}/rest/v1/client_text_approval_requests?${params}`, {
+        headers: { apikey: _key(), Accept: 'application/json' }
+      });
+      if (!res.ok) {
+        console.warn('[client-app] text approvals load failed', res.status);
+        return [];
+      }
+      return await res.json();
+    } catch (error) {
+      console.warn('[client-app] text approvals load error', error);
+      return [];
+    }
+  }
+
+  async function resolveMyTextApproval(requestId, decision, comment = '') {
+    try {
+      const res = await authFetch(`${_url()}/rest/v1/rpc/resolve_my_client_text_approval`, {
+        method: 'POST',
+        headers: {
+          apikey: _key(),
+          'Content-Type': 'application/json',
+          Accept: 'application/json'
+        },
+        body: JSON.stringify({
+          p_request_id: Number(requestId),
+          p_decision: decision,
+          p_comment: comment || null
+        })
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const raw = String(body.message || body.details || '');
+        return {
+          ok: false,
+          message: raw.includes('COMMENT_REQUIRED')
+            ? 'Напишите, что именно нужно исправить.'
+            : 'Не удалось сохранить ответ. Обновите страницу и попробуйте ещё раз.'
+        };
+      }
+      if (!body.ok) {
+        return {
+          ok: false,
+          message: body.reason === 'ALREADY_RESOLVED'
+            ? 'Этот текст уже обработан. Обновите список.'
+            : 'Запрос больше недоступен.'
+        };
+      }
+      return { ok: true, row: body };
+    } catch (error) {
+      console.warn('[client-app] text approval resolve error', error);
+      return { ok: false, message: 'Нет связи с сервером. Попробуйте ещё раз.' };
+    }
+  }
+
+  function latestTextApprovals(rows) {
+    const grouped = new Map();
+    (rows || []).forEach(row => {
+      const key = String(row.source_review_id || `legacy:${row.id}`);
+      const previous = grouped.get(key);
+      const revision = Number(row.source_revision) || 1;
+      const previousRevision = Number(previous && previous.source_revision) || 0;
+      if (!previous || revision > previousRevision
+          || (revision === previousRevision && Number(row.id) > Number(previous.id))) {
+        grouped.set(key, row);
+      }
+    });
+    return [...grouped.values()].sort((a, b) => {
+      if (a.request_status === 'pending' && b.request_status !== 'pending') return -1;
+      if (b.request_status === 'pending' && a.request_status !== 'pending') return 1;
+      return new Date(b.created_at) - new Date(a.created_at);
+    });
+  }
+
+  function textApprovalStatus(row) {
+    if (row.request_status === 'approved') return { label: 'Согласован', cls: 'is-approved' };
+    if (row.request_status === 'changes_requested') return { label: 'Отправлены правки', cls: 'is-changes' };
+    if (row.request_status === 'cancelled') return { label: 'Отменён', cls: 'is-cancelled' };
+    return { label: 'Нужно проверить', cls: 'is-pending' };
+  }
+
+  function renderTextApprovals(rows) {
+    const root = document.querySelector('[data-cli-text-approvals]');
+    if (!root) return;
+    const items = latestTextApprovals(rows).filter(row => row.request_status !== 'cancelled');
+    if (!items.length) {
+      root.hidden = true;
+      root.innerHTML = '';
+      return;
+    }
+    root.hidden = false;
+    root.innerHTML = `
+      <h2 class="cli-section-title">Тексты на согласование</h2>
+      <div class="cli-text-approval-list">
+        ${items.map(row => {
+          const status = textApprovalStatus(row);
+          const answer = row.resolution_comment
+            ? `<div class="cli-text-approval__comment"><strong>Комментарий:</strong><br>${escapeHtml(row.resolution_comment)}</div>`
+            : '';
+          const actions = row.request_status === 'pending' ? `
+            <div class="cli-text-approval__actions">
+              <button type="button" class="cli-text-approval__approve" data-text-approve="${Number(row.id)}">Согласовать</button>
+              <button type="button" class="cli-text-approval__changes" data-text-changes="${Number(row.id)}">Нужны правки</button>
+            </div>
+            <div class="cli-text-approval__change-form" data-text-change-form="${Number(row.id)}" hidden>
+              <textarea rows="3" maxlength="1500" placeholder="Что нужно изменить в тексте" data-text-change-comment></textarea>
+              <div class="cli-text-approval__change-actions">
+                <button type="button" data-text-change-submit="${Number(row.id)}">Отправить комментарий</button>
+                <button type="button" data-text-change-close="${Number(row.id)}">Отмена</button>
+              </div>
+            </div>` : '';
+          return `<article class="cli-text-approval" data-text-approval-id="${Number(row.id)}">
+            <div class="cli-text-approval__head">
+              <div>
+                <strong>${escapeHtml(row.title || 'Текст отзыва')}</strong>
+                <span>${escapeHtml(row.anketa_code || '')}${row.anketa_name ? ` · ${escapeHtml(row.anketa_name)}` : ''}</span>
+              </div>
+              <span class="cli-text-approval__status ${status.cls}">${status.label}</span>
+            </div>
+            <div class="cli-text-approval__body">${escapeHtml(row.body || '')}</div>
+            <div class="cli-text-approval__date">${fmtDate(row.created_at)}</div>
+            ${answer}${actions}
+            <div class="cli-text-approval__result" data-text-result></div>
+          </article>`;
+        }).join('')}
+      </div>`;
+    bindTextApprovalActions(root);
+  }
+
+  function bindTextApprovalActions(root) {
+    root.querySelectorAll('[data-text-approve]').forEach(button => {
+      button.addEventListener('click', async () => {
+        if (!window.confirm('Согласовать этот текст?')) return;
+        const card = button.closest('[data-text-approval-id]');
+        const result = card.querySelector('[data-text-result]');
+        card.querySelectorAll('button').forEach(item => { item.disabled = true; });
+        result.textContent = 'Сохраняем ответ…';
+        const response = await resolveMyTextApproval(button.dataset.textApprove, 'approved');
+        if (!response.ok) {
+          result.textContent = response.message;
+          card.querySelectorAll('button').forEach(item => { item.disabled = false; });
+          return;
+        }
+        renderTextApprovals(await loadMyTextApprovals());
+      });
+    });
+    root.querySelectorAll('[data-text-changes]').forEach(button => {
+      button.addEventListener('click', () => {
+        const form = root.querySelector(`[data-text-change-form="${button.dataset.textChanges}"]`);
+        if (form) form.hidden = false;
+      });
+    });
+    root.querySelectorAll('[data-text-change-close]').forEach(button => {
+      button.addEventListener('click', () => {
+        const form = root.querySelector(`[data-text-change-form="${button.dataset.textChangeClose}"]`);
+        if (form) form.hidden = true;
+      });
+    });
+    root.querySelectorAll('[data-text-change-submit]').forEach(button => {
+      button.addEventListener('click', async () => {
+        const card = button.closest('[data-text-approval-id]');
+        const form = button.closest('[data-text-change-form]');
+        const comment = form.querySelector('[data-text-change-comment]').value.trim();
+        const result = card.querySelector('[data-text-result]');
+        if (!comment) { result.textContent = 'Напишите, что нужно исправить.'; return; }
+        card.querySelectorAll('button, textarea').forEach(item => { item.disabled = true; });
+        result.textContent = 'Отправляем комментарий…';
+        const response = await resolveMyTextApproval(button.dataset.textChangeSubmit, 'changes_requested', comment);
+        if (!response.ok) {
+          result.textContent = response.message;
+          card.querySelectorAll('button, textarea').forEach(item => { item.disabled = false; });
+          return;
+        }
+        renderTextApprovals(await loadMyTextApprovals());
+      });
+    });
+  }
+
   async function submitPublicationRequest(statusId, requestedDate) {
     try {
       const res = await authFetch(`${_url()}/rest/v1/rpc/request_client_publication_date`, {
@@ -182,9 +381,15 @@
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const raw = String(body.message || body.details || '');
+        const raw = [body.message, body.details, body.hint].filter(Boolean).join(' ');
         let message = 'Не удалось сохранить дату. Обновите страницу и попробуйте ещё раз.';
         if (raw.includes('DATE_OUT_OF_RANGE')) message = 'Выберите дату от сегодняшнего дня до ближайших шести месяцев.';
+        else if (raw.includes('PUBLICATION_TOO_EARLY')) {
+          const match = /PUBLICATION_TOO_EARLY:(\d{4}-\d{2}-\d{2}):(\d+)/.exec(raw);
+          message = match
+            ? `Эту публикацию можно назначить не раньше ${fmtDate(match[1])}: аккаунт должен быть в статусе «Выбран» минимум ${match[2]} дн.`
+            : 'Для этого аккаунта ещё не прошла минимальная пауза до публикации.';
+        }
         else if (raw.includes('STATUS_NOT_AVAILABLE')) message = 'Статус аккаунта уже изменился. Обновите страницу.';
         else if (raw.includes('DATE_ALREADY_ACCEPTED')) message = 'Эта дата уже подтверждена менеджером.';
         return { ok: false, message };
@@ -1266,17 +1471,20 @@
       const value = request && request.request_status === 'pending'
         ? String(request.requested_date || '').slice(0, 10)
         : '';
+      const minimumDate = publicationMinimumDate(a, status);
+      const waitDays = Math.max(0, Number(a.publicationWaitDays) || 0);
       const state = request && request.request_status === 'pending'
         ? '<span class="cli-pub-state is-pending">Ожидает подтверждения</span>'
         : (request && request.request_status === 'rejected'
             ? '<span class="cli-pub-state is-rejected">Выберите другую дату</span>'
             : '<span class="cli-pub-state" data-publication-result></span>');
       return `
-        <div class="cli-pub-control" data-publication-status="${escapeAttr(status.id)}">
+        <div class="cli-pub-control" data-publication-status="${escapeAttr(status.id)}" data-publication-min="${escapeAttr(minimumDate)}">
           <div class="cli-pub-actions">
-            <input type="date" class="cli-pub-date" min="${todayISO()}" value="${escapeAttr(value)}" aria-label="Дата публикации"/>
+            <input type="date" class="cli-pub-date" min="${escapeAttr(minimumDate)}" value="${escapeAttr(value)}" aria-label="Дата публикации"/>
             <button type="button" class="cli-pub-submit" data-publication-submit>${value ? 'Изменить' : 'Запланировать'}</button>
           </div>
+          ${waitDays ? `<span class="cli-pub-min">Не раньше ${fmtDate(minimumDate)} · минимум ${waitDays} дн. в статусе</span>` : ''}
           ${state}
         </div>`;
     };
@@ -1397,10 +1605,11 @@
         const input = control && control.querySelector('.cli-pub-date');
         const result = control && control.querySelector('[data-publication-result], .cli-pub-state');
         const date = input && input.value;
-        if (!date || date < todayISO()) {
+        const minimumDate = control && control.dataset.publicationMin || todayISO();
+        if (!date || date < minimumDate) {
           if (result) {
             result.className = 'cli-pub-state is-rejected';
-            result.textContent = 'Выберите сегодняшнюю или будущую дату';
+            result.textContent = `Можно выбрать дату не раньше ${fmtDate(minimumDate)}`;
           }
           return;
         }
@@ -2473,6 +2682,9 @@
     renderProfileDetail,
     loadMyPublicationRequests,
     submitPublicationRequest,
+    loadMyTextApprovals,
+    resolveMyTextApproval,
+    renderTextApprovals,
     loadMyOutreachSlots,
     loadOutreachAvailability,
     manageOutreachSlot,
