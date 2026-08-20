@@ -21,6 +21,10 @@ const hardeningMigration = fs.readFileSync(
   path.join(root, 'sql/migrations/2026-08-20_client_planning_hardening.sql'),
   'utf8'
 );
+const expiryMigration = fs.readFileSync(
+  path.join(root, 'sql/migrations/2026-08-20_client_outreach_expiry.sql'),
+  'utf8'
+);
 
 const noop = () => {};
 const context = {
@@ -122,6 +126,13 @@ assert.match(hardeningMigration, /scheduled_date < current_date/);
 assert.match(hardeningMigration, /source in \('snapshot_seed', 'legacy_seed'\)/);
 assert.match(hardeningMigration, /slot_status = 'cancelled'/,
   'прошедшие планы из старого снимка должны стать историей');
+assert.match(expiryMigration, /scheduled_date < current_date/,
+  'неиспользованный план должен автоматически истекать после своей даты');
+assert.match(expiryMigration, /slot_status = 'cancelled'/);
+assert.match(expiryMigration, /manage_client_outreach_slot_v1/,
+  'серверная проверка лимита должна выполняться после очистки просроченных планов');
+assert.match(expiryMigration, /get_client_outreach_calendar_v1/,
+  'открытие клиентского календаря должно запускать очистку просроченных планов');
 
 assert.match(clientApp, /manage_client_outreach_slot/);
 assert.match(clientApp, /get_client_outreach_calendar/);
@@ -133,11 +144,24 @@ assert.match(clientApp, /data-outreach-move/);
 assert.match(clientApp, /data-outreach-cancel/);
 assert.match(clientApp, /data-outreach-inline-date/);
 assert.match(clientApp, /ownSlots\.length \? 'cancel' : 'add'/);
+assert.match(clientApp, /acceptedPublicationDates\(meta\.anketa, context\.publicationRequests\)/,
+  'календарь внутри анкеты должен учитывать подтверждённые публикации');
+assert.match(clientApp, /eventLabels\.join\('<br>'\)/,
+  'отклик и публикация в один день должны отображаться раздельно');
 assert.match(clientApp, /load\.available > 0 && meta\.availableToAdd > 0/);
 assert.match(clientApp, /const isPastDate = date < today/);
-assert.match(clientApp, /const label = isPastDate \? ''/,
+assert.match(clientApp, /const label = isPastDate\s*\?\s*''/,
   'на прошедших днях не должно быть надписей «свободно» или «ваш отклик»');
-assert.match(clientApp, /7 откликов/);
+assert.match(clientApp, /canAdd \? 'есть места'/,
+  'клиент должен видеть только наличие мест без их количества');
+assert.doesNotMatch(clientApp, /свободно \$\{load\.available\}/,
+  'клиенту нельзя показывать точное количество свободных мест');
+assert.doesNotMatch(clientApp, /\$\{load\.available\} из 7/,
+  'в окне переноса нельзя раскрывать загрузку дня');
+assert.match(clientApp, /Доступно для планирования: <b>\$\{availableToAdd\}<\/b>/,
+  'клиент должен видеть остаток планов именно по своей анкете');
+assert.doesNotMatch(clientApp, /до 7 в день|запланировано 7 откликов/,
+  'дневную ёмкость CRM клиенту показывать нельзя');
 assert.match(appSource, /scheduleLimit: client \? manualScheduleLimit/);
 assert.match(appSource, /item\.remaining > 0 && item\.date >= todayISO\(\)/,
   'устаревший план не должен попадать даже в резервный снимок кабинета');

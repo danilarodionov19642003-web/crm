@@ -210,7 +210,7 @@
 
   function outreachErrorMessage(rawError) {
     const raw = String(rawError && rawError.message || rawError || '');
-    if (raw.includes('DAY_FULL')) return 'На этот день уже запланировано 7 откликов. Выберите другой.';
+    if (raw.includes('DAY_FULL')) return 'На этот день уже нет мест. Выберите другой.';
     if (raw.includes('NO_AVAILABLE_OUTREACH')) return 'Все доступные отклики этой анкеты уже запланированы или находятся в работе.';
     if (raw.includes('DATE_OUT_OF_RANGE')) return 'Можно выбрать дату от сегодняшнего дня до ближайших шести месяцев.';
     if (raw.includes('SLOT_NOT_FOUND')) return 'Этот отклик уже перенесён или отменён. Обновите страницу.';
@@ -428,7 +428,7 @@
   const CAL_COLORS = ['#ff7a00', '#22c55e', '#3b82f6', '#a855f7', '#14b8a6'];
   const calState = { month: new Date(), selected: new Date().toISOString().slice(0, 10) };
 
-  function _gatherEvents(snap, outreachSlots) {
+  function _gatherEvents(snap, outreachSlots, publicationRequests) {
     const events = [];
     if (!snap || !snap.anketas) return events;
     snap.anketas.forEach((a, idx) => {
@@ -489,6 +489,23 @@
           plannedCount: left
         });
       });
+
+      (Array.isArray(publicationRequests) ? publicationRequests : [])
+        .filter(request => request.request_status === 'accepted'
+          && request.mentor_id === a.mentorId
+          && request.requested_date)
+        .forEach(request => {
+          const status = (a.statuses || []).find(item => item.id === request.status_id);
+          if (!status || status.status !== '🏆 Выбран') return;
+          events.push({
+            date: String(request.requested_date).slice(0, 10),
+            color, anketa: a.name || a.code,
+            kind: 'publication', icon: '📌',
+            title: 'Запланирована публикация',
+            sub: status.profileName || '',
+            comment: 'Подтверждено'
+          });
+        });
     });
     return events;
   }
@@ -498,10 +515,10 @@
     return `${months[d.getMonth()]} ${d.getFullYear()}`;
   }
 
-  function renderCalendar(snap, outreachSlots) {
+  function renderCalendar(snap, outreachSlots, publicationRequests) {
     const el = document.querySelector('[data-cli-calendar]');
     if (!el || !snap) return;
-    const events = _gatherEvents(snap, outreachSlots);
+    const events = _gatherEvents(snap, outreachSlots, publicationRequests);
     const byDate = new Map();
     events.forEach(e => {
       if (!byDate.has(e.date)) byDate.set(e.date, []);
@@ -568,7 +585,7 @@
     // События за выбранный день — сортируем «планируемые» вниз, «факт» наверх,
     // потому что факт важнее.
     const selEvents = [...(byDate.get(calState.selected) || [])].sort((a, b) => {
-      const order = { review: 0, status: 1, planned: 2 };
+      const order = { review: 0, status: 1, publication: 2, planned: 3 };
       return (order[a.kind] || 9) - (order[b.kind] || 9);
     });
     const selPlannedTotal = selEvents
@@ -615,21 +632,21 @@
 
     // Биндим клики (после каждого ререндера, поскольку innerHTML затирает старые слушатели)
     el.querySelector('[data-cal-prev]').addEventListener('click', () => {
-      calState.month = new Date(year, month - 1, 1); renderCalendar(snap, outreachSlots);
+      calState.month = new Date(year, month - 1, 1); renderCalendar(snap, outreachSlots, publicationRequests);
     });
     el.querySelector('[data-cal-next]').addEventListener('click', () => {
-      calState.month = new Date(year, month + 1, 1); renderCalendar(snap, outreachSlots);
+      calState.month = new Date(year, month + 1, 1); renderCalendar(snap, outreachSlots, publicationRequests);
     });
     el.querySelector('[data-cal-today]').addEventListener('click', () => {
       const t = new Date();
       calState.month = new Date(t.getFullYear(), t.getMonth(), 1);
       calState.selected = t.toISOString().slice(0, 10);
-      renderCalendar(snap, outreachSlots);
+      renderCalendar(snap, outreachSlots, publicationRequests);
     });
     el.querySelectorAll('.cli-cal__cell[data-date]').forEach(b => {
       b.addEventListener('click', () => {
         calState.selected = b.dataset.date;
-        renderCalendar(snap, outreachSlots);
+        renderCalendar(snap, outreachSlots, publicationRequests);
       });
     });
   }
@@ -755,6 +772,22 @@
     };
   }
 
+  function acceptedPublicationDates(anketa, publicationRequests) {
+    const dates = new Map();
+    if (!anketa || !Array.isArray(publicationRequests)) return dates;
+    publicationRequests
+      .filter(request => request.request_status === 'accepted'
+        && request.mentor_id === anketa.mentorId
+        && request.requested_date)
+      .forEach(request => {
+        const status = (anketa.statuses || []).find(item => item.id === request.status_id);
+        if (!status || status.status !== '🏆 Выбран') return;
+        const date = String(request.requested_date).slice(0, 10);
+        if (date) dates.set(date, (dates.get(date) || 0) + 1);
+      });
+    return dates;
+  }
+
   async function renderInlineOutreachCalendar(context) {
     const host = document.querySelector('[data-outreach-inline]');
     if (!host) return;
@@ -801,6 +834,7 @@
       if (!ownByDate.has(date)) ownByDate.set(date, []);
       ownByDate.get(date).push(slot);
     });
+    const publicationByDate = acceptedPublicationDates(meta.anketa, context.publicationRequests);
 
     const today = todayISO();
     const maxDateObject = new Date();
@@ -814,25 +848,35 @@
       const load = byDate.get(date) || { used: 0, available: 7 };
       const ownSlots = ownByDate.get(date) || [];
       const ownCount = ownSlots.length;
+      const publicationCount = publicationByDate.get(date) || 0;
       const isPastDate = date < today;
       const canAdd = !isPastDate && date <= maxDate && load.available > 0 && meta.availableToAdd > 0;
       const canToggle = !isPastDate && (ownCount > 0 || canAdd);
       const classes = [
         'cli-outreach-cal__day',
         ownCount && !isPastDate ? 'is-owned' : '',
+        publicationCount && !isPastDate ? 'has-publication' : '',
         load.available <= 0 && !ownCount && !isPastDate ? 'is-full' : '',
         isPastDate ? 'is-past' : '',
         !canToggle ? 'is-disabled' : '',
         date === today ? 'is-today' : ''
       ].filter(Boolean).join(' ');
-      const label = isPastDate ? '' : (ownCount
-        ? (ownCount === 1 ? 'ваш отклик' : `ваших: ${ownCount}`)
-        : (load.available > 0 ? `свободно ${load.available}` : 'занято'));
+      const eventLabels = [];
+      if (ownCount) eventLabels.push(ownCount === 1 ? 'ваш отклик' : `ваших: ${ownCount}`);
+      if (publicationCount) eventLabels.push('публикация');
+      const label = isPastDate
+        ? ''
+        : (eventLabels.length
+            ? eventLabels.join('<br>')
+            : (canAdd ? 'есть места' : (load.available > 0 ? 'недоступно' : 'занято')));
+      const publicationHint = publicationCount ? ', запланирована публикация' : '';
       const actionLabel = isPastDate
         ? `Прошедшая дата ${fmtDate(date)}`
         : ownCount
-        ? `Снять отклик на ${fmtDate(date)}`
-        : `Запланировать отклик на ${fmtDate(date)}, свободно ${load.available} из 7`;
+        ? `Снять отклик на ${fmtDate(date)}${publicationHint}`
+        : canAdd
+        ? `Запланировать отклик на ${fmtDate(date)}, есть места${publicationHint}`
+        : `${fmtDate(date)}${publicationHint}, планирование недоступно`;
       cells.push(`
         <button type="button" class="${classes}" data-outreach-inline-date="${date}"
           aria-label="${escapeAttr(actionLabel)}"${canToggle ? '' : ' disabled'}>
@@ -856,7 +900,7 @@
       </div>
       <div class="cli-outreach-cal__weekdays"><span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span></div>
       <div class="cli-outreach-cal__grid">${cells.join('')}</div>
-      <div class="cli-outreach-cal__legend"><span class="is-free">Свободно</span><span class="is-owned">Ваш отклик</span><span class="is-full">Занято</span></div>
+      <div class="cli-outreach-cal__legend"><span class="is-free">Есть места</span><span class="is-owned">Ваш отклик</span><span class="is-publication">Публикация</span><span class="is-full">Занято</span></div>
       <div class="cli-outreach-cal__result" data-outreach-inline-result></div>`;
 
     host.querySelector('[data-outreach-inline-prev]').addEventListener('click', () => {
@@ -947,7 +991,7 @@
       cells.push(`
         <button type="button" class="${classes}" data-outreach-date="${date}"${disabled ? ' disabled' : ''}>
           <strong>${day}</strong>
-          <span>${load.available > 0 ? `${load.available} из 7` : 'мест нет'}</span>
+          <span>${load.available > 0 ? 'есть места' : 'мест нет'}</span>
         </button>`);
     }
 
@@ -1068,7 +1112,7 @@
         <div class="cli-outreach__head">
           <div>
             <h3>План откликов</h3>
-            <span>${activeSlots.length} запланировано · до 7 в день</span>
+            <span>Доступно для планирования: <b>${availableToAdd}</b> · просроченный план снимается автоматически</span>
           </div>
           <button type="button" class="cli-outreach-primary" data-outreach-add${canonicalAvailable && availableToAdd > 0 ? '' : ' disabled'}>+ Запланировать</button>
         </div>

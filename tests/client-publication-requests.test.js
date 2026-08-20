@@ -8,6 +8,7 @@ const vm = require('node:vm');
 const root = path.resolve(__dirname, '..');
 const appSource = fs.readFileSync(path.join(root, 'js/app.js'), 'utf8');
 const clientApp = fs.readFileSync(path.join(root, 'pages/client/client-app.js'), 'utf8');
+const clientIndex = fs.readFileSync(path.join(root, 'pages/client/index.html'), 'utf8');
 const profileHtml = fs.readFileSync(path.join(root, 'pages/client/profile.html'), 'utf8');
 const tasksHtml = fs.readFileSync(path.join(root, 'pages/tasks.html'), 'utf8');
 const migration = fs.readFileSync(
@@ -107,6 +108,14 @@ assert.match(clientApp, /const isReadyStatus = status => status\.status === '�
 assert.match(clientApp, /Опубликовано/);
 assert.match(clientApp, /statusAge\(s\)/);
 assert.match(profileHtml, /loadMyPublicationRequests/);
+assert.match(clientApp, /request\.request_status === 'accepted'/);
+assert.match(clientApp, /kind: 'publication'/);
+assert.match(clientApp, /title: 'Запланирована публикация'/);
+assert.match(clientApp, /status\.status !== '🏆 Выбран'/);
+assert.match(clientIndex, /loadMyPublicationRequests\(\)/,
+  'главный календарь клиента должен загружать подтверждённые публикации');
+assert.match(clientIndex, /renderCalendar\(snap\.payload, outreachSlots, publicationRequests\)/,
+  'подтверждённые публикации должны передаваться в календарь');
 
 assert.match(tasksHtml, /client_publication_request/);
 assert.match(tasksHtml, /id="publicationQueue"/);

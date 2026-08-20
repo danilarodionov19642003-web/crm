@@ -452,6 +452,8 @@
 .cli-outreach-cal__day.is-selected span { color: #fff; }
 .cli-outreach-cal__day.is-owned { background: rgba(255,122,0,.14); border-color: var(--cli-accent); }
 .cli-outreach-cal__day.is-owned span { color: var(--cli-accent); font-weight: 700; }
+.cli-outreach-cal__day.has-publication { box-shadow: inset 0 -2px 0 #a855f7; }
+.cli-outreach-cal__day.has-publication span { color: #a855f7; font-weight: 700; line-height: 1.15; }
 .cli-outreach-cal__day.is-disabled { opacity: .35; cursor: default; }
 .cli-outreach-cal__day.is-past { background: transparent; border-color: rgba(128,128,128,.12); }
 .cli-outreach-cal__day.is-past strong { color: var(--text-mute); font-weight: 500; }
@@ -463,6 +465,7 @@
   content: ''; display: inline-block; width: 7px; height: 7px; margin-right: 5px; border-radius: 2px; background: var(--cli-green);
 }
 .cli-outreach-cal__legend .is-owned::before { background: var(--cli-accent); }
+.cli-outreach-cal__legend .is-publication::before { background: #a855f7; }
 .cli-outreach-cal__legend .is-full::before { background: var(--cli-red); }
 .cli-outreach-cal__result { min-height: 16px; margin-top: 8px; color: var(--text-mute); font-size: 10px; }
 .cli-outreach-cal__result.is-pending { color: var(--cli-accent); }
