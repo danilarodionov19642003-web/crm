@@ -46,6 +46,9 @@
     date.setUTCDate(date.getUTCDate() + Math.max(0, Number(days) || 0));
     return date.toISOString().slice(0, 10);
   }
+  function outreachMinimumDate() {
+    return addDaysISO(todayISO(), 1);
+  }
   function publicationMinimumDate(anketa, status) {
     const byStatus = addDaysISO(status && status.date, Number(anketa && anketa.publicationWaitDays) || 0);
     return byStatus && byStatus > todayISO() ? byStatus : todayISO();
@@ -445,7 +448,8 @@
     const raw = String(rawError && rawError.message || rawError || '');
     if (raw.includes('DAY_FULL')) return 'На этот день уже нет мест. Выберите другой.';
     if (raw.includes('NO_AVAILABLE_OUTREACH')) return 'Все доступные отклики этой анкеты уже запланированы или находятся в работе.';
-    if (raw.includes('DATE_OUT_OF_RANGE')) return 'Можно выбрать дату от сегодняшнего дня до ближайших шести месяцев.';
+    if (raw.includes('OUTREACH_PREPARATION_DAY')) return 'На закупку и подготовку нужен один день. Выберите дату начиная с завтра.';
+    if (raw.includes('DATE_OUT_OF_RANGE')) return 'Можно выбрать дату начиная с завтра и в пределах ближайших шести месяцев.';
     if (raw.includes('SLOT_NOT_FOUND')) return 'Этот отклик уже перенесён или отменён. Обновите страницу.';
     if (raw.includes('ANKETA_NOT_FOUND')) return 'Доступ к анкете изменился. Обновите страницу.';
     return 'Не удалось изменить план. Проверьте связь и попробуйте ещё раз.';
@@ -1081,6 +1085,7 @@
     const publicationByDate = acceptedPublicationDates(meta.anketa, context.publicationRequests);
 
     const today = todayISO();
+    const minimumDate = outreachMinimumDate();
     const maxDateObject = new Date();
     maxDateObject.setDate(maxDateObject.getDate() + 180);
     const maxDate = localISO(maxDateObject);
@@ -1094,7 +1099,8 @@
       const ownCount = ownSlots.length;
       const publicationCount = publicationByDate.get(date) || 0;
       const isPastDate = date < today;
-      const canAdd = !isPastDate && date <= maxDate && load.available > 0 && meta.availableToAdd > 0;
+      const isPreparationDate = !isPastDate && date < minimumDate;
+      const canAdd = date >= minimumDate && date <= maxDate && load.available > 0 && meta.availableToAdd > 0;
       const canToggle = !isPastDate && (ownCount > 0 || canAdd);
       const classes = [
         'cli-outreach-cal__day',
@@ -1102,6 +1108,7 @@
         publicationCount && !isPastDate ? 'has-publication' : '',
         load.available <= 0 && !ownCount && !isPastDate ? 'is-full' : '',
         isPastDate ? 'is-past' : '',
+        isPreparationDate ? 'is-preparation' : '',
         !canToggle ? 'is-disabled' : '',
         date === today ? 'is-today' : ''
       ].filter(Boolean).join(' ');
@@ -1110,12 +1117,16 @@
       if (publicationCount) eventLabels.push('публикация');
       const label = isPastDate
         ? ''
+        : (isPreparationDate && !ownCount
+          ? 'подготовка'
         : (eventLabels.length
             ? eventLabels.join('<br>')
-            : (canAdd ? 'есть места' : (load.available > 0 ? 'недоступно' : 'занято')));
+            : (canAdd ? 'есть места' : (load.available > 0 ? 'недоступно' : 'занято'))));
       const publicationHint = publicationCount ? ', запланирована публикация' : '';
       const actionLabel = isPastDate
         ? `Прошедшая дата ${fmtDate(date)}`
+        : (isPreparationDate && !ownCount)
+        ? `${fmtDate(date)} — день закупки и подготовки, планирование недоступно`
         : ownCount
         ? `Снять отклик на ${fmtDate(date)}${publicationHint}`
         : canAdd
@@ -1214,6 +1225,7 @@
       }
     ]));
     const today = todayISO();
+    const minimumDate = outreachMinimumDate();
     const maxDateObject = new Date();
     maxDateObject.setDate(maxDateObject.getDate() + 180);
     const maxDate = localISO(maxDateObject);
@@ -1224,7 +1236,7 @@
     for (let day = 1; day <= last.getDate(); day++) {
       const date = localISO(new Date(year, month, day));
       const load = byDate.get(date) || { used: 0, available: 7 };
-      const disabled = date < today || date > maxDate || load.available <= 0 || date === currentSlotDate;
+      const disabled = date < minimumDate || date > maxDate || load.available <= 0 || date === currentSlotDate;
       const classes = [
         'cli-outreach-cal__day',
         disabled ? 'is-disabled' : '',
@@ -1255,7 +1267,7 @@
       <div class="cli-outreach-cal__weekdays"><span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span></div>
       <div class="cli-outreach-cal__grid">${cells.join('')}</div>
       <div class="cli-outreach-cal__footer">
-        <span data-outreach-result>${state.selectedDate ? `Выбрано: ${fmtDate(state.selectedDate)}` : 'Выберите свободный день'}</span>
+        <span data-outreach-result>${state.selectedDate ? `Выбрано: ${fmtDate(state.selectedDate)}` : `Выберите свободный день начиная с ${fmtDate(minimumDate)}`}</span>
         <button type="button" class="cli-outreach-primary" data-outreach-save${state.selectedDate ? '' : ' disabled'}>${state.mode === 'move' ? 'Перенести' : 'Запланировать'}</button>
       </div>`;
 

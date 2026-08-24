@@ -25,6 +25,10 @@ const expiryMigration = fs.readFileSync(
   path.join(root, 'sql/migrations/2026-08-20_client_outreach_expiry.sql'),
   'utf8'
 );
+const tomorrowMinimumMigration = fs.readFileSync(
+  path.join(root, 'sql/migrations/2026-08-24_client_outreach_tomorrow_minimum.sql'),
+  'utf8'
+);
 
 const noop = () => {};
 const context = {
@@ -133,6 +137,12 @@ assert.match(expiryMigration, /manage_client_outreach_slot_v1/,
   'серверная проверка лимита должна выполняться после очистки просроченных планов');
 assert.match(expiryMigration, /get_client_outreach_calendar_v1/,
   'открытие клиентского календаря должно запускать очистку просроченных планов');
+assert.match(tomorrowMinimumMigration, /action_name in \('add', 'move'\)/);
+assert.match(tomorrowMinimumMigration, /p_target_date < current_date \+ 1/,
+  'сервер должен запрещать новый или перенесённый отклик на сегодня');
+assert.match(tomorrowMinimumMigration, /OUTREACH_PREPARATION_DAY/);
+assert.match(tomorrowMinimumMigration, /manage_client_outreach_slot_v1/,
+  'после проверки дня подготовки должны сохраниться лимиты и блокировки исходной функции');
 
 assert.match(clientApp, /manage_client_outreach_slot/);
 assert.match(clientApp, /get_client_outreach_calendar/);
@@ -149,6 +159,14 @@ assert.match(clientApp, /acceptedPublicationDates\(meta\.anketa, context\.public
 assert.match(clientApp, /eventLabels\.join\('<br>'\)/,
   'отклик и публикация в один день должны отображаться раздельно');
 assert.match(clientApp, /load\.available > 0 && meta\.availableToAdd > 0/);
+assert.match(clientApp, /function outreachMinimumDate\(\)[\s\S]*addDaysISO\(todayISO\(\), 1\)/);
+assert.match(clientApp, /const isPreparationDate = !isPastDate && date < minimumDate/);
+assert.match(clientApp, /const canAdd = date >= minimumDate/,
+  'сегодня нельзя использовать для нового отклика даже при наличии мест');
+assert.match(clientApp, /const disabled = date < minimumDate/,
+  'окно переноса также должно начинаться только с завтра');
+assert.match(clientApp, /OUTREACH_PREPARATION_DAY/);
+assert.match(clientApp, /На закупку и подготовку нужен один день/);
 assert.match(clientApp, /const isPastDate = date < today/);
 assert.match(clientApp, /const label = isPastDate\s*\?\s*''/,
   'на прошедших днях не должно быть надписей «свободно» или «ваш отклик»');
