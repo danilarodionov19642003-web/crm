@@ -8,6 +8,7 @@ __pycache__/
 backups/
 payments/.env
 assets/website/**/dist/server/
+integrations/yandex-direct-mcp/
 
 # Claude Code локальные настройки (не коммитим)
 .claude/

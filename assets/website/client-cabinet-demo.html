@@ -1,0 +1,824 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="color-scheme" content="light"/>
+  <title>Интерактивный личный кабинет Mentori</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f7f8;
+      --surface: #ffffff;
+      --surface-soft: #f1f2f4;
+      --line: #e1e3e8;
+      --line-strong: #c9cdd5;
+      --text: #191a1f;
+      --muted: #858b96;
+      --orange: #ff7a00;
+      --orange-soft: #fff4e9;
+      --green: #20b95a;
+      --green-soft: #ecfbf1;
+      --red: #e94242;
+      --blue: #3478f6;
+      --shadow: 0 6px 22px rgba(26, 31, 44, .08), 0 1px 3px rgba(26, 31, 44, .05);
+      --radius: 16px;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      min-width: 320px;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+      font-size: 14px;
+      line-height: 1.45;
+      -webkit-font-smoothing: antialiased;
+    }
+    button, input, select { font: inherit; }
+    button { color: inherit; }
+    [hidden] { display: none !important; }
+
+    .demo-header {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      min-height: 68px;
+      padding: 12px 20px;
+      background: rgba(255, 255, 255, .94);
+      border-bottom: 1px solid var(--line);
+      backdrop-filter: blur(10px);
+    }
+    .demo-brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+    .demo-logo {
+      display: grid;
+      place-items: center;
+      width: 42px;
+      height: 42px;
+      flex: 0 0 auto;
+      border-radius: 14px;
+      background: var(--orange);
+      color: #fff;
+      font-size: 19px;
+      font-weight: 850;
+      box-shadow: 0 6px 16px rgba(255, 122, 0, .28);
+    }
+    .demo-brand__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 780; font-size: 16px; }
+    .demo-brand__sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; color: var(--muted); font-size: 11px; }
+    .demo-badge {
+      margin-left: auto;
+      padding: 7px 11px;
+      border: 1px solid rgba(255, 122, 0, .25);
+      border-radius: 999px;
+      background: var(--orange-soft);
+      color: #bd5700;
+      font-size: 11px;
+      font-weight: 750;
+      white-space: nowrap;
+    }
+
+    .demo-main { width: min(1120px, calc(100% - 32px)); margin: 0 auto; padding: 20px 0 42px; }
+    .section-title {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin: 24px 0 12px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: .11em;
+      text-transform: uppercase;
+    }
+    .section-title::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+
+    .kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+    .kpi {
+      min-width: 0;
+      padding: 15px 16px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+      box-shadow: var(--shadow);
+    }
+    .kpi__label { margin-bottom: 6px; color: var(--muted); font-size: 10px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+    .kpi__value { overflow-wrap: anywhere; font-size: 23px; font-weight: 820; font-variant-numeric: tabular-nums; }
+    .is-green { color: var(--green); }
+    .is-orange { color: var(--orange); }
+    .is-red { color: var(--red); }
+
+    .cta-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 10px; }
+    .cta {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      min-height: 92px;
+      padding: 15px 18px;
+      border: 1px solid rgba(255, 122, 0, .28);
+      border-radius: var(--radius);
+      background: var(--orange-soft);
+      box-shadow: var(--shadow);
+    }
+    .cta--green { border-color: rgba(32, 185, 90, .28); background: var(--green-soft); }
+    .cta__text { min-width: 0; flex: 1; }
+    .cta__title { font-size: 15px; font-weight: 780; }
+    .cta__sub { margin-top: 3px; color: var(--muted); font-size: 12px; }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 42px;
+      padding: 10px 16px;
+      border: 0;
+      border-radius: 10px;
+      background: var(--orange);
+      color: #fff;
+      font-weight: 780;
+      cursor: pointer;
+      transition: transform .15s, filter .15s;
+      white-space: nowrap;
+    }
+    .btn:hover { filter: brightness(.97); transform: translateY(-1px); }
+    .btn:active { transform: translateY(0); }
+    .btn--green { background: var(--green); }
+    .btn--ghost { border: 1px solid var(--line); background: var(--surface); color: var(--text); }
+    .btn--wide { width: 100%; }
+
+    .overview-grid { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(320px, 1fr); gap: 26px; align-items: start; }
+    .profiles { display: grid; gap: 14px; }
+    .profile-card {
+      width: 100%;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: var(--surface);
+      color: inherit;
+      text-align: left;
+      box-shadow: var(--shadow);
+      cursor: pointer;
+      transition: transform .15s, border-color .15s, box-shadow .15s;
+    }
+    .profile-card:hover { transform: translateY(-2px); border-color: rgba(255, 122, 0, .38); box-shadow: 0 10px 28px rgba(255, 122, 0, .10); }
+    .profile-card__head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+    .profile-code { padding: 4px 9px; border: 1px solid rgba(255, 122, 0, .22); border-radius: 999px; background: var(--orange-soft); color: var(--orange); font-size: 11px; font-weight: 800; letter-spacing: .05em; }
+    .profile-card__name { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; font-weight: 780; }
+    .profile-arrow { color: var(--muted); font-size: 18px; }
+    .profile-card__body { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 18px; align-items: center; }
+    .donut {
+      position: relative;
+      width: 96px;
+      height: 96px;
+      border-radius: 50%;
+      background: conic-gradient(var(--green) 0 var(--done), var(--orange) var(--done) var(--active), var(--line) var(--active) 360deg);
+    }
+    .donut::after { content: ""; position: absolute; inset: 11px; border-radius: 50%; background: var(--surface); }
+    .donut__inside { position: absolute; inset: 0; z-index: 1; display: grid; place-content: center; text-align: center; }
+    .donut__value { font-size: 21px; font-weight: 850; line-height: 1; }
+    .donut__label { margin-top: 4px; color: var(--muted); font-size: 8px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+    .profile-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+    .profile-stat { min-width: 0; padding: 9px 7px; border: 1px solid var(--line); border-radius: 11px; background: #fdfdfd; text-align: center; }
+    .profile-stat span { display: block; color: var(--muted); font-size: 9px; font-weight: 750; letter-spacing: .04em; text-transform: uppercase; }
+    .profile-stat b { display: block; margin-top: 3px; font-size: 16px; font-variant-numeric: tabular-nums; }
+    .profile-card__foot { display: flex; justify-content: space-between; gap: 12px; margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line); color: var(--muted); font-size: 12px; }
+    .profile-card__foot b { color: var(--text); font-variant-numeric: tabular-nums; }
+
+    .terms-card, .calendar, .collapsible {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+      box-shadow: var(--shadow);
+    }
+    .terms-card {
+      display: flex;
+      align-items: center;
+      width: 100%;
+      gap: 12px;
+      margin-top: 24px;
+      padding: 14px 16px;
+      color: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+    .terms-card:hover { border-color: rgba(255, 122, 0, .35); }
+    .terms-card__icon { display: grid; place-items: center; width: 34px; height: 34px; flex: 0 0 auto; border-radius: 10px; background: var(--orange-soft); color: var(--orange); font-size: 17px; font-weight: 850; }
+    .terms-card strong { display: block; }
+    .terms-card small { display: block; margin-top: 2px; color: var(--muted); font-size: 11px; }
+
+    .calendar { padding: 14px; }
+    .calendar__nav { display: grid; grid-template-columns: 34px 1fr 34px; gap: 8px; align-items: center; }
+    .calendar__nav button { width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); cursor: pointer; }
+    .calendar__month { text-align: center; font-weight: 780; }
+    .calendar__week, .calendar__grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+    .calendar__week { margin: 14px 0 5px; color: var(--muted); font-size: 9px; font-weight: 750; text-align: center; }
+    .calendar__day { position: relative; min-width: 0; aspect-ratio: 1; border: 1px solid transparent; border-radius: 9px; background: var(--surface-soft); color: var(--text); cursor: pointer; }
+    .calendar__day:hover { border-color: var(--line-strong); }
+    .calendar__day.is-selected { border-color: var(--orange); background: var(--orange-soft); color: #bd5700; font-weight: 800; }
+    .calendar__day.is-empty { visibility: hidden; }
+    .calendar__dot { position: absolute; left: 50%; bottom: 4px; width: 5px; height: 5px; border-radius: 50%; background: var(--green); transform: translateX(-50%); }
+    .calendar__events { display: grid; gap: 7px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+    .calendar-event { display: flex; gap: 9px; align-items: flex-start; font-size: 11px; }
+    .calendar-event__mark { width: 8px; height: 8px; margin-top: 4px; flex: 0 0 auto; border-radius: 50%; background: var(--orange); }
+    .calendar-event strong { display: block; font-size: 12px; }
+    .calendar-event span { color: var(--muted); }
+
+    .collapsible { margin-top: 10px; overflow: hidden; }
+    .collapsible summary { display: flex; align-items: center; gap: 10px; padding: 13px 15px; cursor: pointer; list-style: none; font-weight: 700; }
+    .collapsible summary::-webkit-details-marker { display: none; }
+    .collapsible summary::after { content: "▾"; margin-left: auto; color: var(--muted); transition: transform .15s; }
+    .collapsible[open] summary::after { transform: rotate(180deg); }
+    .collapsible__body { display: grid; gap: 8px; padding: 0 15px 15px; }
+    .mini-row { display: flex; gap: 10px; align-items: center; padding: 10px 11px; border-radius: 10px; background: var(--surface-soft); font-size: 12px; }
+    .mini-row__mark { display: grid; place-items: center; width: 28px; height: 28px; flex: 0 0 auto; border-radius: 8px; background: #fff; color: var(--orange); font-weight: 850; }
+    .mini-row__content { min-width: 0; flex: 1; }
+    .mini-row__content small { display: block; margin-top: 2px; color: var(--muted); }
+
+    .orders { margin-top: 22px; }
+    .order-card { padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow); }
+    .order-card__head { display: flex; align-items: flex-start; gap: 12px; }
+    .order-card__main { min-width: 0; flex: 1; }
+    .order-card__title { font-weight: 780; }
+    .order-card__sub { margin-top: 2px; color: var(--muted); font-size: 12px; }
+    .status-pill { padding: 5px 9px; border: 1px solid rgba(32, 185, 90, .3); border-radius: 999px; background: var(--green-soft); color: #13803d; font-size: 10px; font-weight: 800; white-space: nowrap; }
+    .order-card__pay { margin-top: 10px; color: var(--muted); font-size: 12px; }
+    .order-card__pay b { color: var(--orange); }
+
+    .back-btn { display: inline-flex; align-items: center; gap: 6px; margin: 4px 0 16px; padding: 7px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--muted); cursor: pointer; }
+    .detail-title { margin: 0; font-size: clamp(22px, 3vw, 30px); line-height: 1.1; }
+    .detail-sub { margin: 7px 0 20px; color: var(--muted); }
+    .progress-line { display: flex; height: 7px; margin: 16px 0 8px; overflow: hidden; border-radius: 999px; background: var(--line); }
+    .progress-line__done { background: var(--green); }
+    .progress-line__active { background: var(--orange); }
+    .legend { display: flex; flex-wrap: wrap; gap: 14px; color: var(--muted); font-size: 11px; }
+    .legend i { display: inline-block; width: 7px; height: 7px; margin-right: 4px; border-radius: 50%; background: var(--line-strong); }
+    .legend .done { background: var(--green); }
+    .legend .active { background: var(--orange); }
+
+    .packages { display: grid; gap: 10px; }
+    .package { padding: 14px 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+    .package__head { display: flex; align-items: center; gap: 12px; }
+    .package__head strong { flex: 1; }
+    .package__state { padding: 4px 8px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 10px; font-weight: 800; }
+    .package__state.is-active { border-color: rgba(255, 122, 0, .28); color: var(--orange); }
+    .package__state.is-closed { border-color: rgba(32, 185, 90, .28); color: var(--green); }
+    .package__counts { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 9px; color: var(--muted); font-size: 11px; }
+    .package__counts b { color: var(--text); }
+    .package__bar { display: flex; height: 5px; margin-top: 10px; overflow: hidden; border-radius: 999px; background: var(--line); }
+    .package__bar span:first-child { background: var(--green); }
+    .package__bar span:last-child { background: var(--orange); }
+
+    .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow); }
+    .history-table { width: 100%; min-width: 560px; border-collapse: collapse; }
+    .history-table th, .history-table td { padding: 11px 14px; border-bottom: 1px solid var(--line); text-align: left; }
+    .history-table th { color: var(--muted); font-size: 10px; letter-spacing: .07em; text-transform: uppercase; }
+    .history-table tbody tr:last-child td { border-bottom: 0; }
+    .history-table td:last-child, .history-table th:last-child { text-align: right; }
+    .account-state { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
+    .account-state::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--orange); }
+    .account-state.is-done::before { background: var(--green); }
+    .account-state.is-planned::before { background: var(--line-strong); }
+    .reviews { display: grid; gap: 10px; }
+    .review { padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow); }
+    .review__head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; color: var(--muted); font-size: 11px; }
+    .review__code { padding: 3px 8px; border-radius: 999px; background: var(--orange-soft); color: var(--orange); font-weight: 800; }
+    .review__text { font-size: 13px; }
+
+    .demo-footer { display: flex; justify-content: center; flex-wrap: wrap; gap: 5px 12px; margin: 30px 0 6px; color: var(--muted); font-size: 11px; }
+    .demo-footer button { padding: 0; border: 0; background: none; color: var(--orange); text-decoration: underline; cursor: pointer; }
+
+    .modal {
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      display: grid;
+      place-items: center;
+      padding: 16px;
+    }
+    .modal__backdrop { position: absolute; inset: 0; background: rgba(20, 22, 27, .52); backdrop-filter: blur(3px); }
+    .modal__dialog { position: relative; z-index: 1; width: min(560px, 100%); max-height: min(760px, 90vh); overflow: auto; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); box-shadow: 0 24px 70px rgba(0, 0, 0, .24); }
+    .modal__head { display: flex; align-items: center; gap: 12px; padding: 16px 18px; border-bottom: 1px solid var(--line); }
+    .modal__head h2 { min-width: 0; flex: 1; margin: 0; font-size: 18px; }
+    .modal__close { display: grid; place-items: center; width: 34px; height: 34px; border: 0; border-radius: 9px; background: var(--surface-soft); color: var(--muted); font-size: 20px; cursor: pointer; }
+    .modal__body { padding: 18px; }
+    .field { display: grid; gap: 6px; margin-bottom: 13px; }
+    .field label { font-size: 12px; font-weight: 750; }
+    .field select, .field input { width: 100%; min-height: 42px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); color: var(--text); }
+    .segmented { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; padding: 4px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface-soft); }
+    .segmented label { position: relative; cursor: pointer; }
+    .segmented input { position: absolute; opacity: 0; pointer-events: none; }
+    .segmented span { display: block; padding: 9px 8px; border-radius: 8px; text-align: center; font-size: 12px; font-weight: 700; }
+    .segmented input:checked + span { background: var(--surface); box-shadow: 0 1px 4px rgba(0, 0, 0, .08); color: var(--orange); }
+    .amount-box { display: flex; justify-content: space-between; gap: 14px; margin: 14px 0; padding: 13px 14px; border-radius: 11px; background: var(--orange-soft); }
+    .amount-box span { color: var(--muted); }
+    .amount-box b { font-size: 17px; font-variant-numeric: tabular-nums; }
+    .check-row { display: flex; align-items: center; gap: 10px; padding: 11px 0; border-bottom: 1px solid var(--line); cursor: pointer; }
+    .check-row input { width: 18px; height: 18px; accent-color: var(--orange); }
+    .check-row span { min-width: 0; flex: 1; }
+    .check-row b { white-space: nowrap; }
+    .demo-note { margin-top: 12px; padding: 10px 12px; border: 1px solid rgba(52, 120, 246, .2); border-radius: 9px; background: #eef5ff; color: #2059b6; font-size: 12px; }
+    .result-note { margin-top: 12px; padding: 11px 12px; border-radius: 9px; background: var(--green-soft); color: #13793a; font-size: 12px; font-weight: 700; }
+    .terms-copy h3 { margin: 18px 0 6px; font-size: 14px; }
+    .terms-copy h3:first-child { margin-top: 0; }
+    .terms-copy p { margin: 0 0 9px; color: #4d525d; font-size: 13px; }
+
+    @media (max-width: 860px) {
+      .overview-grid { grid-template-columns: 1fr; gap: 4px; }
+      .terms-card { margin-top: 18px; }
+    }
+    @media (max-width: 700px) {
+      .demo-main { width: min(100% - 22px, 1120px); padding-top: 12px; }
+      .demo-header { min-height: 60px; padding: 9px 12px; }
+      .demo-logo { width: 38px; height: 38px; border-radius: 12px; }
+      .demo-brand__name { font-size: 14px; }
+      .demo-badge { padding: 6px 8px; font-size: 10px; }
+      .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .cta-grid { grid-template-columns: 1fr; }
+      .cta { align-items: flex-start; flex-direction: column; }
+      .cta .btn { width: 100%; }
+      .profile-card { padding: 14px; border-radius: 16px; }
+      .profile-card__body { grid-template-columns: 80px minmax(0, 1fr); gap: 12px; }
+      .donut { width: 80px; height: 80px; }
+      .donut::after { inset: 9px; }
+      .donut__value { font-size: 18px; }
+      .profile-stats { gap: 5px; }
+      .profile-stat { padding: 7px 4px; }
+      .profile-stat span { font-size: 8px; }
+      .profile-stat b { font-size: 14px; }
+      .history-table th, .history-table td { padding: 9px 11px; }
+    }
+    @media (max-width: 430px) {
+      .demo-brand__sub { max-width: 175px; }
+      .demo-badge { display: none; }
+      .profile-card__body { grid-template-columns: 1fr; }
+      .donut { margin: 0 auto; }
+      .modal { padding: 8px; }
+      .modal__dialog { max-height: 94vh; border-radius: 14px; }
+    }
+  </style>
+</head>
+<body>
+  <div id="cabinetDemo"></div>
+  <div class="modal" id="demoModal" hidden></div>
+
+  <script>
+    (() => {
+      'use strict';
+
+      const tariffs = [
+        { id: 'express', name: 'Экспресс', qty: 3, price: 4800 },
+        { id: 'support', name: 'Поддержка', qty: 6, price: 8290 },
+        { id: 'growth', name: 'Развитие', qty: 12, price: 15490 },
+        { id: 'manager14', name: 'Менеджер на время', label: '14 дней', price: 14500 },
+        { id: 'manager30', name: 'Менеджер на время', label: 'Полный месяц', price: 25000 }
+      ];
+
+      const demoData = {
+        client: { name: 'Mentori · демо-кабинет', email: 'Все данные вымышлены' },
+        profiles: [
+          {
+            id: 'a101', code: 'A-101', name: 'Студия интерьера', platform: 'Профи.ру', tariff: 'Поддержка', deadline: '31.08.2026',
+            ordered: 6, done: 3, active: 1, planned: 2, total: 8290, paid: 8290, remain: 0,
+            packages: [
+              { name: 'Поддержка', qty: 6, done: 3, active: 1, state: 'active', label: 'В работе' }
+            ],
+            statuses: [
+              ['Аккаунт 17-2', 'Готов', '18.07.2026', 'done'],
+              ['Аккаунт 18-2', 'Готов', '21.07.2026', 'done'],
+              ['Аккаунт 19-1', 'Выбран', '23.07.2026', 'active'],
+              ['Аккаунт 20-3', 'Выбрать', '24.07.2026', 'active'],
+              ['Аккаунт 21-1', 'Диалог закончен', '25.07.2026', 'active'],
+              ['Аккаунт 22-2', 'Диалог начат', '26.07.2026', 'active'],
+              ['Аккаунт 23-1', 'Запланировано', '29.07.2026', 'planned']
+            ],
+            payments: [
+              ['18.07.2026', 'Тариф «Поддержка»', 'Оплачено полностью', 8290]
+            ],
+            reviews: [
+              ['Аккаунт 18-2', '21.07.2026', 'Специалист внимательно разобрал задачу, предложил понятный план и соблюдал согласованные сроки.'],
+              ['Аккаунт 17-2', '18.07.2026', 'Работа выполнена аккуратно. Все этапы были заранее согласованы, результатом остались довольны.'],
+              ['Аккаунт 16-4', '12.07.2026', 'Получили подробную консультацию и несколько вариантов решения. Спасибо за профессиональный подход.']
+            ]
+          },
+          {
+            id: 'a102', code: 'A-102', name: 'Ремонт под ключ', platform: 'Профи.ру', tariff: 'Развитие', deadline: '15.08.2026',
+            ordered: 12, done: 8, active: 2, planned: 2, total: 15490, paid: 10000, remain: 5490,
+            packages: [{ name: 'Развитие', qty: 12, done: 8, active: 2, state: 'active', label: 'В работе' }],
+            statuses: [
+              ['Профиль 8-4', 'Готов', '20.07.2026', 'done'],
+              ['Профиль 9-2', 'Готов', '22.07.2026', 'done'],
+              ['Профиль 10-1', 'Выбран', '24.07.2026', 'active'],
+              ['Профиль 11-3', 'Диалог начат', '26.07.2026', 'active']
+            ],
+            payments: [['05.06.2026', 'Тариф «Развитие»', 'Предоплата', 10000]],
+            reviews: [
+              ['Профиль 9-2', '22.07.2026', 'Понравился спокойный и понятный подход к работе. Все договорённости были соблюдены.'],
+              ['Профиль 8-4', '20.07.2026', 'Спасибо за качественную консультацию и точное соблюдение сроков.']
+            ]
+          }
+        ],
+        events: {
+          '2026-07-20': [{ title: 'Опубликован результат', profile: 'A-102 · Ремонт под ключ', color: 'green' }],
+          '2026-07-21': [{ title: 'Опубликован результат', profile: 'A-101 · Студия интерьера', color: 'green' }],
+          '2026-07-24': [{ title: 'Статус изменён на «Выбрать»', profile: 'A-101 · Студия интерьера', color: 'orange' }],
+          '2026-07-26': [{ title: 'Диалог начат', profile: 'A-101 · Студия интерьера', color: 'orange' }],
+          '2026-07-27': [{ title: 'Запланирован 1 отклик', profile: 'A-102 · Ремонт под ключ', color: 'orange' }],
+          '2026-07-29': [{ title: 'Запланировано 2 отклика', profile: 'A-101 · Студия интерьера', color: 'orange' }]
+        },
+        feed: [
+          ['Новый результат опубликован', 'A-101 · Студия интерьера', '21.07.2026'],
+          ['Платёж подтверждён', 'A-101 · тариф «Поддержка»', '18.07.2026'],
+          ['График работ обновлён', 'A-102 · Ремонт под ключ', '15.07.2026']
+        ]
+      };
+
+      const state = { view: 'overview', profileId: null, year: 2026, month: 6, selectedDate: '2026-07-26' };
+      const app = document.getElementById('cabinetDemo');
+      const modal = document.getElementById('demoModal');
+
+      const money = value => Number(value || 0).toLocaleString('ru-RU') + ' ₽';
+      const reviewsLabel = value => {
+        const qty = Number(value || 0);
+        const last = qty % 10;
+        const lastTwo = qty % 100;
+        const word = last === 1 && lastTwo !== 11 ? 'отзыв' : last >= 2 && last <= 4 && (lastTwo < 12 || lastTwo > 14) ? 'отзыва' : 'отзывов';
+        return `${qty} ${word}`;
+      };
+      const pad = value => String(value).padStart(2, '0');
+      const monthNames = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
+      const escapeHtml = value => String(value == null ? '' : value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+
+      function headerHtml() {
+        return `
+          <header class="demo-header">
+            <div class="demo-brand">
+              <div class="demo-logo" aria-hidden="true">M</div>
+              <div style="min-width:0">
+                <div class="demo-brand__name">${escapeHtml(demoData.client.name)}</div>
+                <div class="demo-brand__sub">Личный кабинет · ${escapeHtml(demoData.client.email)}</div>
+              </div>
+            </div>
+            <div class="demo-badge">Демо-режим</div>
+          </header>`;
+      }
+
+      function footerHtml() {
+        return `
+          <footer class="demo-footer">
+            <button type="button" data-open-modal="privacy">Политика конфиденциальности</button>
+            <span>·</span>
+            <button type="button" data-open-modal="terms">Публичная оферта</button>
+          </footer>`;
+      }
+
+      function totals() {
+        return demoData.profiles.reduce((sum, profile) => {
+          sum.ordered += profile.ordered;
+          sum.done += profile.done;
+          sum.active += profile.active;
+          sum.remain += profile.remain;
+          return sum;
+        }, { ordered: 0, done: 0, active: 0, remain: 0 });
+      }
+
+      function profileCard(profile) {
+        const doneDeg = Math.min(360, profile.done / Math.max(1, profile.ordered) * 360);
+        const activeDeg = Math.min(360, (profile.done + profile.active) / Math.max(1, profile.ordered) * 360);
+        const progress = Math.min(100, Math.round((profile.done + profile.active) / Math.max(1, profile.ordered) * 100));
+        return `
+          <button type="button" class="profile-card" data-profile="${escapeHtml(profile.id)}" aria-label="Открыть анкету ${escapeHtml(profile.code)}">
+            <div class="profile-card__head">
+              <span class="profile-code">${escapeHtml(profile.code)}</span>
+              <span class="profile-card__name">${escapeHtml(profile.name)}</span>
+              <span class="profile-arrow" aria-hidden="true">›</span>
+            </div>
+            <div class="profile-card__body">
+              <div class="donut" style="--done:${doneDeg.toFixed(1)}deg;--active:${activeDeg.toFixed(1)}deg">
+                <div class="donut__inside"><div class="donut__value">${progress}%</div><div class="donut__label">прогресс</div></div>
+              </div>
+              <div class="profile-stats">
+                <div class="profile-stat"><span>Заказано</span><b>${profile.ordered}</b></div>
+                <div class="profile-stat"><span>Готово</span><b class="is-green">${profile.done}</b></div>
+                <div class="profile-stat"><span>В работе</span><b class="is-orange">${profile.active}</b></div>
+              </div>
+            </div>
+            <div class="profile-card__foot"><span>Остаток к оплате</span><b>${money(profile.remain)}</b></div>
+          </button>`;
+      }
+
+      function calendarHtml() {
+        const first = new Date(state.year, state.month, 1);
+        const days = new Date(state.year, state.month + 1, 0).getDate();
+        const firstDay = (first.getDay() + 6) % 7;
+        const cells = [];
+        for (let i = 0; i < firstDay; i += 1) cells.push('<button class="calendar__day is-empty" tabindex="-1"></button>');
+        for (let day = 1; day <= days; day += 1) {
+          const date = `${state.year}-${pad(state.month + 1)}-${pad(day)}`;
+          const hasEvents = Boolean(demoData.events[date]);
+          cells.push(`<button type="button" class="calendar__day${date === state.selectedDate ? ' is-selected' : ''}" data-calendar-date="${date}">${day}${hasEvents ? '<span class="calendar__dot"></span>' : ''}</button>`);
+        }
+        const events = demoData.events[state.selectedDate] || [];
+        const eventHtml = events.length
+          ? events.map(event => `<div class="calendar-event"><span class="calendar-event__mark" style="background:${event.color === 'green' ? 'var(--green)' : 'var(--orange)'}"></span><div><strong>${escapeHtml(event.title)}</strong><span>${escapeHtml(event.profile)}</span></div></div>`).join('')
+          : '<div class="calendar-event"><span class="calendar-event__mark" style="background:var(--line-strong)"></span><div><strong>Нет событий</strong><span>На выбранную дату действий не запланировано</span></div></div>';
+        return `
+          <div class="calendar">
+            <div class="calendar__nav">
+              <button type="button" data-calendar-shift="-1" aria-label="Предыдущий месяц">‹</button>
+              <div class="calendar__month">${monthNames[state.month]} ${state.year}</div>
+              <button type="button" data-calendar-shift="1" aria-label="Следующий месяц">›</button>
+            </div>
+            <div class="calendar__week"><span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span></div>
+            <div class="calendar__grid">${cells.join('')}</div>
+            <div class="calendar__events">${eventHtml}</div>
+          </div>`;
+      }
+
+      function overviewHtml() {
+        const total = totals();
+        return `
+          ${headerHtml()}
+          <main class="demo-main">
+            <h2 class="section-title">Сводка</h2>
+            <section class="kpis" aria-label="Сводка по анкетам">
+              <div class="kpi"><div class="kpi__label">Заказано</div><div class="kpi__value">${total.ordered}</div></div>
+              <div class="kpi"><div class="kpi__label">Сделано</div><div class="kpi__value is-green">${total.done}</div></div>
+              <div class="kpi"><div class="kpi__label">В работе</div><div class="kpi__value is-orange">${total.active}</div></div>
+              <div class="kpi"><div class="kpi__label">Остаток</div><div class="kpi__value is-red">${money(total.remain)}</div></div>
+            </section>
+
+            <section class="cta-grid" aria-label="Действия с оплатой">
+              <div class="cta">
+                <div class="cta__text"><div class="cta__title">Пакеты для одной или нескольких анкет</div><div class="cta__sub">Можно собрать несколько пакетов и оплатить одним платежом.</div></div>
+                <button class="btn" type="button" data-open-modal="order">Купить пакеты</button>
+              </div>
+              <div class="cta cta--green">
+                <div class="cta__text"><div class="cta__title">Остаток к оплате: ${money(total.remain)}</div><div class="cta__sub">Доплата по выбранным анкетам отображается отдельно.</div></div>
+                <button class="btn btn--green" type="button" data-open-modal="remainder">Оплатить остаток</button>
+              </div>
+            </section>
+
+            <div class="overview-grid">
+              <section>
+                <h2 class="section-title">Анкеты</h2>
+                <div class="profiles">${demoData.profiles.map(profileCard).join('')}</div>
+                <section class="orders">
+                  <h2 class="section-title">Мои заказы</h2>
+                  <div class="order-card">
+                    <div class="order-card__head"><div class="order-card__main"><div class="order-card__title">Развитие · 12 отзывов</div><div class="order-card__sub">A-102 · 05.06.2026</div></div><span class="status-pill">В работе</span></div>
+                    <div class="order-card__pay">Оплачено: ${money(10000)} · Остаток: <b>${money(5490)}</b></div>
+                  </div>
+                </section>
+              </section>
+
+              <aside class="overview-grid__right">
+                <button type="button" class="terms-card" data-open-modal="terms">
+                  <span class="terms-card__icon" aria-hidden="true">i</span>
+                  <span><strong>Публичная оферта</strong><small>Оплата, сроки, возвраты и гарантии</small></span>
+                </button>
+                <h2 class="section-title">Календарь</h2>
+                ${calendarHtml()}
+                <details class="collapsible">
+                  <summary>Что доступно в кабинете</summary>
+                  <div class="collapsible__body">
+                    <div class="mini-row"><span class="mini-row__mark">1</span><span class="mini-row__content">Прогресс по каждой анкете<small>Текущие статусы и план работ</small></span></div>
+                    <div class="mini-row"><span class="mini-row__mark">2</span><span class="mini-row__content">Оплата и остаток<small>История платежей без поиска по перепискам</small></span></div>
+                    <div class="mini-row"><span class="mini-row__mark">3</span><span class="mini-row__content">Календарь и отчётность<small>Все основные действия собраны в одном месте</small></span></div>
+                  </div>
+                </details>
+                <details class="collapsible">
+                  <summary>Последние действия · ${demoData.feed.length}</summary>
+                  <div class="collapsible__body">
+                    ${demoData.feed.map((item, index) => `<div class="mini-row"><span class="mini-row__mark">${index + 1}</span><span class="mini-row__content">${escapeHtml(item[0])}<small>${escapeHtml(item[1])} · ${escapeHtml(item[2])}</small></span></div>`).join('')}
+                  </div>
+                </details>
+              </aside>
+            </div>
+            ${footerHtml()}
+          </main>`;
+      }
+
+      function packageHtml(item) {
+        const done = Math.min(100, item.done / Math.max(1, item.qty) * 100);
+        const active = Math.min(100 - done, item.active / Math.max(1, item.qty) * 100);
+        return `
+          <article class="package">
+            <div class="package__head"><strong>${escapeHtml(item.name)}</strong><span class="package__state is-${item.state}">${escapeHtml(item.label)}</span></div>
+            <div class="package__counts"><span>${item.bonus ? 'Бонус' : 'Заказано'} <b>${item.qty}</b></span><span>Выполнено <b>${item.done}</b></span><span>В работе <b>${item.active}</b></span></div>
+            <div class="package__bar"><span style="width:${done}%"></span><span style="width:${active}%"></span></div>
+          </article>`;
+      }
+
+      function detailHtml(profile) {
+        const progress = Math.min(100, Math.round((profile.done + profile.active) / Math.max(1, profile.ordered) * 100));
+        const doneWidth = Math.min(100, profile.done / Math.max(1, profile.ordered) * 100);
+        const activeWidth = Math.min(100 - doneWidth, profile.active / Math.max(1, profile.ordered) * 100);
+        return `
+          ${headerHtml()}
+          <main class="demo-main">
+            <button class="back-btn" type="button" data-back>← Назад к анкетам</button>
+            <h1 class="detail-title">${escapeHtml(profile.code)} · ${escapeHtml(profile.name)}</h1>
+            <div class="detail-sub">${escapeHtml(profile.platform)} · ${escapeHtml(profile.tariff)} · дедлайн ${escapeHtml(profile.deadline)}</div>
+
+            <section class="kpis" aria-label="Прогресс анкеты">
+              <div class="kpi"><div class="kpi__label">Заказано</div><div class="kpi__value">${profile.ordered}</div></div>
+              <div class="kpi"><div class="kpi__label">Сделано</div><div class="kpi__value is-green">${profile.done}</div></div>
+              <div class="kpi"><div class="kpi__label">В работе</div><div class="kpi__value is-orange">${profile.active}</div></div>
+              <div class="kpi"><div class="kpi__label">Прогресс</div><div class="kpi__value">${progress}%</div></div>
+            </section>
+            <div class="progress-line"><span class="progress-line__done" style="width:${doneWidth}%"></span><span class="progress-line__active" style="width:${activeWidth}%"></span></div>
+            <div class="legend"><span><i></i>Запланировано · ${profile.planned}</span><span><i class="active"></i>В работе · ${profile.active}</span><span><i class="done"></i>Готово · ${profile.done}</span></div>
+
+            <h2 class="section-title">Финансы</h2>
+            <section class="kpis" style="grid-template-columns:repeat(3,minmax(0,1fr))">
+              <div class="kpi"><div class="kpi__label">Итого</div><div class="kpi__value">${money(profile.total)}</div></div>
+              <div class="kpi"><div class="kpi__label">Оплачено</div><div class="kpi__value is-green">${money(profile.paid)}</div></div>
+              <div class="kpi"><div class="kpi__label">Остаток</div><div class="kpi__value ${profile.remain ? 'is-red' : ''}">${money(profile.remain)}</div></div>
+            </section>
+
+            <h2 class="section-title">Пакеты по анкете</h2>
+            <section class="packages">${profile.packages.map(packageHtml).join('')}</section>
+
+            <h2 class="section-title">Аккаунты в работе</h2>
+            <div class="table-wrap">
+              <table class="history-table">
+                <thead><tr><th>Аккаунт</th><th>Статус</th><th>Обновлён</th></tr></thead>
+                <tbody>${profile.statuses.map(row => `<tr><td><strong>${escapeHtml(row[0])}</strong></td><td><span class="account-state is-${escapeHtml(row[3])}">${escapeHtml(row[1])}</span></td><td>${escapeHtml(row[2])}</td></tr>`).join('')}</tbody>
+              </table>
+            </div>
+
+            <h2 class="section-title">История оплат</h2>
+            <div class="table-wrap">
+              <table class="history-table">
+                <thead><tr><th>Дата</th><th>Услуга</th><th>Сумма</th></tr></thead>
+                <tbody>${profile.payments.map(row => `<tr><td>${escapeHtml(row[0])}</td><td>${escapeHtml(row[1])}<div style="color:var(--muted);font-size:11px">${escapeHtml(row[2])}</div></td><td><strong>${money(row[3])}</strong></td></tr>`).join('')}</tbody>
+              </table>
+            </div>
+
+            <h2 class="section-title">Опубликованные отзывы</h2>
+            <section class="reviews">${profile.reviews.map(row => `<article class="review"><div class="review__head"><span class="review__code">${escapeHtml(row[0])}</span><span>${escapeHtml(row[1])}</span></div><div class="review__text">${escapeHtml(row[2])}</div></article>`).join('')}</section>
+            ${footerHtml()}
+          </main>`;
+      }
+
+      function render() {
+        if (state.view === 'detail') {
+          const profile = demoData.profiles.find(item => item.id === state.profileId) || demoData.profiles[0];
+          app.innerHTML = detailHtml(profile);
+        } else {
+          app.innerHTML = overviewHtml();
+        }
+      }
+
+      function modalFrame(title, body) {
+        return `
+          <div class="modal__backdrop" data-close-modal></div>
+          <section class="modal__dialog" role="dialog" aria-modal="true" aria-label="${escapeHtml(title)}">
+            <header class="modal__head"><h2>${escapeHtml(title)}</h2><button class="modal__close" type="button" data-close-modal aria-label="Закрыть">×</button></header>
+            <div class="modal__body">${body}</div>
+          </section>`;
+      }
+
+      function orderModal() {
+        return modalFrame('Купить пакет', `
+          <div class="field"><label for="demoProfile">Анкета</label><select id="demoProfile">${demoData.profiles.map(item => `<option>${escapeHtml(item.code)} · ${escapeHtml(item.name)}</option>`).join('')}</select></div>
+          <div class="field"><label for="demoTariff">Тариф</label><select id="demoTariff">${tariffs.map(item => `<option value="${item.id}">${escapeHtml(item.name)} · ${item.label ? escapeHtml(item.label) : reviewsLabel(item.qty)} · ${money(item.price)}</option>`).join('')}</select></div>
+          <div class="field"><label>Способ оплаты</label><div class="segmented"><label><input type="radio" name="demoPay" value="online" checked/><span>Онлайн</span></label><label><input type="radio" name="demoPay" value="transfer"/><span>Перевод</span></label></div></div>
+          <div class="amount-box"><span>К оплате</span><b id="demoOrderAmount">${money(tariffs[0].price)}</b></div>
+          <button type="button" class="btn btn--wide" data-demo-submit>Продолжить</button>
+          <div class="demo-note">Это демонстрация интерфейса. Платёж и заявка не создаются.</div>
+          <div class="result-note" data-demo-result hidden>Готово: в рабочем кабинете здесь откроется безопасная форма оплаты.</div>`);
+      }
+
+      function remainderModal() {
+        const rows = demoData.profiles.filter(item => item.remain > 0);
+        return modalFrame('Оплатить остаток', `
+          ${rows.map(item => `<label class="check-row"><input type="checkbox" data-remain-value="${item.remain}" checked/><span>${escapeHtml(item.code)} · ${escapeHtml(item.name)}</span><b>${money(item.remain)}</b></label>`).join('')}
+          <div class="amount-box"><span>К оплате</span><b id="demoRemainAmount">${money(rows.reduce((sum, item) => sum + item.remain, 0))}</b></div>
+          <button type="button" class="btn btn--green btn--wide" data-demo-submit>Продолжить</button>
+          <div class="demo-note">Демо-режим: реальные платёжные данные не используются.</div>
+          <div class="result-note" data-demo-result hidden>Готово: в рабочем кабинете клиент перейдёт к оплате выбранного остатка.</div>`);
+      }
+
+      function termsModal(kind) {
+        const isPrivacy = kind === 'privacy';
+        return modalFrame(isPrivacy ? 'Политика конфиденциальности' : 'Публичная оферта', `
+          <div class="terms-copy">
+            <h3>${isPrivacy ? 'Обработка данных' : 'Предмет оферты'}</h3>
+            <p>${isPrivacy ? 'В рабочем кабинете клиент видит актуальную политику обработки персональных данных и отдельно подтверждает согласие.' : 'В рабочем кабинете размещается полная актуальная редакция публичной оферты Mentori.'}</p>
+            <h3>${isPrivacy ? 'Безопасность' : 'Оплата и сроки'}</h3>
+            <p>${isPrivacy ? 'Демо-версия не отправляет и не сохраняет персональные данные.' : 'Тариф, сумма, способ оплаты и статус заказа фиксируются в истории клиента.'}</p>
+            <h3>${isPrivacy ? 'Контакты' : 'История согласий'}</h3>
+            <p>${isPrivacy ? 'Для вопросов используется контактная почта, указанная в официальной политике.' : 'Рабочая версия сохраняет принятую редакцию документов вместе с заказом.'}</p>
+          </div>`);
+      }
+
+      function openModal(kind) {
+        modal.innerHTML = kind === 'order' ? orderModal() : kind === 'remainder' ? remainderModal() : termsModal(kind);
+        modal.hidden = false;
+        document.body.style.overflow = 'hidden';
+        if (kind === 'order') bindOrderModal();
+        if (kind === 'remainder') bindRemainderModal();
+      }
+
+      function closeModal() {
+        modal.hidden = true;
+        modal.innerHTML = '';
+        document.body.style.overflow = '';
+      }
+
+      function bindOrderModal() {
+        const tariffSelect = modal.querySelector('#demoTariff');
+        const amount = modal.querySelector('#demoOrderAmount');
+        const recalc = () => {
+          const tariff = tariffs.find(item => item.id === tariffSelect.value) || tariffs[0];
+          amount.textContent = money(tariff.price);
+        };
+        tariffSelect.addEventListener('change', recalc);
+        recalc();
+      }
+
+      function bindRemainderModal() {
+        const recalc = () => {
+          const total = [...modal.querySelectorAll('[data-remain-value]:checked')].reduce((sum, item) => sum + Number(item.dataset.remainValue || 0), 0);
+          modal.querySelector('#demoRemainAmount').textContent = money(total);
+        };
+        modal.querySelectorAll('[data-remain-value]').forEach(item => item.addEventListener('change', recalc));
+      }
+
+      app.addEventListener('click', event => {
+        const profileButton = event.target.closest('[data-profile]');
+        const backButton = event.target.closest('[data-back]');
+        const modalButton = event.target.closest('[data-open-modal]');
+        const calendarButton = event.target.closest('[data-calendar-date]');
+        const shiftButton = event.target.closest('[data-calendar-shift]');
+
+        if (profileButton) {
+          state.view = 'detail';
+          state.profileId = profileButton.dataset.profile;
+          history.pushState({ profileId: state.profileId }, '', `#${state.profileId}`);
+          render();
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        } else if (backButton) {
+          state.view = 'overview';
+          state.profileId = null;
+          history.pushState({}, '', '#overview');
+          render();
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        } else if (modalButton) {
+          openModal(modalButton.dataset.openModal);
+        } else if (calendarButton) {
+          state.selectedDate = calendarButton.dataset.calendarDate;
+          render();
+        } else if (shiftButton) {
+          state.month += Number(shiftButton.dataset.calendarShift || 0);
+          if (state.month < 0) { state.month = 11; state.year -= 1; }
+          if (state.month > 11) { state.month = 0; state.year += 1; }
+          state.selectedDate = `${state.year}-${pad(state.month + 1)}-01`;
+          render();
+        }
+      });
+
+      modal.addEventListener('click', event => {
+        if (event.target.closest('[data-close-modal]')) closeModal();
+        const submit = event.target.closest('[data-demo-submit]');
+        if (submit) {
+          const result = modal.querySelector('[data-demo-result]');
+          if (result) result.hidden = false;
+          submit.disabled = true;
+          submit.style.opacity = '.65';
+        }
+      });
+
+      document.addEventListener('keydown', event => {
+        if (event.key === 'Escape' && !modal.hidden) closeModal();
+      });
+
+      window.addEventListener('popstate', () => {
+        const id = location.hash.replace('#', '');
+        const profile = demoData.profiles.find(item => item.id === id);
+        state.view = profile ? 'detail' : 'overview';
+        state.profileId = profile ? profile.id : null;
+        render();
+      });
+
+      const initialId = location.hash.replace('#', '');
+      const initialProfile = demoData.profiles.find(item => item.id === initialId);
+      if (initialProfile) { state.view = 'detail'; state.profileId = initialProfile.id; }
+      render();
+
+      window.ClientCabinetDemo = {
+        openProfile(id) {
+          const profile = demoData.profiles.find(item => item.id === id);
+          if (!profile) return false;
+          state.view = 'detail'; state.profileId = id; render(); return true;
+        },
+        showOverview() { state.view = 'overview'; state.profileId = null; render(); },
+        openOrder() { openModal('order'); }
+      };
+    })();
+  </script>
+</body>
+</html>
