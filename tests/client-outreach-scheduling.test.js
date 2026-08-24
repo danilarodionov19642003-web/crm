@@ -138,7 +138,9 @@ assert.match(expiryMigration, /manage_client_outreach_slot_v1/,
 assert.match(expiryMigration, /get_client_outreach_calendar_v1/,
   'открытие клиентского календаря должно запускать очистку просроченных планов');
 assert.match(tomorrowMinimumMigration, /action_name in \('add', 'move'\)/);
-assert.match(tomorrowMinimumMigration, /p_target_date < current_date \+ 1/,
+assert.match(tomorrowMinimumMigration, /now\(\) at time zone 'Europe\/Moscow'/,
+  'граница дня должна считаться по рабочему московскому времени');
+assert.match(tomorrowMinimumMigration, /p_target_date < business_today \+ 1/,
   'сервер должен запрещать новый или перенесённый отклик на сегодня');
 assert.match(tomorrowMinimumMigration, /OUTREACH_PREPARATION_DAY/);
 assert.match(tomorrowMinimumMigration, /manage_client_outreach_slot_v1/,

@@ -17,12 +17,13 @@ set search_path = public
 as $$
 declare
   action_name text := lower(btrim(coalesce(p_action, '')));
+  business_today date := (now() at time zone 'Europe/Moscow')::date;
   slot_row public.client_outreach_slots;
 begin
   perform public.expire_past_client_outreach_slots();
 
   if action_name in ('add', 'move')
-     and (p_target_date is null or p_target_date < current_date + 1) then
+     and (p_target_date is null or p_target_date < business_today + 1) then
     raise exception 'OUTREACH_PREPARATION_DAY' using errcode = '22023';
   end if;
 
