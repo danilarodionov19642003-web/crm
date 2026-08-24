@@ -551,6 +551,9 @@
           <div style="flex:1"></div>
           <span id="regUpdated" style="font-size:11px;color:var(--text-mute);align-self:center"></span>
         </div>
+        <div id="regArchiveNote" style="display:none;margin-bottom:12px;padding:9px 11px;border-radius:8px;background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);color:var(--amber);font-size:12px">
+          📦 Архивный аккаунт · данные доступны только для просмотра
+        </div>
         <div id="regView"></div>
         <div id="regEdit" style="display:none"></div>
       </div>
@@ -898,12 +901,13 @@
           </div>
         ` : '';
 
-        // В архиве — другой набор кнопок: восстановить + удалить навсегда.
+        // В архиве регистрационные данные можно просматривать, но не изменять.
         // Сотруднику все эти действия недоступны.
         let headActions = '';
         if (archMode && isOwner) {
           headActions = `
               <button class="btn--icon" data-act="cost" data-pid="${p.id}" title="Содержание аккаунта">₽</button>
+              <button class="btn btn--ghost btn--sm" data-act="reg" data-pid="${p.id}" title="Открыть данные аккаунта">🔐 Данные</button>
               <button class="btn--icon" data-act="purge" data-pid="${p.id}" title="Удалить навсегда (без отката)">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
               </button>`;
@@ -1607,11 +1611,12 @@
     /* --- Регистрация --- */
     let regPid = null;
     let regEditing = false;
+    let regReadOnly = false;
     const REG_FIELDS_LAYOUT = [
       ['ownerName',     '👤 Имя владельца'],
       ['phone',         '📱 Телефон'],
       ['profiEmail',    '📧 Профи / mail'],
-      ['cloudPassword', '☁️ Облачный пароль'],
+      ['cloudPassword', '✈️ Пароль Telegram / облака'],
       ['recoveryEmail', '🛟 Почта восстановления']
     ];
 
@@ -1621,18 +1626,22 @@
       if (!isOwner) { toast('Доступно только владельцу', 'error'); return; }
       regPid = profileId;
       regEditing = false;
-      const p = profileById(profileId);
-      if (!p) return;
+      const found = Store.getProfileOrArchived(profileId);
+      if (!found) return;
+      const p = found.profile;
+      regReadOnly = found.archived;
       const reg = Store.getAccountReg(profileId) || {
         cloudPassword: Store.getDefaultCloudPassword()
       };
-      document.getElementById('regTitle').textContent = `🔐 Аккаунт ${p.code} · ${p.city || ''}`;
+      document.getElementById('regTitle').textContent = `🔐 Аккаунт ${p.code} · ${p.city || ''}${regReadOnly ? ' · архив' : ''}`;
       document.getElementById('regUpdated').textContent = reg.updatedAt ? `обновлено ${fmtDate(reg.updatedAt)}` : '';
       renderRegView(reg);
       renderRegEdit(reg);
       document.getElementById('regView').style.display = '';
       document.getElementById('regEdit').style.display = 'none';
       document.getElementById('regSave').style.display = 'none';
+      document.getElementById('regArchiveNote').style.display = regReadOnly ? '' : 'none';
+      document.getElementById('regToggleEdit').style.display = regReadOnly ? 'none' : '';
       document.getElementById('regToggleEdit').textContent = '✏ Редактировать';
       Modal.open('regModal');
     }
@@ -1726,6 +1735,7 @@
     }
 
     document.getElementById('regToggleEdit').addEventListener('click', () => {
+      if (regReadOnly) return;
       regEditing = !regEditing;
       document.getElementById('regView').style.display = regEditing ? 'none' : '';
       document.getElementById('regEdit').style.display = regEditing ? '' : 'none';
@@ -1734,7 +1744,7 @@
     });
 
     document.getElementById('regSave').addEventListener('click', () => {
-      if (!regPid) return;
+      if (!regPid || regReadOnly) return;
       const patch = {};
       document.querySelectorAll('#regEdit [data-fld]').forEach(inp => {
         patch[inp.dataset.fld] = inp.value.trim();

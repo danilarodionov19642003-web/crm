@@ -96,6 +96,14 @@ assert.match(statusesSource, /id="costStartedAt"/,
   'владелец должен иметь возможность исправить дату начала содержания');
 assert.doesNotMatch(statusesSource, /data-act="restore"/,
   'архивный аккаунт не должен иметь кнопки восстановления');
+assert.match(statusesSource, /if \(archMode && isOwner\)[\s\S]*?data-act="reg"[\s\S]*?data-act="purge"/,
+  'владелец должен открывать регистрационные данные архивного аккаунта');
+assert.match(statusesSource, /regReadOnly = found\.archived/,
+  'модалка должна распознавать архивный аккаунт');
+assert.match(statusesSource, /if \(!regPid \|\| regReadOnly\) return/,
+  'архивные регистрационные данные нельзя сохранять из модалки просмотра');
+assert.match(statusesSource, /Пароль Telegram \/ облака/,
+  'пароль Telegram должен быть явно подписан');
 assert.match(financeSource, /data-toggle-infrastructure/,
   'существующую оплату софта или прокси можно отметить прямо в расходах');
 assert.match(financeSource, /costScope:\s*document\.getElementById\('eAccountSoftware'\)/,
