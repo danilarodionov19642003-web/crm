@@ -5,16 +5,37 @@
   const SB = window.Supabase;
   if (!SB) return;
 
+  const RPC_TIMEOUT_MS = 12_000;
+
   async function rpc(name, body = {}) {
-    const response = await SB.authFetch(`${SB.URL}/rest/v1/rpc/${name}`, {
-      method: 'POST',
-      headers: {
-        apikey: SB.KEY,
-        'Content-Type': 'application/json',
-        Accept: 'application/json'
-      },
-      body: JSON.stringify(body)
+    const controller = new AbortController();
+    let timeoutId;
+    const timeout = new Promise((_, reject) => {
+      timeoutId = setTimeout(() => {
+        controller.abort();
+        const error = new Error('REQUEST_TIMEOUT');
+        error.code = 'REQUEST_TIMEOUT';
+        reject(error);
+      }, RPC_TIMEOUT_MS);
     });
+    let response;
+    try {
+      response = await Promise.race([
+        SB.authFetch(`${SB.URL}/rest/v1/rpc/${name}`, {
+          method: 'POST',
+          headers: {
+            apikey: SB.KEY,
+            'Content-Type': 'application/json',
+            Accept: 'application/json'
+          },
+          body: JSON.stringify(body),
+          signal: controller.signal
+        }),
+        timeout
+      ]);
+    } finally {
+      clearTimeout(timeoutId);
+    }
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
       const error = new Error(String(payload.message || payload.details || `HTTP ${response.status}`));
@@ -43,6 +64,7 @@
     if (raw.includes('ANKETA_NOT_FOUND')) return 'Анкета ещё не попала в снимок личного кабинета. Обновите данные и повторите.';
     if (raw.includes('TEXT_APPROVAL_ALREADY_PENDING')) return 'По этому отзыву уже ожидается ответ клиента.';
     if (raw.includes('AUTH_REQUIRED')) return 'У этой учётной записи нет права отправлять тексты клиенту.';
+    if (raw.includes('REQUEST_TIMEOUT') || raw.includes('AbortError')) return 'CRM сохранена, но отправка клиенту не ответила за 12 секунд. Повторите отправку в разделе «Отзывы».';
     return 'Не удалось отправить текст клиенту. Он сохранён в CRM, отправку можно повторить в разделе «Отзывы».';
   }
 
@@ -95,7 +117,14 @@
       return { ok: true, count: Number(count) || 0 };
     } catch (error) {
       console.warn('[ClientTextApprovals] review cancellation failed', error);
-      return { ok: false, error, message: 'Не удалось отменить запрос клиента. Повторите действие после восстановления связи.' };
+      const timedOut = String(error && error.message || error || '').includes('REQUEST_TIMEOUT');
+      return {
+        ok: false,
+        error,
+        message: timedOut
+          ? 'Сервер не ответил за 12 секунд. Кнопка снова доступна — повторите действие.'
+          : 'Не удалось отменить запрос клиента. Повторите действие после восстановления связи.'
+      };
     }
   }
 

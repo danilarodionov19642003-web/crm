@@ -618,7 +618,7 @@
   <script src="../js/cloud-sync.js?v=20260820d"></script>
   <script src="../js/accounts-sync.js"></script>
   <script src="../js/reviews-sync.js?v=20260717a"></script>
-  <script src="../js/client-text-approvals.js?v=20260820b"></script>
+  <script src="../js/client-text-approvals.js?v=20260825a"></script>
   <script src="../components/sidebar.js?v=20260820b"></script>
   <script src="../components/header.js"></script>
   <script src="../components/table.js"></script>
@@ -1314,6 +1314,19 @@
       document.getElementById('chgReviewWrap').style.display = (s === DONE_STATUS) ? 'block' : 'none';
     }
 
+    function sendReviewInBackground(review) {
+      // Статус и отзыв уже сохранены в CRM. Доставка в кабинет/Telegram не
+      // должна держать модалку открытой или блокировать кнопку «Сохранить».
+      setTimeout(async () => {
+        const delivery = window.ClientTextApprovals
+          ? await window.ClientTextApprovals.sendReview(Store, review)
+          : { ok: false, message: 'Модуль согласования не загрузился. Повторите отправку в разделе «Отзывы».' };
+        if (!delivery.ok) toast(delivery.message, 'error');
+        else if (delivery.telegramDelivered) toast('Текст добавлен в кабинет и отправлен клиенту в Telegram');
+        else toast('Текст добавлен в кабинет. Ответственный Telegram пока не подключён');
+      }, 0);
+    }
+
     function checkAddWarn() {
       const mid = document.getElementById('addMentor').value;
       const w = document.getElementById('addWarn');
@@ -1366,15 +1379,7 @@
           // модерацию их сдали сегодня.
           submittedAt: new Date().toISOString(),
         });
-        const button = event.currentTarget;
-        button.disabled = true;
-        const delivery = window.ClientTextApprovals
-          ? await window.ClientTextApprovals.sendReview(Store, review)
-          : { ok: false, message: 'Модуль согласования не загрузился. Повторите отправку в разделе «Отзывы».' };
-        button.disabled = false;
-        if (!delivery.ok) toast(delivery.message, 'error');
-        else if (delivery.telegramDelivered) toast('Текст добавлен в кабинет и отправлен клиенту в Telegram');
-        else toast('Текст добавлен в кабинет. Ответственный Telegram пока не подключён');
+        sendReviewInBackground(review);
       } else {
         toast('Привязано');
       }
@@ -1467,9 +1472,13 @@
           return;
         }
         if (existingReview.clientApprovalRequired) {
+          let cancellation;
           event.currentTarget.disabled = true;
-          const cancellation = await window.ClientTextApprovals.cancelReview(existingReview.id);
-          event.currentTarget.disabled = false;
+          try {
+            cancellation = await window.ClientTextApprovals.cancelReview(existingReview.id);
+          } finally {
+            event.currentTarget.disabled = false;
+          }
           if (!cancellation.ok) { toast(cancellation.message, 'error'); return; }
         }
       }
@@ -1495,14 +1504,7 @@
           // отзыв ОПУБЛИКОВАН на площадке, отдельно от модерации.
           submittedAt: new Date().toISOString(),
         });
-        event.currentTarget.disabled = true;
-        const delivery = window.ClientTextApprovals
-          ? await window.ClientTextApprovals.sendReview(Store, review)
-          : { ok: false, message: 'Модуль согласования не загрузился. Повторите отправку в разделе «Отзывы».' };
-        event.currentTarget.disabled = false;
-        if (!delivery.ok) toast(delivery.message, 'error');
-        else if (delivery.telegramDelivered) toast('Текст добавлен в кабинет и отправлен клиенту в Telegram');
-        else toast('Текст добавлен в кабинет. Ответственный Telegram пока не подключён');
+        sendReviewInBackground(review);
       } else if (goingAway) {
         toast('Статус снят, отзыв удалён');
       } else {
