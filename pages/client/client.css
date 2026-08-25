@@ -160,6 +160,43 @@
 
 /* ---------- список анкет ---------- */
 .cli-list { display: flex; flex-direction: column; gap: 14px; }
+.cli-anketa-list { display: flex; flex-direction: column; gap: 14px; }
+.cli-anketa-tabs {
+  display: inline-flex;
+  align-self: flex-start;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg-2);
+  box-shadow: var(--cli-shadow);
+}
+.cli-anketa-tabs button {
+  border: 0;
+  border-radius: 10px;
+  padding: 8px 12px;
+  background: transparent;
+  color: var(--text-mute);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.cli-anketa-tabs button span {
+  display: inline-flex;
+  min-width: 20px;
+  justify-content: center;
+  margin-left: 4px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.06);
+  color: inherit;
+  font-size: 10px;
+}
+.cli-anketa-tabs button.is-active {
+  background: rgba(255,122,0,.14);
+  color: var(--cli-accent);
+}
 
 .cli-card {
   display: block;
@@ -204,6 +241,22 @@
 .cli-card__name {
   flex: 1; font-weight: 700; font-size: 16px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cli-card__closed {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border: 1px solid rgba(34,197,94,.28);
+  border-radius: 999px;
+  background: rgba(34,197,94,.1);
+  color: var(--cli-green);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+@media (max-width: 520px) {
+  .cli-anketa-tabs { width: 100%; }
+  .cli-anketa-tabs button { flex: 1; padding-inline: 8px; }
+  .cli-card__closed { display: none; }
 }
 
 /* Анкета в виде «donut + цифры справа» */
@@ -1230,6 +1283,7 @@ body:has(.cli-modal:not([hidden])) { overflow: hidden; }
 .cli-check-row { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; line-height: 1.35; cursor: pointer; }
 .cli-settings__checks input,
 .cli-check-row input { width: 17px; height: 17px; margin: 0; flex: none; accent-color: var(--cli-accent); }
+.cli-tg-connect > .cli-check-row { margin: 10px 0 13px; }
 .cli-tg-member__actions,
 .cli-tg-link { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
 .cli-settings__button {

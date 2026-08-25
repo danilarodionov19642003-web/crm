@@ -53,7 +53,7 @@ vm.runInContext(appSource, context);
 const { Store, STATUS_CHOSEN } = context.window.App;
 Store.state = {
   mentors: [{ id: 'mentor-a21', code: 'a21', name: 'Столичный уют' }],
-  clients: [{ id: 'client-a21', code: 'a21', name: 'Столичный уют', ordered: 2, niche: 'remont' }],
+  clients: [{ id: 'client-a21', code: 'a21', name: 'Столичный уют', ordered: 2, niche: 'remont', closed: true }],
   nicheConfig: {
     remont: { label: 'Ремонт квартир', daysToPublish: 30, clientMinPublicationDays: 20 }
   },
@@ -88,6 +88,7 @@ assert.equal(snapshot.reviews[0].profileId, 'profile-2');
 assert.equal(snapshot.reviews[0].profileName, 'Ольга');
 assert.equal(snapshot.niche, 'remont');
 assert.equal(snapshot.publicationWaitDays, 20);
+assert.equal(snapshot.closed, true, 'закрытая CRM-анкета должна попасть в завершённые кабинета');
 
 assert.match(migration, /security definer/i);
 assert.match(migration, /client_snapshots/);

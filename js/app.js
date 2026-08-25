@@ -2301,6 +2301,9 @@
         platform: client ? (client.platform || '') : '',
         niche: client ? (client.niche || '') : '',
         nicheLabel: nicheConfig ? (nicheConfig.label || client.niche || '') : '',
+        // Закрытая в CRM анкета остаётся доступной клиенту в отдельной вкладке,
+        // но не засоряет список текущей работы.
+        closed: client ? client.closed === true : false,
         publicationWaitDays,
         tariff: client ? (client.tariff || '') : '',
         ordered: client ? Number(client.ordered) || 0 : 0,

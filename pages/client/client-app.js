@@ -577,6 +577,12 @@
       </svg>`;
   }
 
+  let anketaListMode = 'active';
+
+  function isCompletedAnketa(anketa) {
+    return !!(anketa && anketa.closed === true);
+  }
+
   function renderAnketas(anketas) {
     const el = document.querySelector('[data-cli-anketas]');
     if (!el) return;
@@ -584,7 +590,11 @@
       el.innerHTML = '<div class="cli-empty">У вас пока нет анкет в работе. Свяжитесь с менеджером.</div>';
       return;
     }
-    el.innerHTML = anketas.map(a => {
+    const activeAnketas = anketas.filter(a => !isCompletedAnketa(a));
+    const completedAnketas = anketas.filter(isCompletedAnketa);
+    if (anketaListMode === 'completed' && !completedAnketas.length) anketaListMode = 'active';
+    const visibleAnketas = anketaListMode === 'completed' ? completedAnketas : activeAnketas;
+    const cardsHtml = visibleAnketas.map(a => {
       const br = _statusBreakdown(a.statuses);
       const ordered = a.ordered || 0;
       const effectiveDone = Math.max(Number(a.done) || 0, br.done);
@@ -597,6 +607,7 @@
             ${anketaAvatarHtml(a)}
             <span class="cli-card__code">${escapeHtml(a.code)}</span>
             <span class="cli-card__name">${escapeHtml(a.name || a.code)}</span>
+            ${isCompletedAnketa(a) ? '<span class="cli-card__closed">Завершена</span>' : ''}
           </div>
           <div class="cli-card__body">
             <div class="cli-donut" title="Прогресс заказа: сделано и в работе">
@@ -628,6 +639,26 @@
         </a>
       `;
     }).join('');
+    const emptyHtml = anketaListMode === 'completed'
+      ? '<div class="cli-empty">Завершённых анкет пока нет.</div>'
+      : '<div class="cli-empty">Активных анкет сейчас нет.</div>';
+    el.innerHTML = `
+      <div class="cli-anketa-tabs" role="tablist" aria-label="Анкеты">
+        <button type="button" role="tab" data-anketa-mode="active" aria-selected="${anketaListMode === 'active'}" class="${anketaListMode === 'active' ? 'is-active' : ''}">
+          Активные <span>${activeAnketas.length}</span>
+        </button>
+        <button type="button" role="tab" data-anketa-mode="completed" aria-selected="${anketaListMode === 'completed'}" class="${anketaListMode === 'completed' ? 'is-active' : ''}">
+          Завершённые <span>${completedAnketas.length}</span>
+        </button>
+      </div>
+      <div class="cli-anketa-list">${cardsHtml || emptyHtml}</div>
+    `;
+    el.querySelectorAll('[data-anketa-mode]').forEach(button => {
+      button.addEventListener('click', () => {
+        anketaListMode = button.dataset.anketaMode === 'completed' ? 'completed' : 'active';
+        renderAnketas(anketas);
+      });
+    });
     bindAvatarFallbacks(el);
   }
 
