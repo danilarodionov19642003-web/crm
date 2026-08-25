@@ -1327,6 +1327,22 @@
       }, 0);
     }
 
+    function cancelReviewInBackground(reviewId) {
+      // Локальная смена статуса важнее сетевой отмены запроса согласования.
+      // Даже если API/авторизация зависли, карточка уже должна сохраниться и
+      // модалка закрыться. Серверная отмена ограничена тайм-аутом в модуле.
+      setTimeout(async () => {
+        if (!window.ClientTextApprovals) {
+          toast('Статус сохранён, но модуль отмены согласования не загрузился', 'error');
+          return;
+        }
+        const cancellation = await window.ClientTextApprovals.cancelReview(reviewId);
+        if (!cancellation.ok) {
+          toast(`Статус сохранён. ${cancellation.message}`, 'error');
+        }
+      }, 0);
+    }
+
     function checkAddWarn() {
       const mid = document.getElementById('addMentor').value;
       const w = document.getElementById('addWarn');
@@ -1467,20 +1483,6 @@
           ? 'Снять статус «Готов»? Связанный одобренный отзыв удалится, зарплата за него спишется.'
           : 'Снять статус «Готов»? Связанный отзыв на модерации удалится.';
         if (!confirmDelete(msg)) return;
-        if (existingReview.clientApprovalRequired && !window.ClientTextApprovals) {
-          toast('Модуль согласования не загрузился. Обновите страницу и повторите.', 'error');
-          return;
-        }
-        if (existingReview.clientApprovalRequired) {
-          let cancellation;
-          event.currentTarget.disabled = true;
-          try {
-            cancellation = await window.ClientTextApprovals.cancelReview(existingReview.id);
-          } finally {
-            event.currentTarget.disabled = false;
-          }
-          if (!cancellation.ok) { toast(cancellation.message, 'error'); return; }
-        }
       }
       // Если статус/комментарий не поменялись — обновляем только дату и/или
       // исполнителя (без новой записи в истории, чтобы её не засорять).
@@ -1493,6 +1495,7 @@
       if (goingAway) {
         Store.deleteReviewsForPair(chgPid, chgMid);
         if (window.ReviewsSync && window.ReviewsSync.recompute) window.ReviewsSync.recompute();
+        if (existingReview.clientApprovalRequired) cancelReviewInBackground(existingReview.id);
       }
       if (newReviewText) {
         const myEmail = (window.AuthGate && window.AuthGate.email && window.AuthGate.email()) || '';
@@ -1524,16 +1527,6 @@
         ? 'Отвязать клиента от аккаунта? Связанный отзыв тоже будет удалён (включая запись на модерации и зачёт в «Сделано»).'
         : 'Отвязать клиента от аккаунта (статус удалится)?';
       if (!confirmDelete(msg)) return;
-      if (linkedReview && linkedReview.clientApprovalRequired && !window.ClientTextApprovals) {
-        toast('Модуль согласования не загрузился. Обновите страницу и повторите.', 'error');
-        return;
-      }
-      if (linkedReview && linkedReview.clientApprovalRequired) {
-        event.currentTarget.disabled = true;
-        const cancellation = await window.ClientTextApprovals.cancelReview(linkedReview.id);
-        event.currentTarget.disabled = false;
-        if (!cancellation.ok) { toast(cancellation.message, 'error'); return; }
-      }
       const profile = profileById(chgPid);
       profile.mentorIds = (profile.mentorIds || []).filter(id => id !== chgMid);
       Store.updateProfile(profile.id, { mentorIds: profile.mentorIds });
@@ -1542,6 +1535,7 @@
       if (st) Store.deleteProfileStatus(st.id);
       // каскад: удалим связанные отзывы (если были)
       Store.deleteReviewsForPair(chgPid, chgMid);
+      if (linkedReview && linkedReview.clientApprovalRequired) cancelReviewInBackground(linkedReview.id);
       // сразу пересчитаем зарплаты (если на момент удаления отзыв был approved)
       if (window.ReviewsSync && window.ReviewsSync.recompute) window.ReviewsSync.recompute();
       Modal.close('chgStatusModal');

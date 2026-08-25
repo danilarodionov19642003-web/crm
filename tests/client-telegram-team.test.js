@@ -82,12 +82,14 @@ test('setting Ready sends the saved review through the linked approval workflow'
   assert.equal((statusesHtml.match(/ClientTextApprovals\.sendReview\(Store, review\)/g) || []).length, 1,
     'единая фоновая отправка должна обслуживать оба сценария сохранения');
   assert.match(statusesHtml, /clientApprovalRequired: true/);
-  assert.match(statusesHtml, /ClientTextApprovals\.cancelReview\(existingReview\.id\)/);
-  assert.match(statusesHtml, /ClientTextApprovals\.cancelReview\(linkedReview\.id\)/);
+  assert.match(statusesHtml, /cancelReviewInBackground\(existingReview\.id\)/);
+  assert.match(statusesHtml, /cancelReviewInBackground\(linkedReview\.id\)/);
   assert.match(statusesHtml, /function sendReviewInBackground\(review\)/);
   assert.match(statusesHtml, /sendReviewInBackground\(review\)/);
   assert.doesNotMatch(statusesHtml, /button\.disabled = true;[\s\S]{0,300}ClientTextApprovals\.sendReview/);
-  assert.match(statusesHtml, /try \{[\s\S]*cancelReview\(existingReview\.id\)[\s\S]*finally \{[\s\S]*disabled = false/);
+  assert.match(statusesHtml, /function cancelReviewInBackground\(reviewId\)/);
+  assert.match(statusesHtml, /Store\.deleteReviewsForPair\(chgPid, chgMid\);[\s\S]*cancelReviewInBackground\(existingReview\.id\)/);
+  assert.doesNotMatch(statusesHtml, /currentTarget\.disabled\s*=\s*true[\s\S]{0,300}cancelReview/);
   assert.match(approvalJs, /RPC_TIMEOUT_MS = 12_000/);
   assert.match(approvalJs, /Promise\.race/);
   assert.match(approvalJs, /REQUEST_TIMEOUT/);
