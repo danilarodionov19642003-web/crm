@@ -9,7 +9,17 @@
   const tg = window.Telegram && window.Telegram.WebApp;
   const params = new URLSearchParams(location.search);
   const token = params.get('token') || '';
-  const state = { payload: null, mentorId: '', selectedDate: '', month: null, busy: false };
+  const initialView = params.get('view') === 'home' ? 'home' : 'calendar';
+  const state = {
+    payload: null,
+    mentorId: '',
+    detailMentorId: '',
+    selectedDate: '',
+    month: null,
+    busy: false,
+    view: initialView,
+    flash: ''
+  };
   const monthFmt = new Intl.DateTimeFormat('ru-RU', { month: 'long', year: 'numeric' });
   const dateFmt = new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
@@ -28,6 +38,38 @@
     return String(value == null ? '' : value).replace(/[&<>"']/g, char => ({
       '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
     }[char]));
+  }
+
+  function fmtMoney(value) {
+    return `${Math.round(Number(value) || 0).toLocaleString('ru-RU')} ₽`;
+  }
+
+  function fmtDate(value) {
+    if (!value) return '—';
+    const date = new Date(`${String(value).slice(0, 10)}T12:00:00`);
+    return Number.isNaN(date.getTime()) ? '—' : dateFmt.format(date);
+  }
+
+  function safeImageUrl(value) {
+    const url = String(value || '').trim();
+    if (/^https:\/\//i.test(url)) return url;
+    if ((location.hostname === '127.0.0.1' || location.hostname === 'localhost') && url.startsWith('/')) return url;
+    return '';
+  }
+
+  function avatarHtml(anketa, large = false) {
+    const src = safeImageUrl(anketa && anketa.avatar_url);
+    const fallback = String((anketa && (anketa.name || anketa.code)) || 'M').trim().charAt(0).toUpperCase() || 'M';
+    return `<span class="tgapp-avatar${large ? ' is-large' : ''}">
+      <span class="tgapp-avatar__fallback">${escapeHtml(fallback)}</span>
+      ${src ? `<img src="${escapeHtml(src)}" alt="" data-avatar/>` : ''}
+    </span>`;
+  }
+
+  function bindAvatarFallbacks() {
+    root.querySelectorAll('img[data-avatar]').forEach(image => {
+      image.addEventListener('error', () => { image.hidden = true; }, { once: true });
+    });
   }
 
   async function rpc(name, body) {
@@ -56,7 +98,7 @@
   function errorMessage(error) {
     const raw = String(error && error.message || error || '');
     if (raw.includes('TOKEN_INVALID_OR_EXPIRED') || Number(error && error.status) === 401) {
-      return 'Ссылка устарела. Откройте календарь заново из свежего сообщения бота.';
+      return 'Ссылка устарела. Откройте кабинет заново из свежего сообщения бота.';
     }
     if (raw.includes('DAY_FULL')) return 'На этот день свободных мест уже нет.';
     if (raw.includes('SCHEDULE_LIMIT_REACHED')) return 'Все доступные отклики уже запланированы.';
@@ -64,8 +106,35 @@
     return 'Не удалось сохранить. Попробуйте ещё раз.';
   }
 
+  function statusBreakdown(anketa) {
+    let planned = 0;
+    let active = 0;
+    let done = 0;
+    (anketa && anketa.statuses || []).forEach(item => {
+      if (item.status === '📋 Запланировано') planned += 1;
+      else if (item.status === '🎯 Готов') done += 1;
+      else active += 1;
+    });
+    return { planned, active, done };
+  }
+
+  function progressPercent(anketa) {
+    const ordered = Math.max(0, Number(anketa && anketa.ordered) || 0);
+    const breakdown = statusBreakdown(anketa);
+    const done = Math.max(Number(anketa && anketa.done) || 0, breakdown.done);
+    return ordered ? Math.min(100, Math.round(((done + breakdown.active) / ordered) * 100)) : 0;
+  }
+
   function currentAnketa() {
     return (state.payload && state.payload.anketas || []).find(item => item.mentor_id === state.mentorId) || null;
+  }
+
+  function detailAnketa() {
+    return (state.payload && state.payload.anketas || []).find(item => item.mentor_id === state.detailMentorId) || null;
+  }
+
+  function activeAnketas() {
+    return (state.payload && state.payload.anketas || []).filter(item => !item.closed);
   }
 
   function localPreviewPayload() {
@@ -78,19 +147,178 @@
       const available = offset % 7 === 0 ? 0 : Math.max(1, 7 - (offset % 6));
       calendar.push({ date: isoDate(date), capacity: 7, used_count: 7 - available, available_count: available });
     }
+    const active = {
+      mentor_id: 'preview-a34', code: 'A34', name: 'Тестовая анкета',
+      avatar_url: '/assets/icons/mentori-crm-icon-512.png', platform: 'Profi.ru',
+      tariff: 'Развитие профиля', ordered: 12, done: 4, paid: 4800, remain: 4800, total: 9600,
+      closed: false, schedule_limit: 3, active_count: 2, available_to_add: 1,
+      slots: [
+        { id: 1, scheduled_date: calendar[2].date, slot_status: 'scheduled' },
+        { id: 2, scheduled_date: calendar[5].date, slot_status: 'scheduled' }
+      ],
+      statuses: [
+        { id: 's1', profile_name: 'Тестовый аккаунт 3', status: '🏆 Выбран', date: isoDate(new Date()) },
+        { id: 's2', profile_name: 'Тестовый аккаунт 2', status: '⭐ Выбрать', date: isoDate(new Date()) },
+        { id: 's3', profile_name: 'Тестовый аккаунт 1', status: '🎯 Готов', date: isoDate(new Date()) }
+      ],
+      reviews: [{ id: 'r1', profile_name: 'Тестовый аккаунт 1', text: 'Спасибо за отличную работу и внимательное отношение к деталям.', date: isoDate(new Date()) }]
+    };
+    const completed = {
+      mentor_id: 'preview-complete', code: 'A18', name: 'Завершённая анкета',
+      avatar_url: '', platform: 'Profi.ru', tariff: 'Поддержка профиля',
+      ordered: 6, done: 6, paid: 5400, remain: 0, total: 5400, closed: true,
+      schedule_limit: 0, active_count: 0, available_to_add: 0, slots: [],
+      statuses: [{ id: 's4', profile_name: 'Аккаунт 8-2', status: '🎯 Готов', date: isoDate(new Date()) }],
+      reviews: []
+    };
     return {
       ok: true,
+      client_name: 'Александр',
+      generated_at: new Date().toISOString(),
       minimum_date: isoDate(tomorrow),
-      anketas: [{
-        mentor_id: 'preview-a34', code: 'A34', name: 'test',
-        schedule_limit: 3, active_count: 2, available_to_add: 1,
-        slots: [
-          { id: 1, scheduled_date: calendar[2].date, slot_status: 'scheduled' },
-          { id: 2, scheduled_date: calendar[5].date, slot_status: 'scheduled' }
-        ]
-      }],
+      totals: { ordered: 18, done: 10, paid: 10200, remain: 4800, total: 15000 },
+      anketas: [active, completed],
       calendar
     };
+  }
+
+  function bottomNav(active) {
+    return `<nav class="tgapp-nav" aria-label="Разделы кабинета">
+      <button type="button" data-view="home" class="${active === 'home' || active === 'anketa' ? 'is-active' : ''}">
+        <span aria-hidden="true">⌂</span><b>Главная</b>
+      </button>
+      <button type="button" data-view="calendar" class="${active === 'calendar' ? 'is-active' : ''}">
+        <span aria-hidden="true">□</span><b>Календарь</b>
+      </button>
+    </nav>`;
+  }
+
+  function renderShell(content, active) {
+    root.innerHTML = `<div class="tgapp-page">${content}</div>${bottomNav(active)}`;
+    root.querySelectorAll('[data-view]').forEach(button => button.addEventListener('click', () => {
+      state.view = button.dataset.view === 'calendar' ? 'calendar' : 'home';
+      state.selectedDate = '';
+      state.flash = '';
+      render();
+      if (tg && tg.HapticFeedback) tg.HapticFeedback.selectionChanged();
+    }));
+    bindAvatarFallbacks();
+  }
+
+  function renderHome() {
+    const payload = state.payload;
+    const anketas = payload.anketas || [];
+    const totals = payload.totals || {};
+    const inWork = anketas.reduce((sum, item) => sum + statusBreakdown(item).active, 0);
+    const cards = anketas.map(anketa => {
+      const breakdown = statusBreakdown(anketa);
+      const pct = progressPercent(anketa);
+      return `<button type="button" class="tgapp-anketa-card" data-open-anketa="${escapeHtml(anketa.mentor_id)}">
+        <span class="tgapp-anketa-card__head">
+          ${avatarHtml(anketa)}
+          <span class="tgapp-anketa-card__identity">
+            <span><b>${escapeHtml(String(anketa.code || '').toUpperCase())}</b>${anketa.closed ? '<i>Завершена</i>' : '<i class="is-active">В работе</i>'}</span>
+            <strong>${escapeHtml(anketa.name || anketa.code || 'Анкета')}</strong>
+            <small>${escapeHtml(anketa.tariff || anketa.platform || 'Profi.ru')}</small>
+          </span>
+          <span class="tgapp-anketa-card__arrow">›</span>
+        </span>
+        <span class="tgapp-progress"><i style="width:${pct}%"></i></span>
+        <span class="tgapp-anketa-card__foot">
+          <span><small>Прогресс</small><b>${pct}%</b></span>
+          <span><small>Готово</small><b class="is-green">${Math.max(Number(anketa.done) || 0, breakdown.done)}</b></span>
+          <span><small>В работе</small><b class="is-orange">${breakdown.active}</b></span>
+          <span><small>Остаток</small><b>${fmtMoney(anketa.remain)}</b></span>
+        </span>
+      </button>`;
+    }).join('');
+    renderShell(`
+      <section class="tgapp-hero">
+        <img src="../../assets/icons/mentori-crm-icon-512.png" alt=""/>
+        <div><span>Личный кабинет</span><h1>Привет, ${escapeHtml(payload.client_name || 'друг')}!</h1><p>Вся работа по вашим анкетам в одном месте.</p></div>
+      </section>
+      <section class="tgapp-quick">
+        <button type="button" data-go-calendar><span>📅</span><div><b>Запланировать отклик</b><small>Выбрать свободную дату</small></div><i>›</i></button>
+      </section>
+      <h2 class="tgapp-section-title">Сводка</h2>
+      <section class="tgapp-kpis">
+        <article><span>Заказано</span><strong>${Number(totals.ordered) || 0}</strong></article>
+        <article><span>Сделано</span><strong class="is-green">${Number(totals.done) || 0}</strong></article>
+        <article><span>В работе</span><strong class="is-orange">${inWork}</strong></article>
+        <article><span>Остаток</span><strong>${fmtMoney(totals.remain)}</strong></article>
+      </section>
+      <div class="tgapp-section-heading"><h2>Ваши анкеты</h2><span>${anketas.length}</span></div>
+      <section class="tgapp-anketas">${cards || '<div class="tgapp-empty">Анкет пока нет.</div>'}</section>
+    `, 'home');
+    const calendarButton = root.querySelector('[data-go-calendar]');
+    if (calendarButton) calendarButton.addEventListener('click', () => {
+      state.view = 'calendar';
+      render();
+    });
+    root.querySelectorAll('[data-open-anketa]').forEach(button => button.addEventListener('click', () => {
+      state.detailMentorId = button.dataset.openAnketa;
+      state.view = 'anketa';
+      render();
+    }));
+  }
+
+  function statusTone(status) {
+    if (status === '🎯 Готов') return 'is-green';
+    if (status === '🏆 Выбран') return 'is-orange';
+    if (status === '⭐ Выбрать') return 'is-purple';
+    return '';
+  }
+
+  function renderAnketaDetail() {
+    const anketa = detailAnketa();
+    if (!anketa) {
+      state.view = 'home';
+      renderHome();
+      return;
+    }
+    const breakdown = statusBreakdown(anketa);
+    const done = Math.max(Number(anketa.done) || 0, breakdown.done);
+    const pct = progressPercent(anketa);
+    const statuses = (anketa.statuses || []).map(item => `<article class="tgapp-status-row">
+      <span class="tgapp-status-row__dot ${statusTone(item.status)}"></span>
+      <div><strong>${escapeHtml(item.profile_name || 'Аккаунт')}</strong><span>${escapeHtml(item.status || '—')}</span></div>
+      <time>${escapeHtml(fmtDate(item.date))}</time>
+    </article>`).join('');
+    const reviews = (anketa.reviews || []).map(item => `<article class="tgapp-review">
+      <header><b>${escapeHtml(item.profile_name || 'Опубликованный отзыв')}</b><time>${escapeHtml(fmtDate(item.date))}</time></header>
+      <p>${escapeHtml(item.text || '')}</p>
+    </article>`).join('');
+    renderShell(`
+      <button type="button" class="tgapp-back" data-back-home>‹ <span>К анкетам</span></button>
+      <section class="tgapp-profile-hero">
+        ${avatarHtml(anketa, true)}
+        <div><span>${escapeHtml(String(anketa.code || '').toUpperCase())}${anketa.closed ? ' · завершена' : ''}</span><h1>${escapeHtml(anketa.name || anketa.code || 'Анкета')}</h1><p>${escapeHtml(anketa.tariff || anketa.platform || 'Profi.ru')}</p></div>
+      </section>
+      <section class="tgapp-progress-card">
+        <header><div><span>Прогресс работы</span><strong>${pct}%</strong></div><small>${done} из ${Number(anketa.ordered) || 0} готово</small></header>
+        <span class="tgapp-progress is-large"><i style="width:${pct}%"></i></span>
+      </section>
+      <section class="tgapp-kpis is-profile">
+        <article><span>Заказано</span><strong>${Number(anketa.ordered) || 0}</strong></article>
+        <article><span>Готово</span><strong class="is-green">${done}</strong></article>
+        <article><span>В работе</span><strong class="is-orange">${breakdown.active}</strong></article>
+        <article><span>Остаток</span><strong>${fmtMoney(anketa.remain)}</strong></article>
+      </section>
+      ${anketa.closed ? '' : '<button type="button" class="tgapp-primary" data-detail-calendar>📅 Запланировать отклик</button>'}
+      <div class="tgapp-section-heading"><h2>Аккаунты</h2><span>${(anketa.statuses || []).length}</span></div>
+      <section class="tgapp-statuses">${statuses || '<div class="tgapp-empty">Аккаунты ещё не добавлены.</div>'}</section>
+      ${reviews ? `<div class="tgapp-section-heading"><h2>Опубликованные отзывы</h2><span>${(anketa.reviews || []).length}</span></div><section class="tgapp-reviews">${reviews}</section>` : ''}
+    `, 'anketa');
+    root.querySelector('[data-back-home]').addEventListener('click', () => {
+      state.view = 'home';
+      render();
+    });
+    const calendarButton = root.querySelector('[data-detail-calendar]');
+    if (calendarButton) calendarButton.addEventListener('click', () => {
+      state.mentorId = anketa.mentor_id;
+      state.view = 'calendar';
+      render();
+    });
   }
 
   function calendarByDate() {
@@ -110,35 +338,37 @@
     return cells;
   }
 
-  function render() {
+  function renderCalendar() {
     const payload = state.payload;
-    if (!payload) return;
-    const anketa = currentAnketa();
-    if (!anketa) {
-      root.innerHTML = '<section class="tgcal-state">Нет активных анкет для планирования.</section>';
+    const availableAnketas = activeAnketas();
+    if (!availableAnketas.length) {
+      renderShell('<section class="tgapp-empty is-page"><b>Нет активных анкет</b><span>Завершённые анкеты можно посмотреть на главной.</span></section>', 'calendar');
       return;
     }
+    if (!state.mentorId || !availableAnketas.some(item => item.mentor_id === state.mentorId)) {
+      state.mentorId = availableAnketas[0].mentor_id;
+    }
+    const anketa = currentAnketa();
     const days = calendarByDate();
     const ownedDates = new Set((anketa.slots || []).map(slot => String(slot.scheduled_date)));
     const minimum = String(payload.minimum_date || '');
     const maxDate = [...days.keys()].sort().pop() || minimum;
     const canAdd = Number(anketa.available_to_add) > 0;
-    const slots = (anketa.slots || []).map(slot => `
-      <div class="tgcal-slot">
-        <strong>${escapeHtml(dateFmt.format(new Date(`${slot.scheduled_date}T12:00:00`)))}</strong>
-        <button type="button" data-cancel-slot="${Number(slot.id)}">Отменить</button>
-      </div>`).join('');
-    root.innerHTML = `
-      <header class="tgcal-head">
-        <h1>Календарь откликов</h1>
-        <p>Выберите свободный день. Минимальная дата начала работы: завтра.</p>
-      </header>
+    const slots = (anketa.slots || []).map(slot => `<div class="tgcal-slot">
+      <span><i>✓</i><div><small>Запланировано</small><strong>${escapeHtml(fmtDate(slot.scheduled_date))}</strong></div></span>
+      <button type="button" data-cancel-slot="${Number(slot.id)}">Отменить</button>
+    </div>`).join('');
+    renderShell(`
+      <header class="tgcal-head"><span>Планирование</span><h1>Календарь откликов</h1><p>Начать можно со следующего дня, если есть свободные места.</p></header>
       <section class="tgcal-card">
-        <select class="tgcal-select" data-anketa aria-label="Анкета">
-          ${(payload.anketas || []).map(item => `<option value="${escapeHtml(item.mentor_id)}"${item.mentor_id === state.mentorId ? ' selected' : ''}>${escapeHtml(String(item.code || '').toUpperCase())}${item.name ? ` · ${escapeHtml(item.name)}` : ''}</option>`).join('')}
-        </select>
-        <div class="tgcal-limit"><span>Можно запланировать</span><b>${Number(anketa.available_to_add) || 0}</b></div>
-        <div class="tgcal-slots"${slots ? '' : ' hidden'}>${slots}</div>
+        <div class="tgcal-anketa">
+          ${avatarHtml(anketa)}
+          <select class="tgcal-select" data-anketa aria-label="Анкета">
+            ${availableAnketas.map(item => `<option value="${escapeHtml(item.mentor_id)}"${item.mentor_id === state.mentorId ? ' selected' : ''}>${escapeHtml(String(item.code || '').toUpperCase())}${item.name ? ` · ${escapeHtml(item.name)}` : ''}</option>`).join('')}
+          </select>
+        </div>
+        <div class="tgcal-limit"><span>Можно запланировать ещё</span><b>${Number(anketa.available_to_add) || 0}</b></div>
+        ${slots ? `<div class="tgcal-planned"><h2>Запланировано</h2><div class="tgcal-slots">${slots}</div></div>` : ''}
         <div class="tgcal-calendar">
           <div class="tgcal-nav">
             <button type="button" data-month-prev aria-label="Предыдущий месяц">‹</button>
@@ -152,29 +382,35 @@
               const iso = isoDate(date);
               const info = days.get(iso);
               const available = Number(info && info.available_count) || 0;
-              const disabled = iso < minimum || iso > maxDate || !info || available <= 0 || !canAdd;
+              const owned = ownedDates.has(iso);
+              const disabled = iso < minimum || iso > maxDate || !info || available <= 0 || !canAdd || owned;
               const classes = ['tgcal-day'];
-              if (ownedDates.has(iso)) classes.push('is-owned');
+              if (owned) classes.push('is-owned');
               if (state.selectedDate === iso) classes.push('is-selected');
               if (info && available <= 0) classes.push('is-full');
-              return `<button type="button" class="${classes.join(' ')}" data-date="${iso}"${disabled ? ' disabled' : ''}><strong>${date.getDate()}</strong><small>${info ? (available > 0 ? `мест ${available}` : 'занято') : ''}</small></button>`;
+              return `<button type="button" class="${classes.join(' ')}" data-date="${iso}"${disabled ? ' disabled' : ''}><strong>${date.getDate()}</strong><small>${owned ? 'ваш' : (info ? (available > 0 ? `мест ${available}` : 'занято') : '')}</small></button>`;
             }).join('')}
           </div>
         </div>
-        <button type="button" class="tgcal-submit" data-submit${state.selectedDate && canAdd ? '' : ' disabled'}>${state.selectedDate ? `Запланировать на ${escapeHtml(dateFmt.format(new Date(`${state.selectedDate}T12:00:00`)))}` : 'Выберите дату'}</button>
-        <div class="tgcal-result" data-result></div>
-      </section>`;
-    bind();
+        <button type="button" class="tgcal-submit" data-submit${state.selectedDate && canAdd ? '' : ' disabled'}>${state.selectedDate ? `Запланировать на ${escapeHtml(fmtDate(state.selectedDate))}` : 'Выберите свободную дату'}</button>
+        <div class="tgcal-result${state.flash ? ' is-ok' : ''}" data-result>${escapeHtml(state.flash)}</div>
+      </section>
+    `, 'calendar');
+    bindCalendar();
   }
 
-  function bind() {
-    root.querySelector('[data-anketa]').addEventListener('change', event => {
+  function bindCalendar() {
+    const select = root.querySelector('[data-anketa]');
+    if (!select) return;
+    select.addEventListener('change', event => {
       state.mentorId = event.target.value;
       state.selectedDate = '';
+      state.flash = '';
       render();
     });
     root.querySelectorAll('[data-date]').forEach(button => button.addEventListener('click', () => {
       state.selectedDate = button.dataset.date;
+      state.flash = '';
       render();
     }));
     root.querySelector('[data-month-prev]').addEventListener('click', () => {
@@ -209,8 +445,8 @@
         p_slot_id: slotId,
         p_target_date: targetDate
       });
-      result.className = 'tgcal-result is-ok';
-      result.textContent = action === 'cancel' ? 'Отклик отменён.' : 'Отклик запланирован.';
+      state.flash = action === 'cancel' ? 'Отклик отменён.' : 'Отклик запланирован.';
+      state.selectedDate = '';
       await load();
       if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
     } catch (error) {
@@ -222,18 +458,24 @@
     }
   }
 
+  function render() {
+    if (!state.payload) return;
+    if (state.view === 'home') renderHome();
+    else if (state.view === 'anketa') renderAnketaDetail();
+    else renderCalendar();
+  }
+
   async function load() {
-    if ((location.hostname === '127.0.0.1' || location.hostname === 'localhost')
-        && params.get('preview') === '1') {
+    if ((location.hostname === '127.0.0.1' || location.hostname === 'localhost') && params.get('preview') === '1') {
       state.payload = localPreviewPayload();
-      state.mentorId = state.payload.anketas[0].mentor_id;
+      state.mentorId = activeAnketas()[0] && activeAnketas()[0].mentor_id || '';
       const minimum = new Date(`${state.payload.minimum_date}T12:00:00`);
-      state.month = new Date(minimum.getFullYear(), minimum.getMonth(), 1, 12);
+      state.month = state.month || new Date(minimum.getFullYear(), minimum.getMonth(), 1, 12);
       render();
       return;
     }
     if (!token || !SB) {
-      root.innerHTML = '<section class="tgcal-state">Откройте календарь кнопкой из сообщения бота.</section>';
+      root.innerHTML = '<section class="tgcal-state">Откройте личный кабинет кнопкой из сообщения бота.</section>';
       return;
     }
     const tomorrow = new Date();
@@ -242,13 +484,14 @@
     until.setDate(until.getDate() + 45);
     try {
       state.payload = await rpc('get_client_telegram_calendar', {
-        p_token: token, p_from: isoDate(tomorrow), p_to: isoDate(until)
+        p_token: token,
+        p_from: isoDate(tomorrow),
+        p_to: isoDate(until)
       });
-      const anketas = state.payload.anketas || [];
+      const anketas = activeAnketas();
       if (!state.mentorId || !anketas.some(item => item.mentor_id === state.mentorId)) {
         state.mentorId = anketas[0] && anketas[0].mentor_id || '';
       }
-      state.selectedDate = '';
       state.month = state.month || new Date(tomorrow.getFullYear(), tomorrow.getMonth(), 1, 12);
       render();
     } catch (error) {

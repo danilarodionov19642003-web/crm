@@ -23,6 +23,7 @@ const cloudSyncJs = read('js/cloud-sync.js');
 const botPatch = read('ops/telegram/patches/client-telegram-team.patch');
 const notificationBotPatch = read('ops/telegram/patches/client-notification-upgrades.patch');
 const calendarMenuBotPatch = read('ops/telegram/patches/client-calendar-menu.patch');
+const visualCabinetBotPatch = read('ops/telegram/patches/client-visual-cabinet.patch');
 
 test('client login uses an immutable portal key', () => {
   const supabase = read('js/supabase-client.js');
@@ -175,4 +176,9 @@ test('bot patch links before ordinary start routing and supports decisions', () 
   assert.match(calendarMenuBotPatch, /issue_client_telegram_webapp_token/);
   assert.match(calendarMenuBotPatch, /WebAppInfo/);
   assert.doesNotMatch(calendarMenuBotPatch, /portal.password|signInWithPassword/);
+  assert.match(visualCabinetBotPatch, /📱 Открыть кабинет/);
+  assert.match(visualCabinetBotPatch, /answer_photo/);
+  assert.match(visualCabinetBotPatch, /avatar_url/);
+  assert.match(visualCabinetBotPatch, /initial_view/);
+  assert.match(visualCabinetBotPatch, /"calendar"/);
 });

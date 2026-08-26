@@ -34,6 +34,11 @@ fresh calendar button after `/start`, and the `/calendar` command. Every open
 still issues a new short-lived token. Apply it after
 `client-notification-upgrades.patch`.
 
+`client-visual-cabinet.patch` turns the calendar into the entry point for the
+compact visual cabinet, keeps `/calendar` focused on the calendar tab, and adds
+branded welcome photos plus real anketa avatars to the bot dialog. Apply it
+after `client-calendar-menu.patch`.
+
 Apply from the bot repository root with zero-context support:
 
 ```bash

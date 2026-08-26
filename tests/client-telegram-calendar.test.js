@@ -9,6 +9,7 @@ const html = read('pages/client/telegram-calendar.html');
 const js = read('pages/client/telegram-calendar.js');
 const css = read('pages/client/telegram-calendar.css');
 const sql = read('sql/migrations/2026-08-26_client_telegram_calendar.sql');
+const cabinetSql = read('sql/migrations/2026-08-26_client_telegram_miniapp_cabinet.sql');
 
 test('Telegram calendar uses short-lived hashed tokens without portal password', () => {
   assert.match(sql, /token_hash bytea not null unique/);
@@ -36,4 +37,22 @@ test('Mini App renders a compact mobile calendar and initializes Telegram WebApp
   assert.match(js, /tg\.expand\(\)/);
   assert.match(css, /grid-template-columns: repeat\(7/);
   assert.match(css, /env\(safe-area-inset-bottom\)/);
+});
+
+test('Mini App mirrors the client cabinet with branded home and anketa details', () => {
+  assert.match(html, /Личный кабинет Mentori/);
+  assert.match(js, /data-view="home"/);
+  assert.match(js, /data-view="calendar"/);
+  assert.match(js, /data-open-anketa/);
+  assert.match(js, /Ваши анкеты/);
+  assert.match(js, /Опубликованные отзывы/);
+  assert.match(js, /avatar_url/);
+  assert.match(css, /\.tgapp-hero/);
+  assert.match(css, /\.tgapp-anketa-card/);
+  assert.match(css, /\.tgapp-profile-hero/);
+  assert.match(cabinetSql, /'totals'/);
+  assert.match(cabinetSql, /'avatar_url'/);
+  assert.match(cabinetSql, /'statuses'/);
+  assert.match(cabinetSql, /'reviews'/);
+  assert.doesNotMatch(cabinetSql, /crm_state/);
 });

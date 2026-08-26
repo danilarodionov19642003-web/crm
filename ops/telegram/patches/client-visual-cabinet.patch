@@ -1,0 +1,84 @@
+--- a/backend/bot.py
++++ b/backend/bot.py
+@@ -957 +957 @@
+-async def _send_client_calendar_button(m: Message) -> bool:
++async def _send_client_calendar_button(m: Message, initial_view: str = "home") -> bool:
+@@ -969 +969,5 @@
+-    calendar_url = f"{CALENDAR_WEB_APP_URL}?token={quote(str(token), safe='')}"
++    view = "calendar" if initial_view == "calendar" else "home"
++    calendar_url = (
++        f"{CALENDAR_WEB_APP_URL}?token={quote(str(token), safe='')}&view={view}"
++    )
++    is_calendar = view == "calendar"
+@@ -972 +976 @@
+-            text="📅 Открыть календарь",
++            text="📅 Открыть календарь" if is_calendar else "📱 Открыть кабинет",
+@@ -977,2 +981,5 @@
+-        "📅 <b>Календарь откликов</b>\n"
+-        "Выберите свободную дату или измените запланированный отклик.",
++        ("📅 <b>Календарь откликов</b>\n"
++         "Выберите свободную дату или измените запланированный отклик.")
++        if is_calendar else
++        ("📱 <b>Личный кабинет Mentori</b>\n"
++         "Анкеты, прогресс, опубликованные отзывы и календарь в одной мини-апке."),
+@@ -1432 +1439 @@
+-    await _send_client_calendar_button(m)
++    await _send_client_calendar_button(m, "calendar")
+--- a/backend/client_ui.py
++++ b/backend/client_ui.py
+@@ -223 +223 @@
+-BTN_CAB_CALENDAR  = "📅 Открыть календарь"
++BTN_CAB_CALENDAR  = "📱 Открыть кабинет"
+@@ -224,0 +225 @@
++CLIENT_CABINET_IMAGE_URL = "https://app.mentori.tech/assets/icons/mentori-crm-icon-512.png"
+@@ -487,0 +489,21 @@
++
++async def _answer_client_visual(
++    m: Message,
++    text: str,
++    reply_markup: ReplyKeyboardMarkup,
++    photo_url: str | None = None,
++) -> None:
++    """Send a branded visual card and gracefully fall back to plain text."""
++    candidates = [photo_url, CLIENT_CABINET_IMAGE_URL]
++    attempted: set[str] = set()
++    for candidate in candidates:
++        photo = str(candidate or "").strip()
++        if not photo.startswith("https://") or photo in attempted:
++            continue
++        attempted.add(photo)
++        try:
++            await m.answer_photo(photo=photo, caption=text, reply_markup=reply_markup)
++            return
++        except Exception as exc:
++            log.warning("client visual send failed for %s: %s", photo, exc)
++    await m.answer(text, reply_markup=reply_markup)
+@@ -509 +531,2 @@
+-        await m.answer(
++        await _answer_client_visual(
++            m,
+@@ -512 +535 @@
+-            reply_markup=_kb([[BTN_CAB_CONTACT]]),
++            _kb([[BTN_CAB_CONTACT]]),
+@@ -515 +538,2 @@
+-    await m.answer(
++    await _answer_client_visual(
++        m,
+@@ -520 +544 @@
+-        reply_markup=kb_client_root(),
++        kb_client_root(),
+@@ -567 +591,3 @@
+-    await m.answer(text, reply_markup=kb_client_anketa())
++    await _answer_client_visual(
++        m, text, kb_client_anketa(), ank.get("avatar_url")
++    )
+--- a/backend/crm_client.py
++++ b/backend/crm_client.py
+@@ -591,0 +592 @@
++    clients = state.get("clients") or []
+@@ -602,0 +604,3 @@
++        mentor_code = str(m.get("code") or "").strip().lower()
++        client = next((item for item in clients
++                       if str(item.get("code") or "").strip().lower() == mentor_code), None)
+@@ -628,0 +633 @@
++            "avatar_url": (client or {}).get("avatarUrl") or m.get("avatarUrl") or "",
