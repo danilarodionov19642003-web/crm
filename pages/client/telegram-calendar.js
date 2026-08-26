@@ -17,6 +17,7 @@
     payload: null,
     mentorId: '',
     detailMentorId: '',
+    detailProfileId: '',
     selectedDate: '',
     month: null,
     busy: false,
@@ -125,6 +126,15 @@
     if (raw.includes('SCHEDULE_LIMIT_REACHED')) return 'Все доступные отклики уже запланированы.';
     if (raw.includes('OUTREACH_DAY_OFF')) return 'В воскресенье отклики не планируются. Выберите другой день.';
     if (raw.includes('DATE_OUT_OF_RANGE')) return 'Начать можно только со следующего дня.';
+    if (raw.includes('PUBLICATION_TOO_EARLY')) {
+      const match = raw.match(/PUBLICATION_TOO_EARLY:(\d{4}-\d{2}-\d{2})/);
+      return match ? `Эту дату выбрать нельзя. Доступно не раньше ${fmtDate(match[1])}.` : 'Эту дату выбрать пока нельзя.';
+    }
+    if (raw.includes('DATE_ALREADY_ACCEPTED')) return 'Эта дата уже подтверждена.';
+    if (raw.includes('STATUS_NOT_AVAILABLE')) return 'Дата доступна только для аккаунта в статусе «Выбран».';
+    if (raw.includes('COMMENT_REQUIRED')) return 'Напишите, что нужно исправить в тексте.';
+    if (raw.includes('TEXT_APPROVER_REQUIRED')) return 'Согласовать текст может только ответственный контакт.';
+    if (raw.includes('ALREADY_RESOLVED')) return 'На этот текст уже ответили.';
     return 'Не удалось сохранить. Попробуйте ещё раз.';
   }
 
@@ -155,6 +165,31 @@
     return (state.payload && state.payload.anketas || []).find(item => item.mentor_id === state.detailMentorId) || null;
   }
 
+  function detailStatus() {
+    const anketa = detailAnketa();
+    return (anketa && anketa.statuses || []).find(item =>
+      String(item.profile_id || '') === String(state.detailProfileId || '')
+    ) || null;
+  }
+
+  function latestTextApproval(mentorId, profileId) {
+    return (state.payload && state.payload.text_approvals || [])
+      .filter(item => item.mentor_id === mentorId
+        && String(item.source_profile_id || '') === String(profileId || ''))
+      .sort((left, right) => {
+        const revision = (Number(right.source_revision) || 0) - (Number(left.source_revision) || 0);
+        if (revision) return revision;
+        return Number(right.id) - Number(left.id);
+      })[0] || null;
+  }
+
+  function publicationRequest(status) {
+    return (state.payload && state.payload.publication_requests || []).find(item =>
+      String(item.status_id || '') === String(status && status.id || '')
+      && String(item.status_date || '').slice(0, 10) === String(status && status.date || '').slice(0, 10)
+    ) || null;
+  }
+
   function activeAnketas() {
     return (state.payload && state.payload.anketas || []).filter(item => !item.closed);
   }
@@ -179,9 +214,9 @@
         { id: 2, scheduled_date: calendar[5].date, slot_status: 'scheduled' }
       ],
       statuses: [
-        { id: 's1', profile_name: 'Тестовый аккаунт 3', status: '🏆 Выбран', date: isoDate(new Date()) },
-        { id: 's2', profile_name: 'Тестовый аккаунт 2', status: '⭐ Выбрать', date: isoDate(new Date()) },
-        { id: 's3', profile_name: 'Тестовый аккаунт 1', status: '🎯 Готов', date: isoDate(new Date()) }
+        { id: 's1', profile_id: 'p1', profile_name: 'Тестовый аккаунт 3', status: '🏆 Выбран', date: isoDate(new Date()), publication_wait_days: 5, publication_minimum_date: calendar[4].date },
+        { id: 's2', profile_id: 'p2', profile_name: 'Тестовый аккаунт 2', status: '⭐ Выбрать', date: isoDate(new Date()), publication_wait_days: 5, publication_minimum_date: calendar[4].date },
+        { id: 's3', profile_id: 'p3', profile_name: 'Тестовый аккаунт 1', status: '🎯 Готов', date: isoDate(new Date()), publication_wait_days: 5, publication_minimum_date: calendar[4].date }
       ],
       reviews: [{ id: 'r1', profile_name: 'Тестовый аккаунт 1', text: 'Спасибо за отличную работу и внимательное отношение к деталям.', date: isoDate(new Date()) }]
     };
@@ -200,13 +235,22 @@
       minimum_date: isoDate(tomorrow),
       totals: { ordered: 18, done: 10, paid: 10200, remain: 4800, total: 15000 },
       anketas: [active, completed],
-      calendar
+      calendar,
+      can_approve_texts: true,
+      text_approvals: [{
+        id: 101, mentor_id: 'preview-a34', source_profile_id: 'p1',
+        title: 'Текст отзыва · A34 · Тестовый аккаунт 3',
+        body: 'Очень понравился результат работы. Специалист всё объяснял по ходу проекта, аккуратно выполнил задачу и уложился в согласованные сроки.',
+        request_status: 'pending', source_revision: 1, created_at: new Date().toISOString(),
+        resolution_comment: ''
+      }],
+      publication_requests: []
     };
   }
 
   function bottomNav(active) {
     return `<nav class="tgapp-nav" aria-label="Разделы кабинета">
-      <button type="button" data-view="home" class="${active === 'home' || active === 'anketa' ? 'is-active' : ''}">
+      <button type="button" data-view="home" class="${active === 'home' || active === 'anketa' || active === 'account' ? 'is-active' : ''}">
         <span aria-hidden="true">⌂</span><b>Главная</b>
       </button>
       <button type="button" data-view="calendar" class="${active === 'calendar' ? 'is-active' : ''}">
@@ -219,6 +263,7 @@
     root.innerHTML = `<div class="tgapp-page">${content}</div>${bottomNav(active)}`;
     root.querySelectorAll('[data-view]').forEach(button => button.addEventListener('click', () => {
       state.view = button.dataset.view === 'calendar' ? 'calendar' : 'home';
+      state.detailProfileId = '';
       state.selectedDate = '';
       state.flash = '';
       render();
@@ -279,6 +324,7 @@
     });
     root.querySelectorAll('[data-open-anketa]').forEach(button => button.addEventListener('click', () => {
       state.detailMentorId = button.dataset.openAnketa;
+      state.detailProfileId = '';
       state.view = 'anketa';
       render();
     }));
@@ -301,11 +347,11 @@
     const breakdown = statusBreakdown(anketa);
     const done = Math.max(Number(anketa.done) || 0, breakdown.done);
     const pct = progressPercent(anketa);
-    const statuses = (anketa.statuses || []).map(item => `<article class="tgapp-status-row">
+    const statuses = (anketa.statuses || []).map(item => `<button type="button" class="tgapp-status-row" data-open-account="${escapeHtml(item.profile_id || '')}">
       <span class="tgapp-status-row__dot ${statusTone(item.status)}"></span>
       <div><strong>${escapeHtml(item.profile_name || 'Аккаунт')}</strong><span>${escapeHtml(item.status || '—')}</span></div>
-      <time>${escapeHtml(fmtDate(item.date))}</time>
-    </article>`).join('');
+      <span class="tgapp-status-row__side"><time>${escapeHtml(fmtDate(item.date))}</time><i>›</i></span>
+    </button>`).join('');
     const reviews = (anketa.reviews || []).map(item => `<article class="tgapp-review">
       <header><b>${escapeHtml(item.profile_name || 'Опубликованный отзыв')}</b><time>${escapeHtml(fmtDate(item.date))}</time></header>
       <p>${escapeHtml(item.text || '')}</p>
@@ -332,6 +378,7 @@
       ${reviews ? `<div class="tgapp-section-heading"><h2>Опубликованные отзывы</h2><span>${(anketa.reviews || []).length}</span></div><section class="tgapp-reviews">${reviews}</section>` : ''}
     `, 'anketa');
     root.querySelector('[data-back-home]').addEventListener('click', () => {
+      state.detailProfileId = '';
       state.view = 'home';
       render();
     });
@@ -341,6 +388,199 @@
       state.view = 'calendar';
       render();
     });
+    root.querySelectorAll('[data-open-account]').forEach(button => button.addEventListener('click', () => {
+      state.detailProfileId = button.dataset.openAccount;
+      state.view = 'account';
+      render();
+    }));
+  }
+
+  function textApprovalMeta(request) {
+    if (!request) return { label: 'Текст ещё не отправлен', tone: 'is-empty' };
+    if (request.request_status === 'approved') return { label: 'Текст согласован', tone: 'is-approved' };
+    if (request.request_status === 'changes_requested') return { label: 'Нужны правки', tone: 'is-changes' };
+    return { label: 'Ждёт согласования', tone: 'is-pending' };
+  }
+
+  function renderAccountDetail() {
+    const anketa = detailAnketa();
+    const status = detailStatus();
+    if (!anketa || !status) {
+      state.detailProfileId = '';
+      state.view = 'anketa';
+      renderAnketaDetail();
+      return;
+    }
+    const approval = latestTextApproval(anketa.mentor_id, status.profile_id);
+    const approvalMeta = textApprovalMeta(approval);
+    const request = publicationRequest(status);
+    const canApprove = Boolean(state.payload && state.payload.can_approve_texts);
+    const pendingApprovalActions = approval && approval.request_status === 'pending' && canApprove
+      ? `<div class="tgapp-approval__actions">
+          <button type="button" class="is-approve" data-approve-text>Согласовать</button>
+          <button type="button" class="is-change" data-show-changes>Нужны правки</button>
+        </div>
+        <form class="tgapp-change-form" data-change-form hidden>
+          <label for="tgapp-change-comment">Что нужно исправить</label>
+          <textarea id="tgapp-change-comment" maxlength="1500" placeholder="Напишите комментарий к тексту"></textarea>
+          <div><button type="button" data-hide-changes>Отмена</button><button type="submit">Отправить</button></div>
+        </form>`
+      : '';
+    const approvalHtml = approval
+      ? `<section class="tgapp-account-card tgapp-approval">
+          <header><span>Текст отзыва</span><b class="${approvalMeta.tone}">${approvalMeta.label}</b></header>
+          <p>${escapeHtml(approval.body || '')}</p>
+          ${approval.request_status === 'changes_requested' && approval.resolution_comment
+            ? `<aside><strong>Комментарий:</strong> ${escapeHtml(approval.resolution_comment)}</aside>` : ''}
+          ${pendingApprovalActions}
+          <div class="tgapp-account-result" data-account-result></div>
+        </section>`
+      : `<section class="tgapp-account-card tgapp-approval is-empty">
+          <header><span>Текст отзыва</span><b class="${approvalMeta.tone}">${approvalMeta.label}</b></header>
+          <p>Когда менеджер подготовит текст, он появится здесь. Вы сможете сразу его согласовать или попросить правки.</p>
+        </section>`;
+    let publicationHtml = '';
+    if (status.status === '🏆 Выбран') {
+      const accepted = request && request.request_status === 'accepted';
+      const value = request && ['pending', 'accepted'].includes(request.request_status)
+        ? String(request.requested_date || '').slice(0, 10) : '';
+      const minimum = String(status.publication_minimum_date || state.payload.minimum_date || '');
+      const waitDays = Math.max(0, Number(status.publication_wait_days) || 0);
+      const publicationState = accepted
+        ? `<span class="tgapp-publication-state is-approved">Дата подтверждена</span>`
+        : request && request.request_status === 'pending'
+          ? `<span class="tgapp-publication-state is-pending">Ожидает подтверждения</span>`
+          : request && request.request_status === 'rejected'
+            ? `<span class="tgapp-publication-state is-changes">Выберите другую дату</span>` : '';
+      publicationHtml = `<section class="tgapp-account-card tgapp-publication">
+        <header><span>Дата публикации</span>${publicationState}</header>
+        <p>Выберите удобный день, когда будете готовы опубликовать согласованный отзыв.</p>
+        <div class="tgapp-publication__control">
+          <input type="date" min="${escapeHtml(minimum)}" value="${escapeHtml(value)}" data-publication-date${accepted ? ' disabled' : ''}/>
+          <button type="button" data-save-publication${accepted ? ' disabled' : ''}>${value ? 'Изменить' : 'Запланировать'}</button>
+        </div>
+        ${waitDays ? `<small>Не раньше ${escapeHtml(fmtDate(minimum))}, минимум ${waitDays} дн. в статусе «Выбран».</small>` : ''}
+        <div class="tgapp-account-result" data-publication-result></div>
+      </section>`;
+    } else if (status.status === '🎯 Готов') {
+      publicationHtml = `<section class="tgapp-account-card tgapp-publication is-complete"><header><span>Публикация</span><b>Готово ✓</b></header><p>Отзыв опубликован ${status.date ? escapeHtml(fmtDate(status.date)) : ''}.</p></section>`;
+    } else {
+      publicationHtml = `<section class="tgapp-account-card tgapp-publication is-locked"><header><span>Дата публикации</span><b>Пока недоступно</b></header><p>Выбрать дату можно, когда аккаунт перейдёт в статус «Выбран».</p></section>`;
+    }
+    renderShell(`
+      <button type="button" class="tgapp-back" data-back-anketa>‹ <span>К анкете ${escapeHtml(String(anketa.code || '').toUpperCase())}</span></button>
+      <section class="tgapp-account-hero">
+        <span class="tgapp-status-row__dot ${statusTone(status.status)}"></span>
+        <div><small>${escapeHtml(String(anketa.code || '').toUpperCase())} · аккаунт</small><h1>${escapeHtml(status.profile_name || 'Аккаунт')}</h1><span>${escapeHtml(status.status || '—')} · обновлён ${escapeHtml(fmtDate(status.date))}</span></div>
+      </section>
+      ${approvalHtml}
+      ${publicationHtml}
+    `, 'account');
+    root.querySelector('[data-back-anketa]').addEventListener('click', () => {
+      state.view = 'anketa';
+      render();
+    });
+    bindAccountActions(approval, status);
+  }
+
+  function bindAccountActions(approval, status) {
+    const approve = root.querySelector('[data-approve-text]');
+    if (approve) approve.addEventListener('click', () => resolveTextApproval(approval, 'approved', '', approve));
+    const showChanges = root.querySelector('[data-show-changes]');
+    const changeForm = root.querySelector('[data-change-form]');
+    if (showChanges && changeForm) showChanges.addEventListener('click', () => {
+      changeForm.hidden = false;
+      showChanges.hidden = true;
+      changeForm.querySelector('textarea').focus();
+    });
+    const hideChanges = root.querySelector('[data-hide-changes]');
+    if (hideChanges && changeForm) hideChanges.addEventListener('click', () => {
+      changeForm.hidden = true;
+      showChanges.hidden = false;
+    });
+    if (changeForm) changeForm.addEventListener('submit', event => {
+      event.preventDefault();
+      const comment = changeForm.querySelector('textarea').value.trim();
+      resolveTextApproval(approval, 'changes_requested', comment, changeForm.querySelector('[type="submit"]'));
+    });
+    const savePublication = root.querySelector('[data-save-publication]');
+    if (savePublication) savePublication.addEventListener('click', () => {
+      const input = root.querySelector('[data-publication-date]');
+      const result = root.querySelector('[data-publication-result]');
+      if (!input.value) {
+        result.className = 'tgapp-account-result is-error';
+        result.textContent = 'Сначала выберите дату.';
+        return;
+      }
+      savePublicationDate(status, input.value, savePublication);
+    });
+  }
+
+  async function resolveTextApproval(approval, decision, comment, button) {
+    const result = root.querySelector('[data-account-result]');
+    if (!approval || state.busy) return;
+    if (decision === 'changes_requested' && !comment) {
+      result.className = 'tgapp-account-result is-error';
+      result.textContent = 'Напишите, что нужно исправить.';
+      return;
+    }
+    state.busy = true;
+    button.disabled = true;
+    result.className = 'tgapp-account-result';
+    result.textContent = 'Сохраняем…';
+    try {
+      if ((location.hostname === '127.0.0.1' || location.hostname === 'localhost') && params.get('preview') === '1') {
+        approval.request_status = decision;
+        approval.resolution_comment = comment;
+        approval.resolved_at = new Date().toISOString();
+      } else {
+        const response = await rpc('resolve_client_telegram_webapp_text_approval', {
+          p_token: token, p_request_id: Number(approval.id), p_decision: decision, p_comment: comment || null
+        });
+        if (response && response.ok === false) throw new Error(response.reason || 'SAVE_FAILED');
+        await load();
+        return;
+      }
+      render();
+      if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+    } catch (error) {
+      result.className = 'tgapp-account-result is-error';
+      result.textContent = errorMessage(error);
+      button.disabled = false;
+    } finally {
+      state.busy = false;
+    }
+  }
+
+  async function savePublicationDate(status, targetDate, button) {
+    const result = root.querySelector('[data-publication-result]');
+    if (state.busy) return;
+    state.busy = true;
+    button.disabled = true;
+    result.className = 'tgapp-account-result';
+    result.textContent = 'Сохраняем…';
+    try {
+      if ((location.hostname === '127.0.0.1' || location.hostname === 'localhost') && params.get('preview') === '1') {
+        const current = publicationRequest(status);
+        const row = current || { id: Date.now(), status_id: status.id, status_date: status.date };
+        Object.assign(row, { requested_date: targetDate, request_status: 'pending', updated_at: new Date().toISOString() });
+        if (!current) state.payload.publication_requests.push(row);
+      } else {
+        await rpc('request_client_telegram_publication_date', {
+          p_token: token, p_status_id: status.id, p_requested_date: targetDate
+        });
+        await load();
+        return;
+      }
+      render();
+      if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+    } catch (error) {
+      result.className = 'tgapp-account-result is-error';
+      result.textContent = errorMessage(error);
+      button.disabled = false;
+    } finally {
+      state.busy = false;
+    }
   }
 
   function calendarByDate() {
@@ -488,6 +728,7 @@
     if (!state.payload) return;
     if (state.view === 'home') renderHome();
     else if (state.view === 'anketa') renderAnketaDetail();
+    else if (state.view === 'account') renderAccountDetail();
     else renderCalendar();
   }
 

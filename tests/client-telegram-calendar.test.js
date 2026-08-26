@@ -12,6 +12,7 @@ const sql = read('sql/migrations/2026-08-26_client_telegram_calendar.sql');
 const cabinetSql = read('sql/migrations/2026-08-26_client_telegram_miniapp_cabinet.sql');
 const sundaySql = read('sql/migrations/2026-08-26_client_outreach_sunday_day_off.sql');
 const capacitySql = read('sql/migrations/2026-08-26_client_outreach_daily_capacity.sql');
+const accountSql = read('sql/migrations/2026-08-26_client_telegram_z_account_details.sql');
 
 test('Telegram calendar uses short-lived hashed tokens without portal password', () => {
   assert.match(sql, /token_hash bytea not null unique/);
@@ -26,7 +27,7 @@ test('Telegram direct menu keeps its bearer credential out of HTTP requests', ()
   assert.match(js, /fragmentParams/);
   assert.match(js, /location\.hash/);
   assert.match(js, /fragmentParams\.get\('token'\)/);
-  assert.match(html, /telegram-calendar\.js\?v=20260826e/);
+  assert.match(html, /telegram-calendar\.js\?v=20260826f/);
 });
 
 test('Telegram calendar reads capacity and schedules through bounded RPCs', () => {
@@ -64,6 +65,27 @@ test('Mini App mirrors the client cabinet with branded home and anketa details',
   assert.match(cabinetSql, /'statuses'/);
   assert.match(cabinetSql, /'reviews'/);
   assert.doesNotMatch(cabinetSql, /crm_state/);
+});
+
+test('Mini App opens an account with its review text and publication date control', () => {
+  assert.match(js, /data-open-account/);
+  assert.match(js, /function renderAccountDetail/);
+  assert.match(js, /Текст отзыва/);
+  assert.match(js, /Согласовать/);
+  assert.match(js, /Нужны правки/);
+  assert.match(js, /request_client_telegram_publication_date/);
+  assert.match(js, /resolve_client_telegram_webapp_text_approval/);
+  assert.match(css, /\.tgapp-account-hero/);
+  assert.match(css, /\.tgapp-publication__control/);
+  assert.match(accountSql, /'profile_id'/);
+  assert.match(accountSql, /'text_approvals'/);
+  assert.match(accountSql, /'publication_requests'/);
+  assert.match(accountSql, /source_profile_id/);
+  assert.match(accountSql, /STATUS_NOT_AVAILABLE/);
+  assert.match(accountSql, /client_publication_minimum_trg|client_publication_wait_days/);
+  assert.match(accountSql, /TEXT_APPROVER_REQUIRED/);
+  assert.match(accountSql, /Europe\/Moscow/);
+  assert.doesNotMatch(accountSql, /update\s+public\.crm_state/i);
 });
 
 test('Mini App marks Sundays as days off after the preserved nearest Sunday', () => {

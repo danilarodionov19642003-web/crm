@@ -109,7 +109,7 @@ test('review-linked approval is idempotent and survives a missing Telegram conta
   assert.match(approvalJs, /p_source_profile_id: review\.profileId/);
 });
 
-test('setting Ready sends the saved review through the linked approval workflow', () => {
+test('review text can be sent before Ready and Ready remains the publication marker', () => {
   assert.match(statusesHtml, /client-text-approvals\.js/);
   assert.match(statusesHtml, /client-text-approvals\.js\?v=20260826b/);
   assert.match(reviewsHtml, /client-text-approvals\.js\?v=20260826b/);
@@ -120,6 +120,10 @@ test('setting Ready sends the saved review through the linked approval workflow'
   assert.match(statusesHtml, /cancelReviewInBackground\(linkedReview\.id\)/);
   assert.match(statusesHtml, /function sendReviewInBackground\(review\)/);
   assert.match(statusesHtml, /sendReviewInBackground\(review\)/);
+  assert.match(statusesHtml, /Можно отправить заранее при любом рабочем статусе/);
+  assert.match(statusesHtml, /newStatus === DONE_STATUS && !existingReview/);
+  assert.match(statusesHtml, /existingReview\.publishedAt = new Date\(\)\.toISOString\(\)/);
+  assert.match(statusesHtml, /Статус аккаунта от этого не изменится/);
   assert.doesNotMatch(statusesHtml, /button\.disabled = true;[\s\S]{0,300}ClientTextApprovals\.sendReview/);
   assert.match(statusesHtml, /function cancelReviewInBackground\(reviewId\)/);
   assert.match(statusesHtml, /Store\.deleteReviewsForPair\(chgPid, chgMid\);[\s\S]*cancelReviewInBackground\(existingReview\.id\)/);

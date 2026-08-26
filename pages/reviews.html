@@ -78,7 +78,7 @@
   </div>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260826c"></script>
+  <script src="../js/app.js?v=20260827a"></script>
   <script src="../js/supabase-client.js?v=20260820d"></script>
   <script src="../js/auth-gate.js?v=20260726a"></script>
   <script src="../js/cloud-sync.js?v=20260820d"></script>
@@ -161,6 +161,13 @@
      *  (mentor, profile) сейчас стоит статус «🎯 Готов». Сменили статус —
      *  отзыв перестаёт капать в зарплату. См. js/reviews-sync.js. */
     const DONE_STATUS_X = '🎯 Готов';
+    function isPublishedReview(r) {
+      return (Store.state.profileStatuses || []).some(status =>
+        status.mentorId === r.mentorId
+        && status.profileId === r.profileId
+        && status.status === DONE_STATUS_X
+      );
+    }
     function getReviewCreditEmail(r) {
       const st = (Store.state.profileStatuses || []).find(s =>
         s.mentorId === r.mentorId && s.profileId === r.profileId);
@@ -178,9 +185,10 @@
       else if (filters.author) scope = scope.filter(r => (r.authorEmail || '').toLowerCase() === filters.author);
       const inP = scope.filter(inPeriod);
 
-      const pending = inP.filter(r => r.moderation === 'pending').length;
-      const approved = inP.filter(r => r.moderation === 'approved');
-      const rejected = inP.filter(r => r.moderation === 'rejected').length;
+      const drafts = inP.filter(r => !isPublishedReview(r));
+      const published = inP.filter(isPublishedReview);
+      const pending = published.filter(r => r.moderation === 'pending').length;
+      const approved = published.filter(r => r.moderation === 'approved');
       // «Заработано / К выплате» считается по АВТОРУ отзыва (authorEmail).
       // Если автор не сотрудник (например, владелец) — отзыв в зп не идёт.
       const employees = (Store.state.employees || []);
@@ -194,7 +202,7 @@
       };
       const earned = approved.filter(creditMatches)
         .reduce((s,r) => s + (Number(r.rate) || RATE_DEFAULT), 0);
-      const potential = inP.filter(r => r.moderation === 'pending')
+      const potential = published.filter(r => r.moderation === 'pending')
         .filter(r => {
           // прогноз: автор pending-отзыва получит свою ставку, если он сотрудник
           const e = String(r.authorEmail || '').toLowerCase().trim();
@@ -206,13 +214,13 @@
       const periodLabel = filters.period === 'today' ? 'сегодня' : filters.period === 'week' ? 'неделя' : filters.period === 'month' ? 'месяц' : 'всё время';
 
       const kpis = isOwner ? [
-        { label: `На модерации (${periodLabel})`, val: pending, color: 'var(--orange)' },
-        { label: `Одобрено (${periodLabel})`,     val: approved.length, color: 'var(--green)' },
-        { label: `Отклонено (${periodLabel})`,    val: rejected, color: 'var(--text-mute)' },
+        { label: `Тексты у клиента (${periodLabel})`, val: drafts.length, color: 'var(--orange)' },
+        { label: `На проверке (${periodLabel})`,  val: pending, color: 'var(--orange)' },
+        { label: `Проверено (${periodLabel})`,    val: approved.length, color: 'var(--green)' },
         { label: `К выплате (${periodLabel})`,    val: earned.toLocaleString('ru-RU') + ' ₽', color: 'var(--accent)' },
       ] : [
-        { label: `На модерации (${periodLabel})`, val: pending, color: 'var(--orange)' },
-        { label: `Одобрено (${periodLabel})`,     val: approved.length, color: 'var(--green)' },
+        { label: `Тексты у клиента (${periodLabel})`, val: drafts.length, color: 'var(--orange)' },
+        { label: `На проверке (${periodLabel})`,  val: pending, color: 'var(--orange)' },
         { label: `Заработано (${periodLabel})`,   val: earned.toLocaleString('ru-RU') + ' ₽', color: 'var(--accent)' },
         { label: `В ожидании одобрения`,          val: potential.toLocaleString('ru-RU') + ' ₽', color: 'var(--text-mute)' },
       ];
@@ -221,7 +229,8 @@
       `).join('');
     }
 
-    function moderationBadge(m) {
+    function moderationBadge(m, published) {
+      if (!published) return `<span class="badge badge--orange"><span class="dot"></span>Текст на согласовании</span>`;
       if (m === 'approved') return `<span class="badge badge--green"><span class="dot"></span>Одобрен</span>`;
       if (m === 'rejected') return `<span class="badge badge--red"><span class="dot"></span>Отклонён</span>`;
       return `<span class="badge badge--orange"><span class="dot"></span>На модерации</span>`;
@@ -286,6 +295,7 @@
       list.innerHTML = rows.map(r => {
         const p = getProfile(r.profileId);
         const m = getMentor(r.mentorId);
+        const published = isPublishedReview(r);
         const accLabel = p
           ? `<span class="badge badge--gray">${escapeHtml(p.code || '—')}</span>${p.archived ? ' <span class="badge badge--red">🗑 удалён</span>' : ''}`
           : `<span style="color:var(--text-mute)">— анкета удалена —</span>`;
@@ -307,9 +317,9 @@
             }
           }
         }
-        const actions = (isOwner && r.moderation === 'pending') ? `
+        const actions = (isOwner && published && r.moderation === 'pending') ? `
           <div class="rv-actions">
-            <button class="btn btn--primary btn--sm" data-act="approve" data-id="${r.id}">✅ Одобрить (${(Number(r.rate)||RATE_DEFAULT)} ₽)</button>
+            <button class="btn btn--primary btn--sm" data-act="approve" data-id="${r.id}">✅ Проверено (${(Number(r.rate)||RATE_DEFAULT)} ₽)</button>
             <button class="btn btn--ghost btn--sm" data-act="reject" data-id="${r.id}" style="color:var(--red)">✖ Отклонить</button>
           </div>` : '';
         const ownerExtra = (isOwner && r.moderation !== 'pending') ? `
@@ -337,13 +347,13 @@
               <span style="opacity:.6">×</span>
               ${menLabel}
               <div style="flex:1"></div>
-              ${moderationBadge(r.moderation)}
+              ${moderationBadge(r.moderation, published)}
             </div>
             <div class="rv-text">${escapeHtml(r.text || '')}</div>
             ${clientApprovalHtml(r)}
             <div class="rv-meta">
               <span>👤 ${escapeHtml(r.authorEmail || '—')}</span>
-              <span>📅 Сдан: ${escapeHtml(fmtDate(r.submittedAt))}</span>
+              <span>📅 ${published ? 'Опубликован' : 'Текст создан'}: ${escapeHtml(fmtDate(published ? (r.publishedAt || r.submittedAt) : (r.draftCreatedAt || r.submittedAt)))}</span>
               ${r.moderatedAt ? `<span>✅ Проверен: ${escapeHtml(fmtDate(r.moderatedAt))}${r.moderatedBy ? ' · ' + escapeHtml(r.moderatedBy) : ''}</span>` : ''}
               <span>💵 Ставка: ${Number(r.rate) || RATE_DEFAULT} ₽</span>
               ${creditLabel}

@@ -98,13 +98,14 @@ as $$
 declare
   v_wait integer;
   v_minimum date;
+  v_today date := (now() at time zone 'Europe/Moscow')::date;
 begin
   if NEW.request_status not in ('pending', 'accepted') then
     return NEW;
   end if;
 
   v_wait := public.client_publication_wait_days(NEW.client_email, NEW.status_id);
-  v_minimum := greatest(current_date, NEW.status_date + v_wait);
+  v_minimum := greatest(v_today, NEW.status_date + v_wait);
   if NEW.requested_date < v_minimum then
     raise exception 'PUBLICATION_TOO_EARLY:%:%', v_minimum, v_wait
       using errcode = '22023';

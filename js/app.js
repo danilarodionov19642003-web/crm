@@ -2123,10 +2123,10 @@
     },
 
     /* ---------- Reviews (согласование клиента + внутренняя модерация) ----------
-       Когда менеджер выставляет статус «🎯 Готов», он вставляет текст.
-       Запись сохраняется в CRM, а серверный запрос согласования связан с
-       review.id. Внутренняя moderation по-прежнему отдельно отвечает за
-       зарплату и счётчик «Сделано». */
+       Текст можно создать и отправить клиенту при любом рабочем статусе.
+       После согласования и фактической публикации менеджер ставит «🎯 Готов».
+       Внутренняя moderation по-прежнему отдельно отвечает за зарплату и
+       счётчик «Сделано». */
     addReview(rec) {
       const item = Object.assign({
         id: uid(),
@@ -2143,6 +2143,8 @@
         clientApprovalRequestId: null,
         clientApprovalSentAt: null,
         clientApprovalLastError: '',
+        draftCreatedAt: null,
+        publishedAt: null,
       }, rec);
       this.state.reviews ??= [];
       this.state.reviews.push(item);

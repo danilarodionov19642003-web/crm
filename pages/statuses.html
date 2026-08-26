@@ -484,10 +484,10 @@
         </div>
         <div class="field" style="margin-top:12px"><label>Комментарий</label><input type="text" id="addComment" class="input"/></div>
         <div class="field" style="margin-top:12px"><label>Кто делал · для ЗП</label><select id="addPerformer" class="select"></select></div>
-        <div class="field" id="addReviewWrap" style="margin-top:12px;display:none">
-          <label>Текст отзыва для согласования <span style="color:var(--red)">*</span></label>
+        <div class="field" id="addReviewWrap" style="margin-top:12px">
+          <label>Текст отзыва для согласования <span style="color:var(--text-mute)">(необязательно)</span></label>
           <textarea id="addReviewText" class="input" rows="5" placeholder="Вставьте текст, который нужно согласовать с клиентом" style="resize:vertical;min-height:90px;font-family:inherit"></textarea>
-          <div style="font-size:11px;color:var(--text-mute);margin-top:4px">Текст появится в личном кабинете и уйдёт ответственному контакту в Telegram. Внутренняя проверка останется в разделе «Отзывы».</div>
+          <div style="font-size:11px;color:var(--text-mute);margin-top:4px">Можно отправить заранее при любом рабочем статусе. Статус аккаунта от этого не изменится. «Готов» ставится только после согласования и публикации.</div>
         </div>
       </div>
       <div class="modal__footer">
@@ -520,10 +520,10 @@
         <!-- Поле ввода нового отзыва. Структура жёсткая — НЕ переписываем
              через innerHTML, иначе на повторное открытие модалки textarea
              не находится и весь обработчик падает с null. -->
-        <div class="field" id="chgReviewWrap" style="margin-top:12px;display:none">
-          <label>Текст отзыва для согласования <span style="color:var(--red)">*</span></label>
+        <div class="field" id="chgReviewWrap" style="margin-top:12px">
+          <label>Текст отзыва для согласования <span style="color:var(--text-mute)">(необязательно)</span></label>
           <textarea id="chgReviewText" class="input" rows="5" placeholder="Вставьте текст, который нужно согласовать с клиентом" style="resize:vertical;min-height:90px;font-family:inherit"></textarea>
-          <div style="font-size:11px;color:var(--text-mute);margin-top:4px">Текст появится в личном кабинете и уйдёт ответственному контакту в Telegram. Внутренняя проверка останется в разделе «Отзывы».</div>
+          <div style="font-size:11px;color:var(--text-mute);margin-top:4px">Сохрани текущий статус, и текст уйдёт клиенту на согласование. После публикации переведи аккаунт в «Готов».</div>
         </div>
         <!-- Отдельный контейнер для отображения СУЩЕСТВУЮЩЕГО отзыва
              (одобренного или на модерации) — чтобы не ломать textarea выше. -->
@@ -612,7 +612,7 @@
   </style>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260826c"></script>
+  <script src="../js/app.js?v=20260827a"></script>
   <script src="../js/supabase-client.js?v=20260820d"></script>
   <script src="../js/auth-gate.js?v=20260726a"></script>
   <script src="../js/cloud-sync.js?v=20260820d"></script>
@@ -1306,12 +1306,13 @@
     });
 
     function toggleAddReviewField() {
-      const s = document.getElementById('addStatus').value;
-      document.getElementById('addReviewWrap').style.display = (s === DONE_STATUS) ? 'block' : 'none';
+      document.getElementById('addReviewWrap').style.display = 'block';
     }
     function toggleChgReviewField() {
-      const s = document.getElementById('chgStatus').value;
-      document.getElementById('chgReviewWrap').style.display = (s === DONE_STATUS) ? 'block' : 'none';
+      const existing = (Store.state.reviews || []).find(
+        review => review.mentorId === chgMid && review.profileId === chgPid
+      );
+      document.getElementById('chgReviewWrap').style.display = existing ? 'none' : 'block';
     }
 
     function sendReviewInBackground(review) {
@@ -1368,11 +1369,13 @@
       const status = document.getElementById('addStatus').value;
       const comment = document.getElementById('addComment').value.trim();
       const date = document.getElementById('addDate').value || window.App.todayISO();
-      // Если выставляется «Готов» — требуем текст отзыва и создаём запись на модерацию.
-      let reviewText = '';
+      // Текст можно отправить заранее при любом статусе. «Готов» означает,
+      // что согласованный отзыв уже опубликован, поэтому напрямую создавать
+      // новый аккаунт в этом статусе больше нельзя.
+      const reviewText = document.getElementById('addReviewText').value.trim();
       if (status === DONE_STATUS) {
-        reviewText = document.getElementById('addReviewText').value.trim();
-        if (!reviewText) { toast('Вставьте текст отзыва для согласования', 'error'); return; }
+        toast('Сначала привяжи аккаунт в рабочем статусе и отправь текст на согласование. «Готов» ставится после публикации.', 'error');
+        return;
       }
       const profile = profileById(addProfileId);
       profile.mentorIds = [...(profile.mentorIds || []), mid];
@@ -1387,12 +1390,8 @@
           profileId: addProfileId, mentorId: mid,
           text: reviewText, authorEmail: myEmail,
           clientApprovalRequired: true,
-          // submittedAt = МОМЕНТ отправки на модерацию (всегда сейчас).
-          // Дата статуса (date) — это дата публикации на площадке, она
-          // отдельно живёт в profileStatus.date и не привязана к
-          // submittedAt — иначе фильтр «эта неделя» в reviews.html
-          // выкидывал отзывы, опубликованные неделю назад, хотя на
-          // модерацию их сдали сегодня.
+          draftCreatedAt: new Date().toISOString(),
+          publishedAt: null,
           submittedAt: new Date().toISOString(),
         });
         sendReviewInBackground(review);
@@ -1429,16 +1428,21 @@
       const existing = (Store.state.reviews || []).find(r => r.mentorId === mid && r.profileId === pid);
       const wrap = document.getElementById('chgReviewWrap');
       const existingBox = document.getElementById('chgExistingReview');
-      if (existing && cur && cur.status === DONE_STATUS) {
+      if (existing) {
+        const published = cur && cur.status === DONE_STATUS;
         const mod = existing.moderation;
-        const badgeColor = mod === 'approved' ? 'var(--green)' : mod === 'rejected' ? 'var(--red)' : 'var(--orange)';
-        const badgeText  = mod === 'approved' ? 'Одобрен' : mod === 'rejected' ? 'Отклонён' : 'На модерации';
+        const badgeColor = published
+          ? (mod === 'approved' ? 'var(--green)' : mod === 'rejected' ? 'var(--red)' : 'var(--orange)')
+          : 'var(--orange)';
+        const badgeText = published
+          ? (mod === 'approved' ? 'Проверен' : mod === 'rejected' ? 'Отклонён' : 'Ждёт проверки')
+          : (existing.clientApprovalSentAt ? 'Отправлен клиенту' : 'Сохранён в CRM');
         wrap.style.display = 'none';   // прячем форму ввода — отзыв уже есть
         existingBox.style.display = 'block';
         existingBox.innerHTML = `
-          <label style="font-size:12px;color:var(--text-dim);font-weight:500">Опубликованный отзыв · <span style="color:${badgeColor}">${badgeText}</span></label>
+          <label style="font-size:12px;color:var(--text-dim);font-weight:500">${published ? 'Опубликованный отзыв' : 'Текст на согласование'} · <span style="color:${badgeColor}">${badgeText}</span></label>
           <div class="input" style="min-height:90px;white-space:pre-wrap;font-family:inherit;background:rgba(255,255,255,0.02);margin-top:6px">${escapeHtml(existing.text || '')}</div>
-          <div style="font-size:11px;color:var(--text-mute);margin-top:4px">Отправлен: ${escapeHtml(fmtDate(existing.submittedAt))}${existing.moderatedAt ? ' · Проверен: ' + escapeHtml(fmtDate(existing.moderatedAt)) : ''}</div>
+          <div style="font-size:11px;color:var(--text-mute);margin-top:4px">${published ? 'Опубликован' : 'Создан'}: ${escapeHtml(fmtDate(existing.publishedAt || existing.draftCreatedAt || existing.submittedAt))}${existing.moderatedAt ? ' · Проверен: ' + escapeHtml(fmtDate(existing.moderatedAt)) : ''}. Точный ответ клиента виден в разделе «Отзывы».</div>
         `;
       } else {
         existingBox.style.display = 'none';
@@ -1464,12 +1468,13 @@
       const nextActionDate = isActionStatus(newStatus) ? document.getElementById('chgActionDate').value : undefined;
       const nextActionMode = isActionStatus(newStatus) ? (chgActionTouched ? 'manual' : 'auto') : undefined;
       const cur = getStatusFor(chgPid, chgMid);
-      // Если новый статус «Готов», а у пары ещё нет review — требуем текст и создаём review.
+      // Текст создаётся заранее без смены статуса. «Готов» разрешён только
+      // когда у аккаунта уже есть текст: этот статус означает публикацию.
       const existingReview = (Store.state.reviews || []).find(r => r.mentorId === chgMid && r.profileId === chgPid);
-      let newReviewText = '';
+      const newReviewText = existingReview ? '' : document.getElementById('chgReviewText').value.trim();
       if (newStatus === DONE_STATUS && !existingReview) {
-        newReviewText = document.getElementById('chgReviewText').value.trim();
-        if (!newReviewText) { toast('Вставьте текст отзыва для согласования', 'error'); return; }
+        toast('Сначала оставь текущий статус и отправь текст клиенту на согласование. После публикации переведи аккаунт в «Готов».', 'error');
+        return;
       }
       // Если статус УХОДИТ с «Готов» на любой другой — это значит, что отзыв
       // больше не считается опубликованным. Снимаем зачёт у клиента и
@@ -1497,17 +1502,31 @@
         if (window.ReviewsSync && window.ReviewsSync.recompute) window.ReviewsSync.recompute();
         if (existingReview.clientApprovalRequired) cancelReviewInBackground(existingReview.id);
       }
+      const becomingDone = !wasDone && newStatus === DONE_STATUS && existingReview;
+      if (becomingDone) {
+        const myEmail = (window.AuthGate && window.AuthGate.email && window.AuthGate.email()) || '';
+        existingReview.publishedAt = new Date().toISOString();
+        existingReview.submittedAt = existingReview.publishedAt;
+        existingReview.authorEmail = myEmail || existingReview.authorEmail || '';
+        existingReview.moderation = 'pending';
+        existingReview.moderatedAt = null;
+        existingReview.moderatedBy = null;
+        existingReview.rejectReason = '';
+        Store.save();
+      }
       if (newReviewText) {
         const myEmail = (window.AuthGate && window.AuthGate.email && window.AuthGate.email()) || '';
         const review = Store.addReview({
           profileId: chgPid, mentorId: chgMid,
           text: newReviewText, authorEmail: myEmail,
           clientApprovalRequired: true,
-          // submittedAt = «сейчас». Дата статуса (newDate) — это когда
-          // отзыв ОПУБЛИКОВАН на площадке, отдельно от модерации.
+          draftCreatedAt: new Date().toISOString(),
+          publishedAt: null,
           submittedAt: new Date().toISOString(),
         });
         sendReviewInBackground(review);
+      } else if (becomingDone) {
+        toast('Отзыв отмечен опубликованным и отправлен на внутреннюю проверку');
       } else if (goingAway) {
         toast('Статус снят, отзыв удалён');
       } else {
