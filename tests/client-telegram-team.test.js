@@ -80,6 +80,8 @@ test('review-linked approval is idempotent and survives a missing Telegram conta
 
 test('setting Ready sends the saved review through the linked approval workflow', () => {
   assert.match(statusesHtml, /client-text-approvals\.js/);
+  assert.match(statusesHtml, /client-text-approvals\.js\?v=20260826a/);
+  assert.match(reviewsHtml, /client-text-approvals\.js\?v=20260826a/);
   assert.equal((statusesHtml.match(/ClientTextApprovals\.sendReview\(Store, review\)/g) || []).length, 1,
     'единая фоновая отправка должна обслуживать оба сценария сохранения');
   assert.match(statusesHtml, /clientApprovalRequired: true/);
