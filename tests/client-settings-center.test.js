@@ -40,6 +40,9 @@ test('A34 test cabinet gets a Telegram reminder and any client can unlink a cont
   assert.match(settingsJs, /revoke_my_client_telegram_member/);
   assert.match(clientCss, /@keyframes cliTgReminderGlow/);
   assert.match(clientCss, /prefers-reduced-motion: reduce/);
+  assert.match(clientCss, /@media \(max-width: 700px\)[\s\S]*grid-template-columns: 34px minmax\(0, 1fr\)/);
+  assert.match(clientCss, /cli-tg-reminder__action[\s\S]*justify-self: end/);
+  assert.match(clientCss, /cli-tg-reminder__close[\s\S]*top: 4px;[\s\S]*right: 4px/);
 });
 
 test('referral link records Telegram attribution and grants one bonus only on first paid order', () => {

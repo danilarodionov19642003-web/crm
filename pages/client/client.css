@@ -1569,13 +1569,6 @@ body:has(.cli-modal:not([hidden])) { overflow: hidden; }
 }
 
 @media (max-width: 420px) {
-  .cli-tg-reminder {
-    grid-template-columns: auto minmax(0, 1fr);
-    gap: 10px;
-    padding: 12px 42px 12px 12px;
-  }
-  .cli-tg-reminder__action { grid-column: 1 / -1; width: 100%; }
-  .cli-tg-reminder__close { position: absolute; top: 8px; right: 8px; }
   .cli-text-approval__head { flex-direction: column; }
   .cli-text-approval__status { max-width: 100%; }
   .cli-text-approval__actions button,
@@ -1592,6 +1585,44 @@ body:has(.cli-modal:not([hidden])) { overflow: hidden; }
 }
 
 @media (max-width: 700px) {
+  .cli-tg-reminder {
+    grid-template-columns: 34px minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    column-gap: 9px;
+    row-gap: 7px;
+    margin-bottom: 14px;
+    padding: 10px 34px 10px 10px;
+    border-radius: 14px;
+  }
+  .cli-tg-reminder__icon {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+    align-self: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 11px;
+  }
+  .cli-tg-reminder__icon svg { width: 20px; height: 20px; }
+  .cli-tg-reminder__copy { grid-column: 2; grid-row: 1; padding-right: 2px; }
+  .cli-tg-reminder__copy strong { font-size: 12px; line-height: 1.25; }
+  .cli-tg-reminder__copy span { margin-top: 2px; font-size: 10px; line-height: 1.3; }
+  .cli-tg-reminder__action {
+    grid-column: 2;
+    grid-row: 2;
+    justify-self: end;
+    width: auto;
+    min-height: 30px;
+    padding: 5px 10px;
+    border-radius: 9px;
+    font-size: 10.5px;
+  }
+  .cli-tg-reminder__close {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 28px;
+    height: 28px;
+  }
   .cli-header { padding: 10px 12px; gap: 8px; }
   .cli-header__logo { width: 36px; height: 36px; border-radius: 11px; }
   .cli-header__brand { gap: 8px; }
