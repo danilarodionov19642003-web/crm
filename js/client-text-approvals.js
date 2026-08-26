@@ -58,6 +58,27 @@
       .find(item => item && item.id === mentorId) || null;
   }
 
+  function reviewAccountLabel(store, review) {
+    if (!store || !store.state || !review || !review.profileId) return 'Аккаунт';
+    const registration = store.getAccountReg ? store.getAccountReg(review.profileId) : null;
+    if (registration && String(registration.ownerName || '').trim()) {
+      return String(registration.ownerName).trim();
+    }
+    const used = new Set();
+    (store.state.profileStatuses || [])
+      .filter(item => item && item.mentorId === review.mentorId)
+      .forEach(item => used.add(item.profileId));
+    (store.state.reviews || [])
+      .filter(item => item && item.mentorId === review.mentorId)
+      .forEach(item => used.add(item.profileId));
+    const ordered = [
+      ...(store.state.profiles || []),
+      ...(store.state.archivedProfiles || [])
+    ].filter(item => item && used.has(item.id));
+    const index = ordered.findIndex(item => item.id === review.profileId);
+    return index >= 0 ? `Аккаунт #${index + 1}` : 'Аккаунт';
+  }
+
   function errorMessage(error) {
     const raw = String(error && error.message || error || '');
     if (raw.includes('PORTAL_NOT_FOUND')) return 'Для анкеты не найден личный кабинет клиента.';
@@ -82,7 +103,8 @@
     }
     const mentor = mentorFor(store, review.mentorId);
     const code = String(mentor && mentor.code || '').trim();
-    const title = code ? `Текст отзыва · ${code}` : 'Текст отзыва';
+    const account = reviewAccountLabel(store, review);
+    const title = ['Текст отзыва', code, account].filter(Boolean).join(' · ');
     try {
       const row = await rpc('create_review_text_approval', {
         p_portal_email: portal.email,

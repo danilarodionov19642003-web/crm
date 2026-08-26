@@ -33,6 +33,8 @@ test('settings open from the client avatar and no longer occupy the dashboard', 
 test('A34 test cabinet gets a Telegram reminder and any client can unlink a contact', () => {
   assert.match(indexHtml, /data-cli-tg-reminder/);
   assert.match(indexHtml, /Подключите Telegram для уведомлений/);
+  assert.match(indexHtml, /cli-tg-reminder__mobile">Telegram для уведомлений/);
+  assert.match(indexHtml, /cli-tg-reminder__mobile">Подключить/);
   assert.match(clientApp, /TELEGRAM_REMINDER_TEST_EMAIL = 'test@test\.com'/);
   assert.match(clientApp, /email === TELEGRAM_REMINDER_TEST_EMAIL[\s\S]*count === 0/);
   assert.match(clientApp, /ClientSettings\.open\('telegram'\)/);
@@ -40,9 +42,17 @@ test('A34 test cabinet gets a Telegram reminder and any client can unlink a cont
   assert.match(settingsJs, /revoke_my_client_telegram_member/);
   assert.match(clientCss, /@keyframes cliTgReminderGlow/);
   assert.match(clientCss, /prefers-reduced-motion: reduce/);
-  assert.match(clientCss, /@media \(max-width: 700px\)[\s\S]*grid-template-columns: 34px minmax\(0, 1fr\)/);
+  assert.match(clientCss, /@media \(max-width: 700px\)[\s\S]*grid-template-columns: minmax\(0, 1fr\) auto/);
+  assert.match(clientCss, /cli-tg-reminder__copy strong[\s\S]*white-space: nowrap/);
   assert.match(clientCss, /cli-tg-reminder__action[\s\S]*justify-self: end/);
-  assert.match(clientCss, /cli-tg-reminder__close[\s\S]*top: 4px;[\s\S]*right: 4px/);
+  assert.match(clientCss, /cli-tg-reminder__close[\s\S]*top: 2px;[\s\S]*right: 2px/);
+});
+
+test('main dashboard only points to anketa approvals and keeps legal links in the footer', () => {
+  assert.match(indexHtml, /data-cli-text-approval-notices/);
+  assert.match(indexHtml, /renderTextApprovalNotices/);
+  assert.doesNotMatch(indexHtml, /class="cli-terms-card"/);
+  assert.match(indexHtml, /href="\.\.\/\.\.\/legal\/offer\.html"/);
 });
 
 test('referral link records Telegram attribution and grants one bonus only on first paid order', () => {

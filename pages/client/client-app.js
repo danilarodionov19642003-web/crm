@@ -276,10 +276,13 @@
     return { label: 'Нужно проверить', cls: 'is-pending' };
   }
 
-  function renderTextApprovals(rows) {
+  function renderTextApprovals(rows, mentorId) {
     const root = document.querySelector('[data-cli-text-approvals]');
     if (!root) return;
-    const items = latestTextApprovals(rows).filter(row => row.request_status !== 'cancelled');
+    const items = latestTextApprovals(rows).filter(row =>
+      row.request_status !== 'cancelled'
+      && (!mentorId || row.mentor_id === mentorId)
+    );
     if (!items.length) {
       root.hidden = true;
       root.innerHTML = '';
@@ -321,10 +324,44 @@
           </article>`;
         }).join('')}
       </div>`;
-    bindTextApprovalActions(root);
+    bindTextApprovalActions(root, mentorId);
   }
 
-  function bindTextApprovalActions(root) {
+  function renderTextApprovalNotices(rows, anketas) {
+    const root = document.querySelector('[data-cli-text-approval-notices]');
+    if (!root) return;
+    const pending = latestTextApprovals(rows).filter(row =>
+      row.request_status === 'pending' && row.mentor_id
+    );
+    const grouped = new Map();
+    pending.forEach(row => {
+      const key = String(row.mentor_id);
+      if (!grouped.has(key)) grouped.set(key, []);
+      grouped.get(key).push(row);
+    });
+    if (!grouped.size) {
+      root.hidden = true;
+      root.innerHTML = '';
+      return;
+    }
+    const anketaById = new Map((anketas || []).map(item => [String(item.mentorId), item]));
+    root.hidden = false;
+    root.innerHTML = [...grouped].map(([id, items]) => {
+      const anketa = anketaById.get(id) || {};
+      const rawCode = anketa.code || items[0].anketa_code || 'анкета';
+      const code = /^a\d+$/i.test(String(rawCode)) ? String(rawCode).toUpperCase() : String(rawCode);
+      return `<a class="cli-text-approval-notice" href="./profile.html?id=${encodeURIComponent(id)}">
+        <span class="cli-text-approval-notice__icon" aria-hidden="true">✓</span>
+        <span class="cli-text-approval-notice__copy">
+          <strong>Согласуйте тексты по анкете ${escapeHtml(code)}</strong>
+          <span>Ожидают согласования: ${items.length}</span>
+        </span>
+        <span class="cli-text-approval-notice__arrow" aria-hidden="true">→</span>
+      </a>`;
+    }).join('');
+  }
+
+  function bindTextApprovalActions(root, mentorId) {
     root.querySelectorAll('[data-text-approve]').forEach(button => {
       button.addEventListener('click', async () => {
         if (!window.confirm('Согласовать этот текст?')) return;
@@ -338,7 +375,7 @@
           card.querySelectorAll('button').forEach(item => { item.disabled = false; });
           return;
         }
-        renderTextApprovals(await loadMyTextApprovals());
+        renderTextApprovals(await loadMyTextApprovals(), mentorId);
       });
     });
     root.querySelectorAll('[data-text-changes]').forEach(button => {
@@ -368,7 +405,7 @@
           card.querySelectorAll('button, textarea').forEach(item => { item.disabled = false; });
           return;
         }
-        renderTextApprovals(await loadMyTextApprovals());
+        renderTextApprovals(await loadMyTextApprovals(), mentorId);
       });
     });
   }
@@ -1052,7 +1089,8 @@
       context.mentorId,
       context.orders,
       context.publicationRequests,
-      slots
+      slots,
+      context.textApprovals
     );
   }
 
@@ -1450,7 +1488,7 @@
       </section>`;
   }
 
-  function renderProfileDetail(payload, mentorId, orders, publicationRequests, outreachSlots) {
+  function renderProfileDetail(payload, mentorId, orders, publicationRequests, outreachSlots, textApprovals) {
     const a = (payload.anketas || []).find(x => x.mentorId === mentorId);
     const root = document.querySelector('[data-cli-profile]');
     if (!root) return;
@@ -1465,7 +1503,7 @@
     const wDone = ordered ? Math.min(100, (effectiveDone / ordered) * 100) : 0;
     const wActive = ordered ? Math.min(100 - wDone, (br.active / ordered) * 100) : 0;
     const packagesHtml = _packageHistoryHtml(a, orders || [], br.active);
-    const outreachContext = { payload, mentorId, orders, publicationRequests, outreachSlots };
+    const outreachContext = { payload, mentorId, orders, publicationRequests, outreachSlots, textApprovals };
     const outreachHtml = outreachPlannerHtml(
       a,
       outreachSlots,
@@ -1664,6 +1702,7 @@
           <div class="cli-detail-sub">${escapeHtml(a.platform || '')}${a.tariff ? ' · ' + escapeHtml(a.tariff) : ''}${a.deadline ? ' · дедлайн ' + fmtDate(a.deadline) : ''}</div>
         </div>
       </div>
+      <section class="cli-text-approvals" data-cli-text-approvals hidden></section>
       ${totalsHtml}
       ${moneyHtml}
       ${outreachHtml}
@@ -1673,6 +1712,7 @@
       ${reviewsHtml}
     `;
     bindAvatarFallbacks(root);
+    renderTextApprovals(textApprovals || [], mentorId);
 
     root.querySelectorAll('[data-publication-submit]').forEach(button => {
       button.addEventListener('click', async () => {
@@ -1711,7 +1751,7 @@
           return;
         }
         const updatedRequests = await loadMyPublicationRequests();
-        renderProfileDetail(payload, mentorId, orders, updatedRequests, outreachSlots);
+        renderProfileDetail(payload, mentorId, orders, updatedRequests, outreachSlots, textApprovals);
       });
     });
 
@@ -2771,6 +2811,7 @@
     loadMyTextApprovals,
     resolveMyTextApproval,
     renderTextApprovals,
+    renderTextApprovalNotices,
     loadMyOutreachSlots,
     loadOutreachAvailability,
     manageOutreachSlot,

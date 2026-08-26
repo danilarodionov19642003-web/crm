@@ -13,6 +13,7 @@ const settingsJs = read('pages/client/client-settings.js');
 const approvalJs = read('js/client-text-approvals.js');
 const clientApp = read('pages/client/client-app.js');
 const clientIndex = read('pages/client/index.html');
+const clientProfile = read('pages/client/profile.html');
 const statusesHtml = read('pages/statuses.html');
 const reviewsHtml = read('pages/reviews.html');
 const appJs = read('js/app.js');
@@ -105,13 +106,20 @@ test('Reviews embeds client approval status and no longer has a manual compose b
 });
 
 test('client cabinet displays and can resolve its own text approvals', () => {
-  assert.match(clientIndex, /data-cli-text-approvals/);
+  assert.doesNotMatch(clientIndex, /data-cli-text-approvals/);
+  assert.match(clientIndex, /data-cli-text-approval-notices/);
   assert.match(clientIndex, /loadMyTextApprovals\(\)/);
-  assert.match(clientIndex, /renderTextApprovals\(textApprovals\)/);
+  assert.match(clientIndex, /renderTextApprovalNotices/);
+  assert.match(clientProfile, /loadMyTextApprovals\(\)/);
+  assert.match(clientProfile, /renderProfileDetail\([\s\S]*textApprovals/);
+  assert.match(clientApp, /data-cli-text-approvals/);
+  assert.match(clientApp, /row\.mentor_id === mentorId/);
   assert.match(clientApp, /client_text_approval_requests/);
   assert.match(clientApp, /resolve_my_client_text_approval/);
   assert.match(clientApp, /data-text-approve/);
   assert.match(clientApp, /data-text-change-submit/);
+  assert.match(approvalJs, /reviewAccountLabel/);
+  assert.match(approvalJs, /Текст отзыва'[\s\S]*code[\s\S]*account/);
 });
 
 test('status notifications fan out with a legacy-only fallback', () => {

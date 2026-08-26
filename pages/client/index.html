@@ -16,7 +16,7 @@
   <meta http-equiv="Expires" content="0"/>
   <title>Личный кабинет — Mentori</title>
   <link rel="stylesheet" href="../../css/styles.css?v=20260628a"/>
-  <link rel="stylesheet" href="client.css?v=20260826b"/>
+  <link rel="stylesheet" href="client.css?v=20260826c"/>
 </head>
 <body class="cli-body">
   <div data-cli-header></div>
@@ -28,12 +28,13 @@
         <svg viewBox="0 0 24 24" width="24" height="24" fill="none"><path d="M20.6 3.6 3.9 10.1c-1.1.4-1.1 1.1-.2 1.4l4.3 1.3 1.7 5.2c.2.6.1.9.8.9.5 0 .8-.2 1-.4l2.4-2.3 5 3.7c.9.5 1.6.2 1.8-.9l2.9-13.7c.3-1.3-.5-1.9-1.6-1.5Z" fill="currentColor"/><path d="m9 12.5 9.8-6.2c.5-.3.9-.1.5.3l-8.1 7.3-.3 3.3-1.9-4.7Z" fill="rgba(255,255,255,.72)"/></svg>
       </div>
       <div class="cli-tg-reminder__copy">
-        <strong>Подключите Telegram для уведомлений</strong>
+        <strong><span class="cli-tg-reminder__desktop">Подключите Telegram для уведомлений</span><span class="cli-tg-reminder__mobile">Telegram для уведомлений</span></strong>
         <span>Согласовывайте тексты отзывов и получайте уведомления.</span>
       </div>
-      <button class="cli-tg-reminder__action" type="button" data-cli-tg-reminder-connect>Подключить Telegram</button>
+      <button class="cli-tg-reminder__action" type="button" data-cli-tg-reminder-connect><span class="cli-tg-reminder__desktop">Подключить Telegram</span><span class="cli-tg-reminder__mobile">Подключить</span></button>
       <button class="cli-tg-reminder__close" type="button" data-cli-tg-reminder-close aria-label="Скрыть напоминание">✕</button>
     </aside>
+    <div class="cli-text-approval-notices" data-cli-text-approval-notices hidden></div>
     <!-- Сводка (во всю ширину) -->
     <h2 class="cli-section-title">Сводка</h2>
     <div class="cli-kpis" data-cli-totals></div>
@@ -69,17 +70,6 @@
       </div>
 
       <div class="cli-col cli-col--right">
-        <section class="cli-text-approvals" data-cli-text-approvals hidden></section>
-
-        <!-- Публичная оферта — видимой карточкой, открывает модалку -->
-        <button type="button" class="cli-terms-card" data-cli-terms>
-          <span class="cli-terms-card__icon">📄</span>
-          <span class="cli-terms-card__body">
-            <span class="cli-terms-card__title">Публичная оферта</span>
-            <span class="cli-terms-card__sub">оплата, сроки, возвраты, гарантии — нажми, чтобы прочитать</span>
-          </span>
-        </button>
-
         <h2 class="cli-section-title">Календарь</h2>
         <div class="cli-cal" data-cli-calendar></div>
 
@@ -152,7 +142,7 @@
   <script src="./legal-content.js?v=20260713d"></script>
   <script src="./remainder-calculator.js?v=20260713a"></script>
   <script src="./order-cart.js?v=20260820b"></script>
-  <script src="./client-app.js?v=20260826a"></script>
+  <script src="./client-app.js?v=20260826c"></script>
   <script src="./client-settings.js?v=20260826a"></script>
   <script>
   (async () => {
@@ -166,7 +156,10 @@
       window.ClientApp.loadMyPublicationRequests(),
       window.ClientApp.loadMyTextApprovals()
     ]);
-    window.ClientApp.renderTextApprovals(textApprovals);
+    window.ClientApp.renderTextApprovalNotices(
+      textApprovals,
+      snap && snap.payload ? snap.payload.anketas : []
+    );
     if (!snap || !snap.payload) {
       document.querySelector('[data-cli-anketas]').innerHTML =
         '<div class="cli-empty">Данные ещё не загружены. Зайдите чуть позже или свяжитесь с менеджером.</div>';
