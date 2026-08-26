@@ -40,8 +40,8 @@
     .cl-card__bar > div { height: 100%; background: linear-gradient(90deg, var(--accent), #ff9a3c); }
     .cl-card__money { display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 13px; align-items: baseline; }
     .cl-card__money label { color: var(--text-dim); margin-right: 4px; }
-    .cl-card__actions { display: flex; gap: 6px; border-top: 1px solid var(--border); padding-top: 10px; margin-top: 2px; }
-    .cl-card__actions .btn { flex: 1; padding: 5px 4px; font-size: 12px; justify-content: center; }
+    .cl-card__actions { display: flex; flex-wrap: wrap; gap: 6px; border-top: 1px solid var(--border); padding-top: 10px; margin-top: 2px; }
+    .cl-card__actions .btn { flex: 1 1 40px; padding: 5px 4px; font-size: 12px; justify-content: center; }
     .cl-card__actions .btn--icon { flex: 0 0 auto; }
     .cl-editable { cursor: text; border-bottom: 1px dashed transparent; }
     .cl-editable:hover { border-bottom-color: var(--border-strong); }
@@ -110,7 +110,7 @@
     }
     .cl-list__money-line label, .cl-list__date-line label { color: var(--text-mute); }
     .cl-list__date-line .cl-date { width: 112px; min-width: 0; font-size: 11px; }
-    .cl-list__actions { display: grid; grid-template-columns: repeat(6, minmax(30px, auto)); gap: 4px; justify-content: end; }
+    .cl-list__actions { display: grid; grid-template-columns: repeat(7, minmax(30px, auto)); gap: 4px; justify-content: end; }
     .cl-list__actions .btn { min-width: 30px; padding: 5px; justify-content: center; }
 
     .niche-config-row {
@@ -171,6 +171,8 @@
     .sch-day.has-done    { background: linear-gradient(180deg, rgba(34,197,94,0.12),  transparent), var(--bg); border-color: rgba(34,197,94,0.4); }
     .sch-day.has-both    { background: linear-gradient(180deg, rgba(34,197,94,0.14), rgba(255,122,0,0.10) 60%, transparent), var(--bg); border-color: rgba(34,197,94,0.5); }
     .sch-day.is-overdue  { background: linear-gradient(180deg, rgba(239,68,68,0.12),  transparent), var(--bg); border-color: rgba(239,68,68,0.4); }
+    .sch-day.is-day-off { opacity: .46; border-style: dashed; cursor: default; }
+    .sch-day.is-day-off:hover { border-color: var(--border); background: var(--bg); }
     .sch-day__num { font-size: 11px; opacity: .65; }
     .sch-day__planned, .sch-day__done {
       position: absolute; bottom: 4px; font-size: 11px; font-weight: 600;
@@ -849,6 +851,62 @@
       </button>`;
     }
 
+    function clientPortalForClient(client) {
+      const code = String(client && client.code || '').trim().toLowerCase();
+      if (!code) return null;
+      const mentorIds = new Set((Store.state.mentors || [])
+        .filter(mentor => String(mentor.code || '').trim().toLowerCase() === code)
+        .map(mentor => mentor.id));
+      if (!mentorIds.size) return null;
+      return (Store.state.clientPortals || []).find(portal =>
+        (portal.mentorIds || []).some(mentorId => mentorIds.has(mentorId))
+      ) || null;
+    }
+
+    async function createOwnerTelegramLink(client, button) {
+      const portal = clientPortalForClient(client);
+      if (!portal || !portal.email) {
+        toast('У этой анкеты пока нет личного кабинета.', 'error');
+        return;
+      }
+      const sb = window.Supabase;
+      if (!sb || typeof sb.authFetch !== 'function') {
+        toast('Нет связи с сервером. Обнови страницу.', 'error');
+        return;
+      }
+      button.disabled = true;
+      try {
+        const response = await sb.authFetch(`${sb.URL}/rest/v1/rpc/create_client_telegram_invite_for_owner`, {
+          method: 'POST',
+          headers: { apikey: sb.KEY, 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({
+            p_portal_email: portal.email,
+            p_contact_label: portal.name || client.customer || client.name || null,
+            p_is_text_approver: false
+          })
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || !result.token) {
+          throw new Error(String(result.message || result.details || `HTTP ${response.status}`));
+        }
+        const url = `https://t.me/${encodeURIComponent(result.bot_username || 'MentoriTG_bot')}?start=link_${encodeURIComponent(result.token)}`;
+        try {
+          await navigator.clipboard.writeText(url);
+          toast(`Ссылка для ${portal.name || portal.email} скопирована. Действует 24 часа и только один раз.`);
+        } catch (_) {
+          window.prompt('Скопируй ссылку для клиента. Она действует 24 часа и только один раз.', url);
+        }
+      } catch (error) {
+        const raw = String(error && error.message || error || '');
+        if (raw.includes('MEMBER_LIMIT_REACHED')) toast('К кабинету уже подключено максимальное число Telegram-контактов.', 'error');
+        else if (raw.includes('PORTAL_NOT_FOUND')) toast('Снимок личного кабинета ещё не создан. Сохрани CRM и повтори.', 'error');
+        else if (raw.includes('AUTH_REQUIRED')) toast('Создать ссылку может только владелец CRM.', 'error');
+        else toast('Не удалось создать ссылку Telegram. Попробуй ещё раз.', 'error');
+      } finally {
+        button.disabled = false;
+      }
+    }
+
     function clientActionsHtml(r, className = 'cl-card__actions') {
       return `
         <div class="${className}">
@@ -861,6 +919,9 @@
           <button class="btn btn--ghost btn--sm" data-act="schedule" title="График откликов по дням">
             ${ico('<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>')} ${countScheduledForClient(r)}
           </button>
+          ${clientPortalForClient(r) ? `<button class="btn btn--ghost btn--sm" data-act="telegram-link" title="Скопировать одноразовую ссылку для подключения Telegram">
+            ${ico('<line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>')} TG
+          </button>` : ''}
           <label class="btn btn--ghost btn--sm" title="Показывать этому клиенту тариф Постоянник 800 ₽/шт в личном кабинете" style="gap:4px">
             <input type="checkbox" data-act="toggle-regular-tariff" ${r.allowRegularTariff ? 'checked' : ''} style="margin:0"/>
             800
@@ -1051,6 +1112,15 @@
       return Array.isArray(c.schedule) ? c.schedule : [];
     }
 
+    const OUTREACH_SUNDAY_DAY_OFF_FROM = '2026-09-06';
+    function isOutreachDayOff(isoDate) {
+      const value = String(isoDate || '').slice(0, 10);
+      if (value < OUTREACH_SUNDAY_DAY_OFF_FROM) return false;
+      const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+      if (!match) return false;
+      return new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))).getUTCDay() === 0;
+    }
+
     function getScheduleBreakdown(c) {
       return clientScheduleBreakdown(Store.state, c);
     }
@@ -1197,6 +1267,12 @@
         // график отзывов
         const schBtn = tr.querySelector('[data-act="schedule"]');
         if (schBtn) schBtn.addEventListener('click', e => { e.stopPropagation(); openSchedule(id); });
+        const telegramLinkBtn = tr.querySelector('[data-act="telegram-link"]');
+        if (telegramLinkBtn) telegramLinkBtn.addEventListener('click', async e => {
+          e.stopPropagation();
+          const client = Store.state.clients.find(item => item.id === id);
+          if (client) await createOwnerTelegramLink(client, telegramLinkBtn);
+        });
         const regularChk = tr.querySelector('[data-act="toggle-regular-tariff"]');
         if (regularChk) regularChk.addEventListener('change', e => {
           e.stopPropagation();
@@ -1418,6 +1494,7 @@
                     String(date.getDate()).padStart(2, '0');
         const isToday = iso === today;
         const isPast = iso < today;
+        const isDayOff = isOutreachDayOff(iso);
         const planned = planMap[iso] || 0;
         const done = doneMap[iso] || 0;
         // schedule[] хранит только ещё не выполненный план. Публикация старого
@@ -1426,6 +1503,7 @@
         let cls = 'sch-day';
         if (isToday) cls += ' is-today';
         if (isPast)  cls += ' is-past';
+        if (isDayOff) cls += ' is-day-off';
         if (plannedLeft > 0 && done > 0)      cls += ' has-both';
         else if (done > 0)                    cls += ' has-done';
         else if (plannedLeft > 0 && !isPast)  cls += ' has-planned';
@@ -1437,9 +1515,12 @@
         const loadBadge = daySlots > 0
           ? ` <span style="font-size:9px;font-weight:700;color:${dayFull ? '#ef4444' : 'var(--text-mute)'}" title="Откликов в этот день: ${daySlots} из ${MAX_OUTREACH_PER_DAY}">📅${daySlots}/7</span>`
           : '';
+        const dayOffBadge = isDayOff
+          ? ' <span style="font-size:8px;color:var(--text-mute)">выходной</span>'
+          : '';
         cells.push(`
           <div class="${cls}" data-date="${iso}">
-            <div class="sch-day__num">${d}${loadBadge}</div>
+            <div class="sch-day__num">${d}${loadBadge}${dayOffBadge}</div>
             ${plannedLeft > 0 ? `<div class="sch-day__planned">●${plannedLeft}</div>` : ''}
             ${done > 0    ? `<div class="sch-day__done">✓${done}</div>`    : ''}
             ${accHere.length ? `<div class="sch-day__acc" title="${accHere.map(a => a.emoji + a.code).join('  ')}" style="font-size:9px;line-height:1.1;margin-top:1px;letter-spacing:-1px">${accHere.map(a => a.emoji).join('')}</div>` : ''}
@@ -1525,6 +1606,7 @@
       const raw = String(error && error.message || '');
       const dmy = isoDate.split('-').reverse().join('.');
       if (raw.includes('DAY_FULL')) return `На ${dmy} уже запланировано 7 откликов. Выбери другой день.`;
+      if (raw.includes('OUTREACH_DAY_OFF')) return `На ${dmy} воскресенье. В этот день отклики не планируем.`;
       if (raw.includes('AUTH_REQUIRED')) return 'Сессия истекла. Обнови страницу и войди снова.';
       return 'Не удалось изменить график. Проверь связь и попробуй ещё раз.';
     }
@@ -1532,6 +1614,10 @@
     async function onDayClick(isoDate, delta) {
       const c = Store.state.clients.find(x => x.id === curSchClientId);
       if (!c) return;
+      if (delta > 0 && isOutreachDayOff(isoDate)) {
+        toast(outreachErrorText(new Error('OUTREACH_DAY_OFF'), isoDate), 'error');
+        return;
+      }
       const schedule = getSchedule(c).map(x => ({ ...x }));
       const day = getScheduleBreakdown(c).find(item => item.date === isoDate);
       const currentRemaining = day ? day.remaining : 0;

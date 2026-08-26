@@ -7,6 +7,7 @@
     KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzc5MzE4NDc3LCJleHAiOjIwOTQ2Nzg0Nzd9.XuMHwfOo8qcycoooOMGwWd3R9_YA55JQZwaJBh132N8'
   };
   const tg = window.Telegram && window.Telegram.WebApp;
+  const OUTREACH_SUNDAY_DAY_OFF_FROM = '2026-09-06';
   const params = new URLSearchParams(location.search);
   const fragmentParams = new URLSearchParams(String(location.hash || '').replace(/^#/, ''));
   const token = fragmentParams.get('token') || params.get('token') || '';
@@ -34,6 +35,14 @@
 
   function isoDate(date) {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  }
+
+  function isOutreachDayOff(iso) {
+    const value = String(iso || '').slice(0, 10);
+    if (value < OUTREACH_SUNDAY_DAY_OFF_FROM) return false;
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    if (!match) return false;
+    return new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))).getUTCDay() === 0;
   }
 
   function escapeHtml(value) {
@@ -104,6 +113,7 @@
     }
     if (raw.includes('DAY_FULL')) return 'На этот день свободных мест уже нет.';
     if (raw.includes('SCHEDULE_LIMIT_REACHED')) return 'Все доступные отклики уже запланированы.';
+    if (raw.includes('OUTREACH_DAY_OFF')) return 'В воскресенье отклики не планируются. Выберите другой день.';
     if (raw.includes('DATE_OUT_OF_RANGE')) return 'Начать можно только со следующего дня.';
     return 'Не удалось сохранить. Попробуйте ещё раз.';
   }
@@ -385,12 +395,14 @@
               const info = days.get(iso);
               const available = Number(info && info.available_count) || 0;
               const owned = ownedDates.has(iso);
-              const disabled = iso < minimum || iso > maxDate || !info || available <= 0 || !canAdd || owned;
+              const dayOff = isOutreachDayOff(iso);
+              const disabled = iso < minimum || iso > maxDate || !info || available <= 0 || !canAdd || owned || dayOff;
               const classes = ['tgcal-day'];
               if (owned) classes.push('is-owned');
               if (state.selectedDate === iso) classes.push('is-selected');
               if (info && available <= 0) classes.push('is-full');
-              return `<button type="button" class="${classes.join(' ')}" data-date="${iso}"${disabled ? ' disabled' : ''}><strong>${date.getDate()}</strong><small>${owned ? 'ваш' : (info ? (available > 0 ? `мест ${available}` : 'занято') : '')}</small></button>`;
+              if (dayOff) classes.push('is-day-off');
+              return `<button type="button" class="${classes.join(' ')}" data-date="${iso}"${disabled ? ' disabled' : ''}><strong>${date.getDate()}</strong><small>${owned ? 'ваш' : (dayOff ? 'выходной' : (info ? (available > 0 ? `мест ${available}` : 'занято') : ''))}</small></button>`;
             }).join('')}
           </div>
         </div>

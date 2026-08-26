@@ -204,6 +204,8 @@ button { -webkit-tap-highlight-color: transparent; }
 .tgcal-day.is-selected { border-color: var(--accent); background: var(--accent); color: #fff; opacity: 1; }
 .tgcal-day.is-selected small { color: #fff; }
 .tgcal-day.is-full small { color: var(--red); }
+.tgcal-day.is-day-off { border-style: dashed; }
+.tgcal-day.is-day-off small { color: var(--mute); }
 .tgcal-submit { width: 100%; min-height: 44px; margin-top: 12px; border: 0; border-radius: 11px; background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #fff; font-weight: 780; cursor: pointer; }
 .tgcal-submit:disabled { opacity: .4; cursor: default; }
 .tgcal-result { min-height: 17px; margin-top: 8px; color: var(--mute); font-size: 10px; text-align: center; }

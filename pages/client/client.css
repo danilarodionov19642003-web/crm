@@ -635,6 +635,8 @@
 .cli-outreach-cal__day.is-past { background: transparent; border-color: rgba(128,128,128,.12); }
 .cli-outreach-cal__day.is-past strong { color: var(--text-mute); font-weight: 500; }
 .cli-outreach-cal__day.is-full span { color: var(--cli-red); }
+.cli-outreach-cal__day.is-day-off { opacity: .42; border-style: dashed; }
+.cli-outreach-cal__day.is-day-off span { color: var(--text-mute); }
 .cli-outreach-cal__legend {
   display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 10px; color: var(--text-mute); font-size: 9px;
 }

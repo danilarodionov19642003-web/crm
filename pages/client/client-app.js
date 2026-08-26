@@ -23,6 +23,7 @@
 
   const SNAPSHOTS_TABLE = 'client_snapshots';
   const TELEGRAM_REMINDER_TEST_EMAIL = 'test@test.com';
+  const OUTREACH_SUNDAY_DAY_OFF_FROM = '2026-09-06';
   let telegramReminderBound = false;
 
   function fmtDate(iso) {
@@ -50,6 +51,13 @@
   }
   function outreachMinimumDate() {
     return addDaysISO(todayISO(), 1);
+  }
+  function isOutreachDayOff(iso) {
+    const value = String(iso || '').slice(0, 10);
+    if (value < OUTREACH_SUNDAY_DAY_OFF_FROM) return false;
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    if (!match) return false;
+    return new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))).getUTCDay() === 0;
   }
   function publicationMinimumDate(anketa, status) {
     const byStatus = addDaysISO(status && status.date, Number(anketa && anketa.publicationWaitDays) || 0);
@@ -492,6 +500,7 @@
     if (raw.includes('DAY_FULL')) return 'На этот день уже нет мест. Выберите другой.';
     if (raw.includes('NO_AVAILABLE_OUTREACH')) return 'Все доступные отклики этой анкеты уже запланированы или находятся в работе.';
     if (raw.includes('OUTREACH_PREPARATION_DAY')) return 'На закупку и подготовку нужен один день. Выберите дату начиная с завтра.';
+    if (raw.includes('OUTREACH_DAY_OFF')) return 'В воскресенье отклики не планируются. Выберите другой день.';
     if (raw.includes('DATE_OUT_OF_RANGE')) return 'Можно выбрать дату начиная с завтра и в пределах ближайших шести месяцев.';
     if (raw.includes('SLOT_NOT_FOUND')) return 'Этот отклик уже перенесён или отменён. Обновите страницу.';
     if (raw.includes('ANKETA_NOT_FOUND')) return 'Доступ к анкете изменился. Обновите страницу.';
@@ -1205,7 +1214,8 @@
       const publicationCount = publicationByDate.get(date) || 0;
       const isPastDate = date < today;
       const isPreparationDate = !isPastDate && date < minimumDate;
-      const canAdd = date >= minimumDate && date <= maxDate && load.available > 0 && meta.availableToAdd > 0;
+      const isDayOff = isOutreachDayOff(date);
+      const canAdd = date >= minimumDate && date <= maxDate && load.available > 0 && meta.availableToAdd > 0 && !isDayOff;
       const canToggle = !isPastDate && (ownCount > 0 || canAdd);
       const classes = [
         'cli-outreach-cal__day',
@@ -1214,6 +1224,7 @@
         load.available <= 0 && !ownCount && !isPastDate ? 'is-full' : '',
         isPastDate ? 'is-past' : '',
         isPreparationDate ? 'is-preparation' : '',
+        isDayOff ? 'is-day-off' : '',
         !canToggle ? 'is-disabled' : '',
         date === today ? 'is-today' : ''
       ].filter(Boolean).join(' ');
@@ -1224,14 +1235,18 @@
         ? ''
         : (isPreparationDate && !ownCount
           ? 'подготовка'
+        : (isDayOff && !ownCount
+          ? 'выходной'
         : (eventLabels.length
             ? eventLabels.join('<br>')
-            : (canAdd ? 'есть места' : (load.available > 0 ? 'недоступно' : 'занято'))));
+            : (canAdd ? 'есть места' : (load.available > 0 ? 'недоступно' : 'занято')))));
       const publicationHint = publicationCount ? ', запланирована публикация' : '';
       const actionLabel = isPastDate
         ? `Прошедшая дата ${fmtDate(date)}`
         : (isPreparationDate && !ownCount)
         ? `${fmtDate(date)} — день закупки и подготовки, планирование недоступно`
+        : (isDayOff && !ownCount)
+        ? `${fmtDate(date)} — воскресенье, выходной день`
         : ownCount
         ? `Снять отклик на ${fmtDate(date)}${publicationHint}`
         : canAdd
@@ -1341,18 +1356,20 @@
     for (let day = 1; day <= last.getDate(); day++) {
       const date = localISO(new Date(year, month, day));
       const load = byDate.get(date) || { used: 0, available: 7 };
-      const disabled = date < minimumDate || date > maxDate || load.available <= 0 || date === currentSlotDate;
+      const isDayOff = isOutreachDayOff(date);
+      const disabled = date < minimumDate || date > maxDate || load.available <= 0 || date === currentSlotDate || isDayOff;
       const classes = [
         'cli-outreach-cal__day',
         disabled ? 'is-disabled' : '',
         load.available <= 0 ? 'is-full' : '',
+        isDayOff ? 'is-day-off' : '',
         date === state.selectedDate ? 'is-selected' : '',
         date === today ? 'is-today' : ''
       ].filter(Boolean).join(' ');
       cells.push(`
         <button type="button" class="${classes}" data-outreach-date="${date}"${disabled ? ' disabled' : ''}>
           <strong>${day}</strong>
-          <span>${load.available > 0 ? 'есть места' : 'мест нет'}</span>
+          <span>${isDayOff ? 'выходной' : (load.available > 0 ? 'есть места' : 'мест нет')}</span>
         </button>`);
     }
 

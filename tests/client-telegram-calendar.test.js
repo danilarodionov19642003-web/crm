@@ -10,6 +10,7 @@ const js = read('pages/client/telegram-calendar.js');
 const css = read('pages/client/telegram-calendar.css');
 const sql = read('sql/migrations/2026-08-26_client_telegram_calendar.sql');
 const cabinetSql = read('sql/migrations/2026-08-26_client_telegram_miniapp_cabinet.sql');
+const sundaySql = read('sql/migrations/2026-08-26_client_outreach_sunday_day_off.sql');
 
 test('Telegram calendar uses short-lived hashed tokens without portal password', () => {
   assert.match(sql, /token_hash bytea not null unique/);
@@ -24,7 +25,7 @@ test('Telegram direct menu keeps its bearer credential out of HTTP requests', ()
   assert.match(js, /fragmentParams/);
   assert.match(js, /location\.hash/);
   assert.match(js, /fragmentParams\.get\('token'\)/);
-  assert.match(html, /telegram-calendar\.js\?v=20260826c/);
+  assert.match(html, /telegram-calendar\.js\?v=20260826d/);
 });
 
 test('Telegram calendar reads capacity and schedules through bounded RPCs', () => {
@@ -62,4 +63,13 @@ test('Mini App mirrors the client cabinet with branded home and anketa details',
   assert.match(cabinetSql, /'statuses'/);
   assert.match(cabinetSql, /'reviews'/);
   assert.doesNotMatch(cabinetSql, /crm_state/);
+});
+
+test('Mini App marks Sundays as days off after the preserved nearest Sunday', () => {
+  assert.match(js, /OUTREACH_SUNDAY_DAY_OFF_FROM = '2026-09-06'/);
+  assert.match(js, /isOutreachDayOff/);
+  assert.match(js, /OUTREACH_DAY_OFF/);
+  assert.match(js, /dayOff \? 'выходной'/);
+  assert.match(css, /\.tgcal-day\.is-day-off/);
+  assert.match(sundaySql, /OUTREACH_DAY_OFF/);
 });

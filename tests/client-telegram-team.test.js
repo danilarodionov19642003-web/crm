@@ -26,6 +26,8 @@ const calendarMenuBotPatch = read('ops/telegram/patches/client-calendar-menu.pat
 const visualCabinetBotPatch = read('ops/telegram/patches/client-visual-cabinet.patch');
 const directMenuAppPatch = read('ops/telegram/patches/client-direct-menu-app.patch');
 const directMenuSql = read('sql/migrations/2026-08-26_client_telegram_direct_menu.sql');
+const ownerInviteSql = read('sql/migrations/2026-08-26_owner_client_telegram_invites.sql');
+const clientsHtml = read('pages/clients.html');
 
 test('client login uses an immutable portal key', () => {
   const supabase = read('js/supabase-client.js');
@@ -36,6 +38,20 @@ test('client login uses an immutable portal key', () => {
   assert.match(teamSql, /raw_app_meta_data[\s\S]*portal_email/);
   assert.match(teamSql, /change_my_client_credentials/);
   assert.doesNotMatch(teamSql, /update auth\.identities\s+set email\s*=/i);
+});
+
+test('owner can copy a one-time Telegram link without client cabinet login', () => {
+  assert.match(ownerInviteSql, /create_client_telegram_invite_for_owner/);
+  assert.match(ownerInviteSql, /app_metadata'[\s\S]*role'[\s\S]*<> 'owner'/);
+  assert.match(ownerInviteSql, /interval '24 hours'/);
+  assert.match(ownerInviteSql, /digest\(convert_to\(v_token, 'UTF8'\), 'sha256'\)/);
+  assert.match(ownerInviteSql, /client_snapshots/);
+  assert.match(ownerInviteSql, /client_telegram_invites/);
+  assert.doesNotMatch(ownerInviteSql, /update\s+public\.crm_state/i);
+  assert.match(clientsHtml, /data-act="telegram-link"/);
+  assert.match(clientsHtml, /create_client_telegram_invite_for_owner/);
+  assert.match(clientsHtml, /navigator\.clipboard\.writeText\(url\)/);
+  assert.match(clientsHtml, /Действует 24 часа и только один раз/);
 });
 
 test('Telegram linking is short-lived, one-time and bounded', () => {

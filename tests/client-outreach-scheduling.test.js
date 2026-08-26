@@ -29,6 +29,10 @@ const tomorrowMinimumMigration = fs.readFileSync(
   path.join(root, 'sql/migrations/2026-08-24_client_outreach_tomorrow_minimum.sql'),
   'utf8'
 );
+const sundayDayOffMigration = fs.readFileSync(
+  path.join(root, 'sql/migrations/2026-08-26_client_outreach_sunday_day_off.sql'),
+  'utf8'
+);
 
 const noop = () => {};
 const context = {
@@ -145,6 +149,14 @@ assert.match(tomorrowMinimumMigration, /p_target_date < business_today \+ 1/,
 assert.match(tomorrowMinimumMigration, /OUTREACH_PREPARATION_DAY/);
 assert.match(tomorrowMinimumMigration, /manage_client_outreach_slot_v1/,
   'после проверки дня подготовки должны сохраниться лимиты и блокировки исходной функции');
+assert.match(sundayDayOffMigration, /date '2026-09-06'/,
+  'ближайшее воскресенье 30.08 должно остаться разрешённым');
+assert.match(sundayDayOffMigration, /extract\(isodow from p_date\) = 7/);
+assert.match(sundayDayOffMigration, /before insert or update of scheduled_date/,
+  'серверный запрет должен покрывать сайт, Telegram и ручной график CRM');
+assert.match(sundayDayOffMigration, /OUTREACH_DAY_OFF/);
+assert.doesNotMatch(sundayDayOffMigration, /delete from public\.client_outreach_slots|update public\.client_outreach_slots/,
+  'миграция не должна снимать уже запланированные отклики');
 
 assert.match(clientApp, /manage_client_outreach_slot/);
 assert.match(clientApp, /get_client_outreach_calendar/);
@@ -168,6 +180,10 @@ assert.match(clientApp, /const canAdd = date >= minimumDate/,
 assert.match(clientApp, /const disabled = date < minimumDate/,
   'окно переноса также должно начинаться только с завтра');
 assert.match(clientApp, /OUTREACH_PREPARATION_DAY/);
+assert.match(clientApp, /OUTREACH_SUNDAY_DAY_OFF_FROM = '2026-09-06'/);
+assert.match(clientApp, /isOutreachDayOff/);
+assert.match(clientApp, /OUTREACH_DAY_OFF/);
+assert.match(clientApp, /isDayOff \? 'выходной'/);
 assert.match(clientApp, /На закупку и подготовку нужен один день/);
 assert.match(clientApp, /const isPastDate = date < today/);
 assert.match(clientApp, /const label = isPastDate\s*\?\s*''/,
@@ -192,6 +208,9 @@ assert.match(clientCss, /grid-template-columns: minmax\(260px, \.85fr\) minmax\(
 assert.match(clientCss, /\.cli-donut__sub \{[^}]*letter-spacing: 0/);
 assert.match(clientsHtml, /const MAX_OUTREACH_PER_DAY = 7/);
 assert.match(clientsHtml, /outreachSlotsOnDate/);
+assert.match(clientsHtml, /OUTREACH_SUNDAY_DAY_OFF_FROM = '2026-09-06'/);
+assert.match(clientsHtml, /delta > 0 && isOutreachDayOff\(isoDate\)/,
+  'CRM должна запрещать добавление, но сохранять возможность снять план');
 assert.match(tasksHtml, /outreach-schedule-sync\.js/);
 assert.match(planHtml, /outreach-schedule-sync\.js/);
 
