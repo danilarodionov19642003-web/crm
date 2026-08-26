@@ -177,13 +177,67 @@
 
   function latestTextApproval(mentorId, profileId) {
     return (state.payload && state.payload.text_approvals || [])
-      .filter(item => item.mentor_id === mentorId
+      .filter(item => String(item.mentor_id || '') === String(mentorId || '')
         && String(item.source_profile_id || '') === String(profileId || ''))
       .sort((left, right) => {
         const revision = (Number(right.source_revision) || 0) - (Number(left.source_revision) || 0);
         if (revision) return revision;
         return Number(right.id) - Number(left.id);
       })[0] || null;
+  }
+
+  function pendingTextApprovals() {
+    const seen = new Set();
+    return (state.payload && state.payload.text_approvals || [])
+      .filter(item => item.request_status === 'pending')
+      .sort((left, right) => {
+        const revision = (Number(right.source_revision) || 0) - (Number(left.source_revision) || 0);
+        if (revision) return revision;
+        return Number(right.id) - Number(left.id);
+      })
+      .filter(item => {
+        const sourceKey = item.source_profile_id || item.title || item.id;
+        const key = `${String(item.mentor_id || '')}:${String(sourceKey || '')}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+  }
+
+  function approvalTarget(request) {
+    const anketa = (state.payload && state.payload.anketas || []).find(item =>
+      String(item.mentor_id || '') === String(request && request.mentor_id || '')
+    ) || null;
+    if (!anketa) return { anketa: null, status: null };
+    let status = (anketa.statuses || []).find(item =>
+      String(item.profile_id || '') === String(request && request.source_profile_id || '')
+    ) || null;
+    if (!status && request && request.title) {
+      const titleAccount = String(request.title).split('·').pop().trim().toLocaleLowerCase('ru-RU');
+      status = (anketa.statuses || []).find(item =>
+        String(item.profile_name || '').trim().toLocaleLowerCase('ru-RU') === titleAccount
+      ) || null;
+    }
+    return { anketa, status };
+  }
+
+  function pendingApprovalCard(request) {
+    const target = approvalTarget(request);
+    const anketaCode = target.anketa && target.anketa.code || request.anketa_code || 'Анкета';
+    const titleAccount = String(request.title || '').split('·').pop().trim();
+    const accountName = target.status && target.status.profile_name || titleAccount || 'Аккаунт';
+    const body = String(request.body || '').trim();
+    const preview = body.length > 122 ? `${body.slice(0, 119).trim()}…` : body;
+    return `<button type="button" class="tgapp-pending-approval" data-open-pending-approval="${escapeHtml(request.id)}">
+      <span class="tgapp-pending-approval__icon" aria-hidden="true">📝</span>
+      <span class="tgapp-pending-approval__body">
+        <small>Нужно ваше решение</small>
+        <strong>Текст ждёт согласования</strong>
+        <b>${escapeHtml(String(anketaCode).toUpperCase())} · ${escapeHtml(accountName)}</b>
+        ${preview ? `<em>${escapeHtml(preview)}</em>` : ''}
+      </span>
+      <span class="tgapp-pending-approval__arrow" aria-hidden="true">›</span>
+    </button>`;
   }
 
   function publicationRequest(status) {
@@ -280,6 +334,8 @@
     const anketas = payload.anketas || [];
     const totals = payload.totals || {};
     const inWork = anketas.reduce((sum, item) => sum + statusBreakdown(item).active, 0);
+    const pendingApprovals = pendingTextApprovals();
+    const pendingApprovalCards = pendingApprovals.map(pendingApprovalCard).join('');
     const cards = anketas.map(anketa => {
       const breakdown = statusBreakdown(anketa);
       const pct = progressPercent(anketa);
@@ -307,6 +363,7 @@
         <img src="../../assets/icons/mentori-crm-icon-512.png" alt=""/>
         <div><span>Личный кабинет</span><h1>Привет, ${escapeHtml(payload.client_name || 'друг')}!</h1><p>Вся работа по вашим анкетам в одном месте.</p></div>
       </section>
+      ${pendingApprovalCards ? `<section class="tgapp-pending-approvals" aria-label="Тексты на согласование">${pendingApprovalCards}</section>` : ''}
       <section class="tgapp-quick">
         <button type="button" data-go-calendar><span>📅</span><div><b>Запланировать отклик</b><small>Выбрать свободную дату</small></div><i>›</i></button>
       </section>
@@ -331,6 +388,16 @@
       state.view = 'anketa';
       render();
     }));
+    root.querySelectorAll('[data-open-pending-approval]').forEach(button => button.addEventListener('click', () => {
+      const request = pendingApprovals.find(item => String(item.id) === String(button.dataset.openPendingApproval));
+      const target = approvalTarget(request);
+      if (!target.anketa) return;
+      state.detailMentorId = target.anketa.mentor_id;
+      state.detailProfileId = target.status && target.status.profile_id || '';
+      state.view = target.status ? 'account' : 'anketa';
+      render();
+      if (tg && tg.HapticFeedback) tg.HapticFeedback.selectionChanged();
+    }));
   }
 
   function statusTone(status) {
@@ -350,11 +417,15 @@
     const breakdown = statusBreakdown(anketa);
     const done = Math.max(Number(anketa.done) || 0, breakdown.done);
     const pct = progressPercent(anketa);
-    const statuses = (anketa.statuses || []).map(item => `<button type="button" class="tgapp-status-row" data-open-account="${escapeHtml(item.profile_id || '')}">
+    const statuses = (anketa.statuses || []).map(item => {
+      const pendingApproval = latestTextApproval(anketa.mentor_id, item.profile_id);
+      const needsApproval = pendingApproval && pendingApproval.request_status === 'pending';
+      return `<button type="button" class="tgapp-status-row${needsApproval ? ' is-approval-pending' : ''}" data-open-account="${escapeHtml(item.profile_id || '')}">
       <span class="tgapp-status-row__dot ${statusTone(item.status)}"></span>
-      <div><strong>${escapeHtml(item.profile_name || 'Аккаунт')}</strong><span>${escapeHtml(item.status || '—')}</span></div>
+      <div><strong>${escapeHtml(item.profile_name || 'Аккаунт')}</strong><span>${escapeHtml(item.status || '—')}</span>${needsApproval ? '<em>📝 Текст ждёт согласования</em>' : ''}</div>
       <span class="tgapp-status-row__side"><time>${escapeHtml(fmtDate(item.date))}</time><i>›</i></span>
-    </button>`).join('');
+    </button>`;
+    }).join('');
     const reviews = (anketa.reviews || []).map(item => `<article class="tgapp-review">
       <header><b>${escapeHtml(item.profile_name || 'Опубликованный отзыв')}</b><time>${escapeHtml(fmtDate(item.date))}</time></header>
       <p>${escapeHtml(item.text || '')}</p>

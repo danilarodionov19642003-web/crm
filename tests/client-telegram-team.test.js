@@ -27,6 +27,7 @@ const calendarMenuBotPatch = read('ops/telegram/patches/client-calendar-menu.pat
 const visualCabinetBotPatch = read('ops/telegram/patches/client-visual-cabinet.patch');
 const directMenuAppPatch = read('ops/telegram/patches/client-direct-menu-app.patch');
 const miniappOnlyPatch = read('ops/telegram/patches/client-miniapp-only-subscription.patch');
+const textApprovalActionsPatch = read('ops/telegram/patches/client-text-approval-actions.patch');
 const directMenuSql = read('sql/migrations/2026-08-26_client_telegram_direct_menu.sql');
 const channelGateSql = read('sql/migrations/2026-08-27_client_telegram_channel_gate.sql');
 const ownerInviteSql = read('sql/migrations/2026-08-26_owner_client_telegram_invites.sql');
@@ -238,6 +239,20 @@ test('client bot chat is Mini App only and keeps just the manager reply button',
   assert.doesNotMatch(miniappOnlyPatch, /^\+.*callback_data=f"ctxt:/m);
   assert.match(miniappOnlyPatch, /^-\s+BotCommand\(command="calendar"/m);
   assert.match(miniappOnlyPatch, /^-\s+BotCommand\(command="my_schedule"/m);
+});
+
+test('text approval notifications restore only confirm and reject actions', () => {
+  assert.match(textApprovalActionsPatch, /ТЕКСТ НА СОГЛАСОВАНИЕ/);
+  assert.match(textApprovalActionsPatch, /📋 <b>Анкета:<\/b>/);
+  assert.match(textApprovalActionsPatch, /👤 <b>Аккаунт:<\/b>/);
+  assert.match(textApprovalActionsPatch, /<blockquote>/);
+  assert.match(textApprovalActionsPatch, /Проверьте текст и выберите действие/);
+  assert.match(textApprovalActionsPatch, /✅ Подтвердить/);
+  assert.match(textApprovalActionsPatch, /❌ Отклонить/);
+  assert.match(textApprovalActionsPatch, /ctxt:a:/);
+  assert.match(textApprovalActionsPatch, /ctxt:c:/);
+  assert.doesNotMatch(textApprovalActionsPatch, /_send_client_calendar_button/);
+  assert.doesNotMatch(textApprovalActionsPatch, /BTN_CAB_CALENDAR/);
 });
 
 test('Mini App access requires a live Mentori channel subscription', () => {

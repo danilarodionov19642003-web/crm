@@ -52,6 +52,11 @@ is reconciled against the live `@Mento_ri` membership on start and on channel
 join/leave events. Apply it after `client-direct-menu-app.patch` and the
 `2026-08-27_client_telegram_channel_gate.sql` migration.
 
+`client-text-approval-actions.patch` restores only the two direct actions under
+a review-text notification: confirm or reject. It also reformats the message
+into clearly separated anketa, account, review and action sections. Other bot
+navigation stays disabled. Apply it after `client-miniapp-only-subscription.patch`.
+
 Apply from the bot repository root with zero-context support:
 
 ```bash

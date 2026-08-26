@@ -1,0 +1,146 @@
+--- a/backend/notifier.py
++++ b/backend/notifier.py
+@@ -36,6 +36,7 @@
+ from __future__ import annotations
+ 
+ import asyncio
++import html
+ import logging
+ import signal
+ from typing import Any
+@@ -75,8 +76,58 @@
+             text = await resp.text()
+             raise RuntimeError(f"fetch_pending {resp.status}: {text[:300]}")
+         return await resp.json()
++
++
++async def _fetch_text_approval(
++    session: aiohttp.ClientSession,
++    request_id: int,
++) -> dict[str, Any] | None:
++    url = (
++        f"{settings.supabase_url}/rest/v1/client_text_approval_requests"
++        f"?id=eq.{request_id}"
++        f"&select=title,body,anketa_code,anketa_name,source_profile_id,request_status"
++        f"&limit=1"
++    )
++    async with session.get(url, headers=_supabase_headers()) as resp:
++        if resp.status != 200:
++            text = await resp.text()
++            raise RuntimeError(f"fetch_text_approval {resp.status}: {text[:300]}")
++        rows = await resp.json()
++        return rows[0] if rows else None
++
++
++def _format_text_approval_message(
++    request: dict[str, Any] | None,
++    fallback: str,
++) -> str:
++    divider = "━━━━━━━━━━━━━━"
++    if not request:
++        return (
++            "📝 <b>ТЕКСТ НА СОГЛАСОВАНИЕ</b>\n"
++            f"{divider}\n\n"
++            f"{fallback}\n\n"
++            f"{divider}\n"
++            "👇 <b>Проверьте текст и выберите действие:</b>"
++        )
+ 
++    title_parts = [part.strip() for part in str(request.get("title") or "").split("·")]
++    account_name = title_parts[-1] if len(title_parts) > 1 else "Аккаунт"
++    anketa_code = str(request.get("anketa_code") or "Анкета").upper()
++    anketa_name = str(request.get("anketa_name") or "").strip()
++    anketa_label = anketa_code if not anketa_name else f"{anketa_code} · {anketa_name}"
++    body = html.escape(str(request.get("body") or "").strip())
++    return (
++        "📝 <b>ТЕКСТ НА СОГЛАСОВАНИЕ</b>\n"
++        f"{divider}\n\n"
++        f"📋 <b>Анкета:</b> {html.escape(anketa_label)}\n"
++        f"👤 <b>Аккаунт:</b> {html.escape(account_name)}\n\n"
++        "💬 <b>Текст отзыва:</b>\n"
++        f"<blockquote>{body}</blockquote>\n\n"
++        f"{divider}\n"
++        "👇 <b>Проверьте текст и выберите действие:</b>"
++    )
+ 
++
+ async def _mark_sent(session: aiohttp.ClientSession, row_id: int) -> None:
+     """Помечаем строку как доставленную."""
+     url = f"{settings.supabase_url}/rest/v1/notification_outbox?id=eq.{row_id}"
+@@ -143,11 +194,14 @@
+             {"text": "✓ Подтвердить дату", "callback_data": f"cpub:c:{request_id}"},
+             {"text": "✕ Отклонить", "callback_data": f"cpub:r:{request_id}"},
+         ]]}
+-    elif row.get("kind") == "client_text_approval":
+-        message = (
+-            f"{message}\n\n"
+-            "Согласуйте текст в Mini App через кнопку «Кабинет» рядом с полем ввода."
+-        )
++    elif row.get("kind") == "client_text_approval" and row.get("action_ref"):
++        request_id = int(row["action_ref"])
++        approval = await _fetch_text_approval(session, request_id)
++        message = _format_text_approval_message(approval, message)
++        reply_markup = {"inline_keyboard": [[
++            {"text": "✅ Подтвердить", "callback_data": f"ctxt:a:{request_id}"},
++            {"text": "❌ Отклонить", "callback_data": f"ctxt:c:{request_id}"},
++        ]]}
+     try:
+         await bot_notify.send_order_status_message(int(chat_id), message, reply_markup=reply_markup)
+         await _mark_sent(session, row_id)
+--- a/backend/bot.py
++++ b/backend/bot.py
+@@ -1746,8 +1746,8 @@
+ 
+ def _text_approval_markup(request_id: int) -> InlineKeyboardMarkup:
+     return InlineKeyboardMarkup(inline_keyboard=[[
+-        InlineKeyboardButton(text="✓ Согласовать", callback_data=f"ctxt:a:{request_id}"),
+-        InlineKeyboardButton(text="✕ Отменить", callback_data=f"ctxt:c:{request_id}"),
++        InlineKeyboardButton(text="✅ Подтвердить", callback_data=f"ctxt:a:{request_id}"),
++        InlineKeyboardButton(text="❌ Отклонить", callback_data=f"ctxt:c:{request_id}"),
+     ]])
+ 
+ 
+@@ -1776,17 +1776,6 @@
+     state: FSMContext,
+ ) -> None:
+     """The primary client contact approves text or starts a correction reply."""
+-    if cb.message:
+-        try:
+-            await cb.message.edit_reply_markup(reply_markup=None)
+-        except Exception:
+-            pass
+-    await cb.answer(
+-        "Согласование теперь доступно только в Mini App через кнопку «Кабинет».",
+-        show_alert=True,
+-    )
+-    return
+-
+     parts = (cb.data or "").split(":")
+     if len(parts) != 3 or parts[1] not in ("a", "r", "c", "x"):
+         await cb.answer()
+@@ -1816,21 +1805,21 @@
+             decision="changes_requested",
+             telegram_user_id=cb.from_user.id,
+             telegram_chat_id=cb.message.chat.id,
+-            comment="Клиент отменил согласование в Telegram",
++            comment="Клиент отклонил текст в Telegram",
+         )
+         if not result.get("ok"):
+             reason = str(result.get("reason") or "")
+             message = ("Этот запрос уже обработан."
+                        if "ALREADY_RESOLVED" in reason
+-                       else "Отменить может только назначенный контакт.")
++                       else "Отклонить может только назначенный контакт.")
+             await cb.answer(message, show_alert=True)
+             return
+         await state.clear()
+         await _finish_text_approval_message(
+             bot, cb.message.chat.id, cb.message.message_id,
+-            original_html, "❌ <b>Согласование отменено</b>",
++            original_html, "❌ <b>Текст отклонён</b>",
+         )
+-        await cb.answer("Согласование отменено")
++        await cb.answer("Текст отклонён")
+         return
+ 
+     if parts[1] == "r":

@@ -73,6 +73,32 @@ button { -webkit-tap-highlight-color: transparent; }
 .tgapp-hero span { color: var(--accent); font-size: 10px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
 .tgapp-hero h1 { margin: 5px 0 4px; font-size: 22px; line-height: 1.1; }
 .tgapp-hero p { margin: 0; color: #b9b9bd; font-size: 12px; line-height: 1.4; }
+.tgapp-pending-approvals { display: grid; gap: 8px; margin: 0 0 10px; }
+.tgapp-pending-approval {
+  position: relative; display: grid; grid-template-columns: 39px minmax(0,1fr) auto;
+  align-items: center; width: 100%; gap: 10px; padding: 11px 12px; overflow: hidden;
+  border: 1px solid rgba(255,122,0,.48); border-radius: 15px;
+  background: linear-gradient(110deg, rgba(255,122,0,.2), rgba(255,122,0,.055) 58%, var(--card));
+  color: var(--text); text-align: left; box-shadow: 0 12px 28px rgba(0,0,0,.23); cursor: pointer;
+}
+.tgapp-pending-approval::after {
+  content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.tgapp-pending-approval__icon {
+  display: grid; width: 39px; height: 39px; place-items: center; border-radius: 12px;
+  background: var(--accent); font-size: 18px; box-shadow: 0 6px 18px rgba(255,122,0,.22);
+}
+.tgapp-pending-approval__body { min-width: 0; }
+.tgapp-pending-approval__body small,.tgapp-pending-approval__body strong,.tgapp-pending-approval__body b,.tgapp-pending-approval__body em { display: block; }
+.tgapp-pending-approval__body small { color: var(--accent-2); font-size: 8px; font-weight: 850; letter-spacing: .07em; text-transform: uppercase; }
+.tgapp-pending-approval__body strong { margin-top: 2px; font-size: 13px; }
+.tgapp-pending-approval__body b { margin-top: 3px; overflow: hidden; color: #f3c49b; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.tgapp-pending-approval__body em {
+  display: -webkit-box; margin-top: 5px; overflow: hidden; color: #aaa9ad; font-size: 9px; font-style: normal;
+  line-height: 1.4; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+}
+.tgapp-pending-approval__arrow { color: var(--accent); font-size: 25px; }
 .tgapp-quick { margin-bottom: 20px; }
 .tgapp-quick button {
   display: grid; grid-template-columns: 38px minmax(0,1fr) auto; align-items: center;
@@ -153,6 +179,7 @@ button { -webkit-tap-highlight-color: transparent; }
   background: var(--card); color: var(--text); font: inherit; text-align: left; cursor: pointer;
 }
 .tgapp-status-row:active { border-color: rgba(255,122,0,.4); transform: translateY(1px); }
+.tgapp-status-row.is-approval-pending { border-color: rgba(255,122,0,.5); background: linear-gradient(100deg, rgba(255,122,0,.12), var(--card) 60%); }
 .tgapp-status-row__dot { width: 7px; height: 7px; border-radius: 50%; background: #77777c; box-shadow: 0 0 0 4px rgba(119,119,124,.08); }
 .tgapp-status-row__dot.is-green { background: var(--green); box-shadow: 0 0 0 4px rgba(34,197,94,.09); }
 .tgapp-status-row__dot.is-orange { background: var(--accent); box-shadow: 0 0 0 4px rgba(255,122,0,.09); }
@@ -161,6 +188,10 @@ button { -webkit-tap-highlight-color: transparent; }
 .tgapp-status-row strong,.tgapp-status-row div span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tgapp-status-row strong { font-size: 11px; }
 .tgapp-status-row div span { margin-top: 3px; color: var(--mute); font-size: 9px; }
+.tgapp-status-row div em {
+  display: inline-block; margin-top: 5px; padding: 3px 6px; border-radius: 99px;
+  background: rgba(255,122,0,.14); color: var(--accent-2); font-size: 8px; font-style: normal; font-weight: 760;
+}
 .tgapp-status-row__side { display: flex; align-items: center; gap: 7px; }
 .tgapp-status-row time { color: var(--mute); font-size: 8px; }
 .tgapp-status-row__side i { color: #65656a; font-size: 20px; font-style: normal; }
@@ -297,6 +328,8 @@ button { -webkit-tap-highlight-color: transparent; }
   .tgapp-hero { margin-inline: -9px; grid-template-columns: 66px minmax(0,1fr); padding-inline: 13px; }
   .tgapp-hero img { width: 66px; height: 66px; }
   .tgapp-hero h1 { font-size: 19px; }
+  .tgapp-pending-approval { grid-template-columns: 35px minmax(0,1fr) auto; padding: 10px; }
+  .tgapp-pending-approval__icon { width: 35px; height: 35px; font-size: 16px; }
   .tgapp-anketa-card__foot { grid-template-columns: repeat(2,minmax(0,1fr)); row-gap: 9px; }
   .tgcal-day { min-height: 45px; }
 }

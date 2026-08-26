@@ -27,7 +27,8 @@ test('Telegram direct menu keeps its bearer credential out of HTTP requests', ()
   assert.match(js, /fragmentParams/);
   assert.match(js, /location\.hash/);
   assert.match(js, /fragmentParams\.get\('token'\)/);
-  assert.match(html, /telegram-calendar\.js\?v=20260827a/);
+  assert.match(html, /telegram-calendar\.js\?v=20260827b/);
+  assert.match(html, /telegram-calendar\.css\?v=20260827b/);
 });
 
 test('Telegram calendar reads capacity and schedules through bounded RPCs', () => {
@@ -86,6 +87,17 @@ test('Mini App opens an account with its review text and publication date contro
   assert.match(accountSql, /TEXT_APPROVER_REQUIRED/);
   assert.match(accountSql, /Europe\/Moscow/);
   assert.doesNotMatch(accountSql, /update\s+public\.crm_state/i);
+});
+
+test('Mini App highlights every pending text and opens its exact account directly', () => {
+  assert.match(js, /function pendingTextApprovals/);
+  assert.match(js, /function approvalTarget/);
+  assert.match(js, /data-open-pending-approval/);
+  assert.match(js, /Текст ждёт согласования/);
+  assert.match(js, /state\.view = target\.status \? 'account' : 'anketa'/);
+  assert.match(js, /is-approval-pending/);
+  assert.match(css, /\.tgapp-pending-approval/);
+  assert.match(css, /\.tgapp-status-row\.is-approval-pending/);
 });
 
 test('Mini App marks Sundays as days off after the preserved nearest Sunday', () => {
