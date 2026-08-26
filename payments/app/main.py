@@ -25,7 +25,7 @@ from .domain import (
     refresh_financial_snapshot,
     verify_webhook_signature,
 )
-from .profi_profile import extract_avatar_url, normalize_profile_url
+from .profi_profile import extract_profile_data, normalize_profile_url
 
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
@@ -182,10 +182,15 @@ async def resolve_profile_avatar(
         log.warning("Profi profile fetch failed for %s: %s", profile_url, exc)
         raise HTTPException(status_code=409, detail="Не удалось загрузить анкету Profi.ru") from exc
 
-    avatar_url = extract_avatar_url(document.decode("utf-8", errors="replace"))
+    profile_data = extract_profile_data(document.decode("utf-8", errors="replace"))
+    avatar_url = profile_data["avatar_url"]
     if not avatar_url:
         raise HTTPException(status_code=404, detail="В анкете Profi.ru не найдена фотография")
-    return {"profile_url": profile_url, "avatar_url": avatar_url}
+    return {
+        "profile_url": profile_url,
+        "avatar_url": avatar_url,
+        "profile_name": profile_data["profile_name"],
+    }
 
 
 def public_transaction(row: dict[str, Any]) -> dict[str, Any]:

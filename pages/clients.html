@@ -310,7 +310,7 @@
         <div class="field" id="mProfileUrlField">
           <label for="mProfileUrl">Ссылка на анкету Profi.ru</label>
           <input type="url" id="mProfileUrl" class="input" placeholder="https://profi.ru/profile/..." inputmode="url" autocomplete="off"/>
-          <div style="font-size:11px;color:var(--text-mute);margin-top:4px">Фотография загрузится из публичной анкеты автоматически.</div>
+          <div style="font-size:11px;color:var(--text-mute);margin-top:4px">Имя и фотография загрузятся из публичной анкеты автоматически.</div>
         </div>
         <div class="field">
           <label for="mManager">Ответственный менеджер</label>
@@ -361,11 +361,11 @@
     </div>
   </div>
 
-  <!-- Фото и ссылка на публичную анкету Profi.ru -->
+  <!-- Фото, имя и ссылка на публичную анкету Profi.ru -->
   <div class="modal-backdrop" id="profilePhotoModal">
     <div class="modal" style="max-width:520px">
       <div class="modal__header">
-        <h3 id="profilePhotoTitle">Фото анкеты</h3>
+        <h3 id="profilePhotoTitle">Данные анкеты Profi.ru</h3>
         <button class="btn--icon" data-close aria-label="Закрыть">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
@@ -376,14 +376,14 @@
           <div class="field" style="margin:0">
             <label for="profilePhotoUrl">Ссылка на анкету Profi.ru</label>
             <input type="url" id="profilePhotoUrl" class="input" placeholder="https://profi.ru/profile/..." inputmode="url" autocomplete="off"/>
-            <div id="profilePhotoStatus" style="font-size:11px;color:var(--text-mute);margin-top:6px">Вставьте ссылку, и CRM сама найдёт фотографию.</div>
+            <div id="profilePhotoStatus" style="font-size:11px;color:var(--text-mute);margin-top:6px">Вставьте ссылку, и CRM сама найдёт фотографию и имя.</div>
           </div>
         </div>
       </div>
       <div class="modal__footer">
         <a class="btn btn--ghost" id="profilePhotoOpen" href="#" target="_blank" rel="noopener" hidden>Открыть анкету</a>
         <button class="btn btn--ghost" data-close>Отмена</button>
-        <button class="btn btn--primary" id="profilePhotoSave">Загрузить фото</button>
+        <button class="btn btn--primary" id="profilePhotoSave">Обновить данные</button>
       </div>
     </div>
   </div>
@@ -1760,7 +1760,12 @@
     const PAYMENTS_API = 'https://mentori.tech/api/payments';
     function _sb() { return window.Supabase || {}; }
     function _sbToken() { const S = _sb(); return (S.accessToken && S.accessToken()) || S.KEY; }
-    async function resolveProfiAvatar(profileUrl) {
+    function safeProfiProfileName(value) {
+      const name = String(value || '').replace(/\s+/g, ' ').trim();
+      if (name.length < 2 || name.length > 160 || /[\u0000-\u001f]/.test(name)) return '';
+      return name;
+    }
+    async function resolveProfiProfile(profileUrl) {
       const response = await fetch(`${PAYMENTS_API}/profile-avatar/resolve`, {
         method: 'POST',
         headers: {
@@ -1774,8 +1779,9 @@
       if (!response.ok) throw new Error(String(payload.detail || 'Не удалось загрузить фотографию'));
       const avatarUrl = safeProfiAvatarUrl(payload.avatar_url);
       const normalizedProfileUrl = safeProfiProfileUrl(payload.profile_url);
+      const profileName = safeProfiProfileName(payload.profile_name);
       if (!avatarUrl || !normalizedProfileUrl) throw new Error('Profi.ru вернул некорректные данные фотографии');
-      return { profileUrl: normalizedProfileUrl, avatarUrl };
+      return { profileUrl: normalizedProfileUrl, avatarUrl, profileName };
     }
 
     let editingPhotoClientId = '';
@@ -1791,11 +1797,11 @@
       const client = (Store.state.clients || []).find(item => item.id === clientId);
       if (!client) return;
       editingPhotoClientId = clientId;
-      document.getElementById('profilePhotoTitle').textContent = `Фото · ${client.code || client.name || 'анкета'}`;
+      document.getElementById('profilePhotoTitle').textContent = `Данные Profi.ru · ${client.code || client.name || 'анкета'}`;
       document.getElementById('profilePhotoUrl').value = client.profileUrl || '';
       document.getElementById('profilePhotoStatus').textContent = client.avatarUrl
-        ? 'Фотография уже загружена. Кнопка обновит её из анкеты.'
-        : 'Вставьте ссылку, и CRM сама найдёт фотографию.';
+        ? 'Кнопка обновит фотографию и имя из публичной анкеты.'
+        : 'Вставьте ссылку, и CRM сама найдёт фотографию и имя.';
       document.getElementById('profilePhotoStatus').style.color = 'var(--text-mute)';
       renderProfilePhotoPreview(client);
       const openLink = document.getElementById('profilePhotoOpen');
@@ -1804,7 +1810,7 @@
       openLink.href = profileUrl || '#';
       const saveButton = document.getElementById('profilePhotoSave');
       saveButton.disabled = false;
-      saveButton.textContent = client.avatarUrl ? 'Обновить фото' : 'Загрузить фото';
+      saveButton.textContent = 'Обновить данные';
       Modal.open('profilePhotoModal');
       setTimeout(() => document.getElementById('profilePhotoUrl').focus(), 60);
     }
@@ -1823,21 +1829,25 @@
       const button = document.getElementById('profilePhotoSave');
       const status = document.getElementById('profilePhotoStatus');
       button.disabled = true;
-      button.textContent = 'Загружаю…';
+      button.textContent = 'Получаю данные…';
       status.textContent = 'Читаю публичную анкету Profi.ru…';
       try {
-        const resolved = await resolveProfiAvatar(profileUrl);
+        const resolved = await resolveProfiProfile(profileUrl);
         Store.updateClient(client.id, {
-          ...resolved,
+          profileUrl: resolved.profileUrl,
+          avatarUrl: resolved.avatarUrl,
+          ...(resolved.profileName ? { name: resolved.profileName } : {}),
           avatarUpdatedAt: new Date().toISOString()
         });
         Modal.close('profilePhotoModal');
-        toast('Фотография анкеты обновлена');
+        toast(resolved.profileName
+          ? `Данные анкеты обновлены: ${resolved.profileName}`
+          : 'Фотография анкеты обновлена, имя на Profi.ru не найдено');
         render();
       } catch (error) {
         button.disabled = false;
-        button.textContent = client.avatarUrl ? 'Обновить фото' : 'Загрузить фото';
-        status.textContent = error.message || 'Не удалось загрузить фотографию';
+        button.textContent = 'Обновить данные';
+        status.textContent = error.message || 'Не удалось загрузить данные анкеты';
         status.style.color = 'var(--red)';
       }
     });
@@ -2397,30 +2407,42 @@
       setTimeout(() => document.getElementById('mName').focus(), 60);
     });
     document.getElementById('mSave').addEventListener('click', async () => {
-      const name = document.getElementById('mName').value.trim();
-      if (!name) { toast('Укажите имя клиента', 'error'); return; }
-      if (!validateNewClientCode()) { toast('Выберите свободный код клиента', 'error'); return; }
+      const enteredName = document.getElementById('mName').value.trim();
       const profileUrl = document.getElementById('mProfileUrl').value.trim();
+      if (!enteredName && !profileUrl) { toast('Укажите имя или ссылку на анкету Profi.ru', 'error'); return; }
+      if (!validateNewClientCode()) { toast('Выберите свободный код клиента', 'error'); return; }
+      let resolvedName = enteredName;
       let profilePhoto = { profileUrl: '', avatarUrl: '', avatarUpdatedAt: '' };
       if (profileUrl) {
         mSaveButton.disabled = true;
-        mSaveButton.textContent = 'Загружаю фото…';
+        mSaveButton.textContent = 'Получаю данные…';
         try {
-          const resolved = await resolveProfiAvatar(profileUrl);
-          profilePhoto = { ...resolved, avatarUpdatedAt: new Date().toISOString() };
+          const resolved = await resolveProfiProfile(profileUrl);
+          resolvedName = resolved.profileName || enteredName;
+          profilePhoto = {
+            profileUrl: resolved.profileUrl,
+            avatarUrl: resolved.avatarUrl,
+            avatarUpdatedAt: new Date().toISOString()
+          };
         } catch (error) {
           mSaveButton.textContent = 'Сохранить';
           validateNewClientCode();
-          toast(error.message || 'Не удалось загрузить фотографию Profi.ru', 'error');
+          toast(error.message || 'Не удалось загрузить данные Profi.ru', 'error');
           return;
         }
+      }
+      if (!resolvedName) {
+        mSaveButton.textContent = 'Сохранить';
+        validateNewClientCode();
+        toast('На Profi.ru не найдено имя. Укажите его вручную', 'error');
+        return;
       }
       const paid = 0;
       document.getElementById('mPaid').value = '0';
       refreshAddTariffTotals(false);
       const total = Number(document.getElementById('mTotal').value) || 0;
       const created = Store.addClient({
-        name,
+        name:     resolvedName,
         code:     document.getElementById('mCode').value.trim(),
         platform: document.getElementById('mPlatform').value,
         manager:  document.getElementById('mManager').value,
@@ -2441,7 +2463,9 @@
         return;
       }
       Modal.close('addModal');
-      toast('Клиент добавлен');
+      toast(profileUrl && resolvedName !== enteredName
+        ? `Клиент добавлен: ${resolvedName}`
+        : 'Клиент добавлен');
       render();
     });
 

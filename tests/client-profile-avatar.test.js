@@ -65,6 +65,11 @@ assert.equal(snapshot.profileUrl, client.profileUrl);
 assert.equal(snapshot.avatarUrl, client.avatarUrl);
 
 assert.match(clientsHtml, /profile-avatar\/resolve/);
+assert.match(clientsHtml, /profile_name/);
+assert.match(clientsHtml, /name: resolved\.profileName/);
+assert.match(clientsHtml, /фотографию и имя/);
+assert.match(clientsHtml, /resolvedName = resolved\.profileName \|\| enteredName/);
+assert.match(clientsHtml, /name:\s+resolvedName/);
 assert.match(clientsHtml, /id="profilePhotoModal"/);
 assert.match(clientsHtml, /data-act="profile-photo"/);
 assert.match(statusesHtml, /function mentorAvatar\(m\)/);

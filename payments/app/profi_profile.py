@@ -84,21 +84,53 @@ def _safe_avatar_url(value: Any) -> str:
     return raw
 
 
-def extract_avatar_url(document: str) -> str:
+def _safe_profile_name(value: Any) -> str:
+    raw = " ".join(unescape(str(value or "")).split()).strip()
+    if not 2 <= len(raw) <= 160:
+        return ""
+    if any(ord(char) < 32 for char in raw):
+        return ""
+    return raw
+
+
+def extract_profile_data(document: str) -> dict[str, str]:
     parser = _JsonLdParser()
     parser.feed(str(document or ""))
+    avatar_url = ""
+    profile_name = ""
     for block in parser.blocks:
         try:
             payload = json.loads(block)
         except (TypeError, ValueError, json.JSONDecodeError):
             continue
         for item in _walk_json(payload):
-            avatar = _safe_avatar_url(item.get("logo"))
-            if avatar:
-                return avatar
+            item_type = item.get("@type")
+            allowed_type = (
+                item_type in {"LocalBusiness", "Person", "ProfessionalService"}
+                or isinstance(item_type, list)
+                and any(value in {"LocalBusiness", "Person", "ProfessionalService"} for value in item_type)
+            )
+            if allowed_type:
+                avatar_url = avatar_url or _safe_avatar_url(item.get("logo"))
+                profile_name = profile_name or _safe_profile_name(item.get("name"))
+                if avatar_url and profile_name:
+                    return {"avatar_url": avatar_url, "profile_name": profile_name}
+            elif not avatar_url:
+                # Backwards-compatible fallback for older Profi.ru JSON-LD
+                # where the logo existed without an explicit schema type.
+                avatar_url = _safe_avatar_url(item.get("logo"))
 
-    for match in AVATAR_RE.finditer(unescape(str(document or "")).replace("\\/", "/")):
-        avatar = _safe_avatar_url(match.group(0))
-        if avatar:
-            return avatar
-    return ""
+    if not avatar_url:
+        for match in AVATAR_RE.finditer(unescape(str(document or "")).replace("\\/", "/")):
+            avatar_url = _safe_avatar_url(match.group(0))
+            if avatar_url:
+                break
+    return {"avatar_url": avatar_url, "profile_name": profile_name}
+
+
+def extract_avatar_url(document: str) -> str:
+    return extract_profile_data(document)["avatar_url"]
+
+
+def extract_profile_name(document: str) -> str:
+    return extract_profile_data(document)["profile_name"]
