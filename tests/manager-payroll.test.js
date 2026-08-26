@@ -29,6 +29,7 @@ vm.createContext(context);
 vm.runInContext(source, context);
 
 const Store = context.window.App.Store;
+const { employeeCompensationStats } = context.window.App;
 Store.state = {
   employees: [{
     id: 'legacy-nastya', name: 'Настя', role: 'Ревьюер',
@@ -36,7 +37,13 @@ Store.state = {
     status: 'active', hired: '2026-04-01', payments: []
   }],
   profileStatuses: [
-    ...Array.from({ length: 24 }, (_, i) => ({ id: `i-${i}`, performer: 'Илья' })),
+    ...Array.from({ length: 24 }, (_, i) => ({
+      id: `i-${i}`, performer: 'Илья',
+      date: i < 4 ? `2026-08-${String(24 + i).padStart(2, '0')}`
+        : i < 14 ? `2026-08-${String(i + 1).padStart(2, '0')}`
+        : `2026-07-${String(i + 1).padStart(2, '0')}`,
+      status: '⭐ Выбрать', history: []
+    })),
     ...Array.from({ length: 64 }, (_, i) => ({ id: `d-${i}`, performer: 'Данил' })),
     { id: 'none-1', performer: '' }
   ],
@@ -48,7 +55,7 @@ Store._syncEmployeeWorkCounts();
 
 assert.equal(Store.state.employees.some(e => e.name === 'Настя'), false,
   'Настя должна быть полностью удалена из зарплатного списка');
-const ilya = Store.state.employees.find(e => e.name === 'Илья');
+let ilya = Store.state.employees.find(e => e.name === 'Илья');
 const danil = Store.state.employees.find(e => e.name === 'Данил');
 assert.ok(ilya && danil, 'Илья и Данил должны быть созданы миграцией');
 assert.equal(ilya.ratePerReview, 300, 'Илья наследует прежнюю редактируемую ставку');
@@ -57,9 +64,29 @@ assert.equal(ilya.reviewsDone, 24, 'Илье должны считаться в�
 assert.equal(danil.reviewsDone, 64, 'Данилу должны считаться все его отметки в аккаунтах');
 assert.equal(ilya.paid, 0, 'старые выплаты Насти не переносятся Илье');
 
-ilya.ratePerReview = 450;
+Store.updateEmployee(ilya.id, { ratePerReview: 450 });
+ilya = Store.state.employees.find(e => e.name === 'Илья');
 Store._syncEmployeeWorkCounts();
 assert.equal(ilya.ratePerReview, 450, 'автоподсчёт не должен затирать ручную ставку');
+assert.equal(Store.state.profileStatuses[0].performerRate, 300,
+  'смена ставки должна зафиксировать прежнюю ставку на уже сделанных откликах');
+
+let stats = employeeCompensationStats(Store.state, ilya, { today: '2026-08-26', month: '2026-08' });
+assert.equal(stats.week.count, 4, 'в текущей неделе считаются только отклики с понедельника');
+assert.equal(stats.month.count, 14, 'месячная статистика считается по датам откликов');
+assert.equal(stats.month.baseEarned, 4200, 'месячный заработок использует сохранённую ставку отклика');
+assert.equal(stats.all.count, 24, 'общий счётчик сохраняет прежнее число откликов');
+
+const bonus = Store.addEmployeeBonus(ilya.id, {
+  id: 'ilya-bonus-1', date: '2026-08-26', amount: 1500, note: 'недельный объём'
+});
+assert.equal(bonus.amount, 1500, 'премию можно начислить отдельной операцией');
+stats = employeeCompensationStats(Store.state, ilya, { today: '2026-08-26', month: '2026-08' });
+assert.equal(stats.week.bonusEarned, 1500, 'премия видна в недельной статистике');
+assert.equal(stats.month.earned, 5700, 'премия входит в начисление месяца');
+assert.equal(stats.all.outstanding, 8700, 'премия увеличивает общую сумму к выплате');
+assert.equal(Store.deleteEmployeeBonus(ilya.id, 'ilya-bonus-1'), true,
+  'ошибочно начисленную премию можно удалить');
 
 const payment = Store.addPayment(ilya.id, {
   id: 'ilya-pay-1', date: '2026-07-10', amount: 1234, note: 'частичная выплата'
@@ -131,6 +158,12 @@ assert.match(employeesHtml, /payoutBtn\.addEventListener\('click', \(\) => openP
   'кнопка выплаты должна открывать форму с редактируемой суммой и датой');
 assert.match(employeesHtml, /id="pDebtOffset"/,
   'в форме выплаты должна редактироваться сумма, направляемая в счёт долга');
+assert.match(employeesHtml, /id="empOverview"/, 'на странице нужны отдельные карточки статистики сотрудников');
+assert.match(employeesHtml, /За неделю/, 'в таблице должна быть недельная статистика');
+assert.match(employeesHtml, /За месяц/, 'в таблице должна быть месячная статистика');
+assert.match(employeesHtml, /data-act="bonus"/, 'у сотрудника должна быть кнопка премии');
+assert.match(employeesHtml, /id="statsMonth"/, 'подробную статистику можно открыть за выбранный месяц');
+assert.match(employeesHtml, /Какие отклики вошли в расчёт/, 'месячное начисление должно раскрываться до отдельных откликов');
 assert.match(employeesHtml, /Math\.min\(debt, gross, requestedOffset\)/,
   'зачёт долга можно увеличить до всей выплаты, но не выше остатка долга');
 assert.match(clientsHtml, /data-field="manager"/, 'в карточке клиента нужен селектор менеджера');

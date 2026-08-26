@@ -52,7 +52,8 @@ const state = {
     { id: 'r1', mentorId: 'm1', profileId: 'p1', moderation: 'approved' }
   ],
   employees: [
-    { id: 'e1', name: 'Илья', ratePerReview: 300, paid: 300 },
+    { id: 'e1', name: 'Илья', ratePerReview: 300, paid: 300,
+      bonuses: [{ id: 'b1', date: '2026-01-12', amount: 500, note: 'недельный объём' }] },
     { id: 'e2', name: 'Данил', ratePerReview: 0, paid: 0 }
   ],
   expenses: [
@@ -133,9 +134,11 @@ assert.ok(Math.abs(proxyAllocated - 620) < 1e-7,
 
 assert.equal(c1.actual.salary, 300);
 assert.equal(c2.actual.salary, 300);
-assert.equal(result.costs.labor.debt, 300,
-  'долг по зарплате считается как начислено минус выплачено');
-assert.equal(result.cash.obligations, 300,
+assert.equal(result.costs.labor.byPerformer.get('Илья').bonusEarned, 500,
+  'премия учитывается отдельным начислением сотруднику');
+assert.equal(result.costs.labor.debt, 800,
+  'долг по зарплате считается как отклики плюс премии минус выплачено');
+assert.equal(result.cash.obligations, 800,
   'в обязательствах остаётся только уже начисленная невыплаченная зарплата');
 assert.equal(result.costs.phones.historicalUnlinked, 500,
   'старые общие покупки номеров нельзя молча приписывать клиенту');

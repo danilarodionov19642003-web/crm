@@ -427,8 +427,13 @@
     let debt = 0;
     context.employees.forEach(employee => {
       const performer = String(employee && employee.name || '').trim();
-      const earned = (byPerformer.get(performer) || { earned: 0 }).earned;
-      debt += Math.max(0, earned - amount(employee.paid));
+      const performerRow = byPerformer.get(performer) || { count: 0, earned: 0 };
+      performerRow.baseEarned = performerRow.earned;
+      performerRow.bonusEarned = (Array.isArray(employee && employee.bonuses) ? employee.bonuses : [])
+        .reduce((sum, bonus) => sum + amount(bonus && bonus.amount), 0);
+      performerRow.earned = performerRow.baseEarned + performerRow.bonusEarned;
+      byPerformer.set(performer, performerRow);
+      debt += Math.max(0, performerRow.earned - amount(employee.paid));
     });
     return { byClient, byPerformer, debt };
   }

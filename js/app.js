@@ -221,6 +221,117 @@
   function statusOutreachStartDate(rec) {
     return statusOutreachStartDates(rec)[0] || '';
   }
+  function employeeWorkDate(rec) {
+    const started = statusOutreachStartDate(rec);
+    if (started) return started;
+    const fallback = String(rec && rec.date || '').slice(0, 10);
+    return /^\d{4}-\d{2}-\d{2}$/.test(fallback) ? fallback : '';
+  }
+  function employeeWorkEntries(state, employee) {
+    const name = String(employee && employee.name || '').trim();
+    if (!name) return [];
+    const currentRate = Math.max(0, Number(employee && employee.ratePerReview) || 0);
+    const mentorById = new Map((state && state.mentors || []).map(item => [item.id, item]));
+    const profileById = new Map([
+      ...(state && state.profiles || []),
+      ...(state && state.archivedProfiles || [])
+    ].map(item => [item.id, item]));
+    return (state && state.profileStatuses || [])
+      .filter(rec => String(rec && rec.performer || '').trim() === name)
+      .map(rec => {
+        const mentor = mentorById.get(rec.mentorId) || {};
+        const profile = profileById.get(rec.profileId) || {};
+        const hasSnapshotRate = rec.performerRate !== undefined && rec.performerRate !== null
+          && Number.isFinite(Number(rec.performerRate));
+        const snapshotRate = hasSnapshotRate ? Number(rec.performerRate) : currentRate;
+        return {
+          id: rec.id || `${rec.mentorId || ''}:${rec.profileId || ''}`,
+          date: employeeWorkDate(rec),
+          rate: snapshotRate >= 0 ? snapshotRate : currentRate,
+          status: rec.status || '',
+          mentorCode: mentor.code || '',
+          mentorName: mentor.name || '',
+          profileCode: profile.code || '',
+          archived: (state && state.archivedProfiles || []).some(item => item.id === rec.profileId)
+        };
+      })
+      .sort((left, right) => String(right.date).localeCompare(String(left.date)));
+  }
+  function weekStartISO(iso) {
+    const parsed = parseISODate(iso);
+    if (!parsed) return '';
+    const shift = (parsed.getDay() + 6) % 7;
+    parsed.setDate(parsed.getDate() - shift);
+    return _iso(parsed);
+  }
+  function employeeCompensationStats(state, employee, options = {}) {
+    const today = String(options.today || todayISO()).slice(0, 10);
+    const selectedMonth = /^\d{4}-\d{2}$/.test(String(options.month || ''))
+      ? String(options.month)
+      : today.slice(0, 7);
+    const work = employeeWorkEntries(state || {}, employee || {});
+    const bonuses = (Array.isArray(employee && employee.bonuses) ? employee.bonuses : [])
+      .map(item => ({
+        ...item,
+        date: String(item && item.date || '').slice(0, 10),
+        amount: Math.max(0, Number(item && item.amount) || 0)
+      }));
+    const payments = (Array.isArray(employee && employee.payments) ? employee.payments : [])
+      .map(item => ({
+        ...item,
+        date: String(item && item.date || '').slice(0, 10),
+        amount: Math.max(0, Number(item && item.amount) || 0),
+        cashAmount: item && item.cashAmount == null
+          ? Math.max(0, Number(item && item.amount) || 0)
+          : Math.max(0, Number(item && item.cashAmount) || 0)
+      }));
+    const weekStart = weekStartISO(today);
+    const weekEnd = addDaysISO(weekStart, 7);
+    const summarize = predicate => {
+      const periodWork = work.filter(item => predicate(item.date));
+      const periodBonuses = bonuses.filter(item => predicate(item.date));
+      const periodPayments = payments.filter(item => predicate(item.date));
+      const baseEarned = periodWork.reduce((sum, item) => sum + item.rate, 0);
+      const bonusEarned = periodBonuses.reduce((sum, item) => sum + item.amount, 0);
+      const paid = periodPayments.reduce((sum, item) => sum + item.amount, 0);
+      const cashPaid = periodPayments.reduce((sum, item) => sum + item.cashAmount, 0);
+      return {
+        count: periodWork.length,
+        baseEarned,
+        bonusEarned,
+        earned: baseEarned + bonusEarned,
+        paid,
+        cashPaid,
+        work: periodWork,
+        bonuses: periodBonuses,
+        payments: periodPayments
+      };
+    };
+    const all = summarize(() => true);
+    all.paid = Math.max(all.paid, Math.max(0, Number(employee && employee.paid) || 0));
+    all.outstanding = Math.max(0, all.earned - all.paid);
+    const month = summarize(date => String(date || '').slice(0, 7) === selectedMonth);
+    const week = summarize(date => date >= weekStart && date < weekEnd);
+    const weeks = new Map();
+    [...month.work.map(item => ({ date: item.date, type: 'work', value: item.rate })),
+      ...month.bonuses.map(item => ({ date: item.date, type: 'bonus', value: item.amount })),
+      ...month.payments.map(item => ({ date: item.date, type: 'payment', value: item.amount }))]
+      .forEach(item => {
+        const start = weekStartISO(item.date);
+        if (!start) return;
+        const row = weeks.get(start) || { start, end: addDaysISO(start, 6), count: 0, baseEarned: 0, bonusEarned: 0, paid: 0 };
+        if (item.type === 'work') { row.count += 1; row.baseEarned += item.value; }
+        if (item.type === 'bonus') row.bonusEarned += item.value;
+        if (item.type === 'payment') row.paid += item.value;
+        row.earned = row.baseEarned + row.bonusEarned;
+        weeks.set(start, row);
+      });
+    return {
+      today, selectedMonth, weekStart, weekEnd,
+      week, month, all,
+      weeks: [...weeks.values()].sort((left, right) => right.start.localeCompare(left.start))
+    };
+  }
   function clientOutreachStartsByDate(state, client) {
     const code = normalizeClientCode(client && client.code);
     const map = {};
@@ -644,6 +755,7 @@
           ratePerReview: 300,
           reviewsDone: 0,
           paid: 0,
+          bonuses: [],
           status: 'active',
           hired: tomorrowISO(),
           payments: []
@@ -655,6 +767,7 @@
           ratePerReview: 0,
           reviewsDone: 0,
           paid: 0,
+          bonuses: [],
           status: 'active',
           hired: tomorrowISO(),
           payments: []
@@ -1013,7 +1126,7 @@
         kept.push({
           id: uid(), name: 'Илья', role: 'Менеджер',
           ratePerReview: Number(legacy && legacy.ratePerReview) || 300,
-          reviewsDone: 0, paid: 0, status: 'active',
+          reviewsDone: 0, paid: 0, bonuses: [], status: 'active',
           hired: todayISO(), payments: []
         });
       }
@@ -1021,7 +1134,7 @@
         kept.push({
           id: uid(), name: 'Данил', role: 'Менеджер',
           ratePerReview: 0, reviewsDone: 0, paid: 0,
-          status: 'active', hired: todayISO(), payments: []
+          bonuses: [], status: 'active', hired: todayISO(), payments: []
         });
       }
       this.state.employees = kept;
@@ -1054,6 +1167,7 @@
         ratePerReview: 300,
         reviewsDone: 0,             // авто-считается reviews-sync.js
         paid: 0,
+        bonuses: [],
         advanceDebt: 0,             // долг сотрудника перед компанией
         status: 'active',
         hired: tomorrowISO(),
@@ -1067,6 +1181,18 @@
     updateEmployee(id, patch) {
       const i = this.state.employees.findIndex(x => x.id === id);
       if (i < 0) return;
+      const employee = this.state.employees[i];
+      if (patch && Object.prototype.hasOwnProperty.call(patch, 'ratePerReview')) {
+        const oldRate = Math.max(0, Number(employee.ratePerReview) || 0);
+        const performer = String(employee.name || '').trim();
+        (this.state.profileStatuses || []).forEach(status => {
+          if (String(status.performer || '').trim() !== performer) return;
+          if (status.performerRate == null || !Number.isFinite(Number(status.performerRate))) {
+            status.performerRate = oldRate;
+          }
+        });
+        patch.ratePerReview = Math.max(0, Number(patch.ratePerReview) || 0);
+      }
       if (patch && typeof patch.email === 'string') {
         patch.email = patch.email.toLowerCase().trim();
       }
@@ -1076,6 +1202,30 @@
     deleteEmployee(id) {
       this.state.employees = this.state.employees.filter(x => x.id !== id);
       this.save();
+    },
+    addEmployeeBonus(employeeId, bonus) {
+      const employee = this.state.employees.find(item => item.id === employeeId);
+      if (!employee) return null;
+      const item = Object.assign({
+        id: uid(), date: todayISO(), amount: 0, note: '', createdAt: new Date().toISOString()
+      }, bonus);
+      item.amount = Math.max(0, Number(item.amount) || 0);
+      item.date = String(item.date || todayISO()).slice(0, 10);
+      item.note = String(item.note || '').trim();
+      if (item.amount <= 0) return null;
+      employee.bonuses ??= [];
+      employee.bonuses.push(item);
+      this.save();
+      return item;
+    },
+    deleteEmployeeBonus(employeeId, bonusId) {
+      const employee = this.state.employees.find(item => item.id === employeeId);
+      if (!employee) return false;
+      const before = (employee.bonuses || []).length;
+      employee.bonuses = (employee.bonuses || []).filter(item => item.id !== bonusId);
+      if (employee.bonuses.length === before) return false;
+      this.save();
+      return true;
     },
     addPayment(employeeId, payment) {
       const e = this.state.employees.find(x => x.id === employeeId);
@@ -1741,6 +1891,7 @@
       const stamp = date || todayISO();
       // Захватываем СТАРЫЙ статус ДО мутации — нужен для уведомления клиенту.
       const oldStatus = rec ? rec.status : null;
+      const oldPerformer = rec ? String(rec.performer || '').trim() : '';
       const isNew = !rec;
       if (rec) {
         rec.history = rec.history || [];
@@ -1750,7 +1901,9 @@
           comment: rec.comment || '',
           nextActionDate: rec.nextActionDate || '',
           nextActionStatus: rec.nextActionStatus || statusActionTarget(rec.status),
-          plannedActionDate: rec.plannedActionDate || ''
+          plannedActionDate: rec.plannedActionDate || '',
+          performer: rec.performer || '',
+          performerRate: rec.performerRate
         });
         rec.status = status;
         rec.comment = comment;
@@ -1768,6 +1921,15 @@
           history: []
         };
         list.push(rec);
+      }
+      const assignedPerformer = String(rec.performer || '').trim();
+      if (!assignedPerformer) {
+        delete rec.performerRate;
+      } else if (isNew || oldPerformer !== assignedPerformer
+          || rec.performerRate == null || !Number.isFinite(Number(rec.performerRate))) {
+        const employee = (this.state.employees || [])
+          .find(item => String(item.name || '').trim() === assignedPerformer);
+        rec.performerRate = Math.max(0, Number(employee && employee.ratePerReview) || 0);
       }
       this._syncProfileStatusAction(rec, {
         reset: isNew || oldStatus !== status,
@@ -3015,6 +3177,7 @@
     uid, todayISO, tomorrowISO, addDaysISO, addMonthsISO, daysBetweenISO, deriveStatusAction,
     normalizeClientCode, normalizeSearchText, compareClientCodes, clientReviewsRemaining,
     statusOutreachStartDate, statusOutreachStartDates,
+    employeeWorkDate, employeeWorkEntries, employeeCompensationStats, weekStartISO,
     clientOutreachStartsByDate, clientScheduleBreakdown,
     scheduledReviewCount, manualScheduleLimit,
     SERVICES, EXPENSE_CATEGORIES, PERSONAL_CATEGORIES, PHONE_EXPENSE_AMOUNT, TARIFFS, TARIFF_NAMES,

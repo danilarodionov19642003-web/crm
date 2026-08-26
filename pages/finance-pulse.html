@@ -171,8 +171,8 @@
   </div>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260826b"></script>
-  <script src="../js/economics.js?v=20260730b"></script>
+  <script src="../js/app.js?v=20260826c"></script>
+  <script src="../js/economics.js?v=20260826a"></script>
   <script src="../js/supabase-client.js?v=20260820d"></script>
   <script src="../js/auth-gate.js?v=20260726a"></script>
   <script src="../js/cloud-sync.js?v=20260820d"></script>
@@ -348,7 +348,7 @@
           line('Старая история без связи', c.phones.historicalUnlinked)
         ]),
         costBlock('Зарплата', earned, [
-          line('Начислено', earned),
+          line('Начислено с премиями', earned),
           line('Выплачено', paid),
           line('Долг', c.labor.debt)
         ])

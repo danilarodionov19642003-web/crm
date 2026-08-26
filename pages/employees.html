@@ -14,8 +14,33 @@
   <title>Сотрудники — Mentori CRM</title>
   <link rel="stylesheet" href="../css/styles.css?v=20260820b"/>
   <style>
+    .emp-overview { display:grid; grid-template-columns:repeat(auto-fit,minmax(290px,1fr)); gap:12px; margin-bottom:18px; }
+    .emp-person { border:1px solid var(--border); border-radius:16px; background:var(--bg-elev-1); padding:16px; min-width:0; }
+    .emp-person__head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:14px; }
+    .emp-person__head strong { display:block; font-size:17px; }
+    .emp-person__meta { color:var(--text-mute); font-size:12px; margin-top:3px; }
+    .emp-person__periods { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+    .emp-person__period { border:1px solid var(--border); border-radius:12px; padding:10px; background:var(--bg-elev-2); }
+    .emp-person__period span { display:block; color:var(--text-mute); font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; }
+    .emp-person__period strong { display:block; font-size:18px; margin-top:4px; }
+    .emp-person__period small { display:block; color:var(--text-mute); font-size:11px; margin-top:2px; }
+    .emp-person__actions { display:flex; flex-wrap:wrap; gap:7px; margin-top:12px; }
+    .emp-period-cell strong,.emp-period-cell small { display:block; white-space:nowrap; }
+    .emp-period-cell small { color:var(--text-mute); margin-top:2px; }
+    .emp-detail-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(135px,1fr)); gap:8px; margin-bottom:14px; }
+    .emp-detail-kpi { border:1px solid var(--border); border-radius:12px; padding:11px; background:var(--bg-elev-2); }
+    .emp-detail-kpi span { color:var(--text-mute); display:block; font-size:11px; }
+    .emp-detail-kpi strong { display:block; font-size:19px; margin-top:4px; }
+    .emp-detail-section { margin-top:16px; }
+    .emp-detail-section h4 { margin:0 0 8px; font-size:13px; }
+    .emp-detail-scroll { overflow:auto; border:1px solid var(--border); border-radius:12px; }
+    .emp-detail-scroll .table { min-width:620px; }
     @media (max-width: 520px) {
       #pSplit { grid-template-columns: 1fr !important; }
+      .emp-overview { grid-template-columns:1fr; }
+      .emp-person__periods,.emp-detail-kpis { grid-template-columns:repeat(2,minmax(0,1fr)); }
+      .emp-person__actions .btn { flex:1; justify-content:center; }
+      #statsModal .modal,#bonusModal .modal { width:100%; max-width:none !important; height:100dvh; border-radius:0; }
     }
   </style>
 </head>
@@ -39,6 +64,7 @@
         </div>
 
         <section class="cards" id="empKpis"></section>
+        <section class="emp-overview" id="empOverview" aria-label="Статистика сотрудников"></section>
 
         <div class="filters">
           <select id="fStatus" class="select">
@@ -57,8 +83,11 @@
                   <th>Имя</th>
                   <th>Роль</th>
                   <th class="num">Ставка / отклик</th>
-                  <th class="num">Откликов</th>
-                  <th class="num">Заработано</th>
+                  <th class="num">За неделю</th>
+                  <th class="num">За месяц</th>
+                  <th class="num">Откликов всего</th>
+                  <th class="num">Начислено всего</th>
+                  <th class="num">Премии</th>
                   <th class="num">Закрыто по ЗП</th>
                   <th class="num">Долг CRM</th>
                   <th class="num">Долг сотрудника</th>
@@ -73,6 +102,66 @@
           </div>
         </div>
       </main>
+    </div>
+  </div>
+
+  <!-- Модалка: премия -->
+  <div class="modal-backdrop" id="bonusModal">
+    <div class="modal" style="max-width:620px">
+      <div class="modal__header">
+        <h3 id="bonusTitle">Премия сотруднику</h3>
+        <button class="btn--icon" data-close>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal__body">
+        <div id="bonusContext" class="panel" style="padding:12px;margin-bottom:14px"></div>
+        <div class="field-row">
+          <div class="field">
+            <label for="bDate">Дата начисления</label>
+            <input type="date" id="bDate" class="input"/>
+          </div>
+          <div class="field">
+            <label for="bAmount">Сумма премии, ₽</label>
+            <input type="number" id="bAmount" class="input" min="1" step="100" placeholder="Например, 1 000"/>
+          </div>
+        </div>
+        <div class="field" style="margin-top:12px">
+          <label for="bNote">За что премия</label>
+          <input type="text" id="bNote" class="input" maxlength="200" placeholder="Например, выполнен недельный объём"/>
+        </div>
+        <div class="emp-detail-section">
+          <h4>История премий</h4>
+          <div id="bonusList"></div>
+        </div>
+      </div>
+      <div class="modal__footer">
+        <button class="btn btn--ghost" data-close>Закрыть</button>
+        <button class="btn btn--primary" id="bAdd">Начислить премию</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Модалка: подробная статистика -->
+  <div class="modal-backdrop" id="statsModal">
+    <div class="modal" style="max-width:960px">
+      <div class="modal__header">
+        <h3 id="statsTitle">Статистика сотрудника</h3>
+        <button class="btn--icon" data-close>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal__body">
+        <div class="field" style="max-width:220px;margin-bottom:12px">
+          <label for="statsMonth">Месяц</label>
+          <input type="month" id="statsMonth" class="input"/>
+        </div>
+        <div id="statsBody"></div>
+      </div>
+      <div class="modal__footer">
+        <button class="btn btn--ghost" data-close>Закрыть</button>
+        <button class="btn btn--primary" id="statsBonus">Премировать</button>
+      </div>
     </div>
   </div>
 
@@ -161,7 +250,7 @@
   </div>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260826b"></script>
+  <script src="../js/app.js?v=20260826c"></script>
   <script src="../js/supabase-client.js?v=20260820d"></script>
   <script src="../js/auth-gate.js?v=20260726a"></script>
   <script src="../js/cloud-sync.js?v=20260820d"></script>
@@ -176,30 +265,74 @@
      Сотрудники: отклики по исполнителю, ставка и история выплат
      ======================================================================== */
   document.addEventListener('DOMContentLoaded', () => {
-    const { Store, Modal, toast, fmtMoney, fmtDate, todayISO, tomorrowISO } = window.App;
+    const {
+      Store, Modal, toast, fmtMoney, fmtDate, todayISO, tomorrowISO,
+      employeeCompensationStats
+    } = window.App;
     const { makeEditable, confirmDelete } = window.TableUtils;
 
     Store.load();
 
     const filters = { status: '', q: '' };
     let currentEmpId = null;
+    let currentBonusEmpId = null;
+    let currentStatsEmpId = null;
+
+    function compensation(employee, month = todayISO().slice(0, 7)) {
+      return employeeCompensationStats(Store.state, employee, { today: todayISO(), month });
+    }
 
     /* ---- KPI ---- */
     function renderKpis(rows) {
       const active = rows.filter(r => r.status === 'active').length;
-      const reviews = rows.reduce((s, r) => s + (+r.reviewsDone || 0), 0);
-      const earned = rows.reduce((s, r) => s + (+r.reviewsDone || 0) * (+r.ratePerReview || 0), 0);
-      const paidTotal = rows.reduce((s, r) => s + (+r.paid || 0), 0);
+      const stats = rows.map(employee => compensation(employee));
+      const reviews = stats.reduce((sum, item) => sum + item.all.count, 0);
+      const monthReviews = stats.reduce((sum, item) => sum + item.month.count, 0);
+      const monthEarned = stats.reduce((sum, item) => sum + item.month.earned, 0);
+      const earned = stats.reduce((sum, item) => sum + item.all.earned, 0);
+      const paidTotal = stats.reduce((sum, item) => sum + item.all.paid, 0);
       const advanceDebt = rows.reduce((s, r) => s + (+r.advanceDebt || 0), 0);
       const debt = Math.max(0, earned - paidTotal);
       document.getElementById('empKpis').innerHTML = `
         <div class="card"><div class="card__label">Активных</div><div class="card__value">${active}</div></div>
-        <div class="card"><div class="card__label">Откликов сделано</div><div class="card__value">${reviews}</div></div>
-        <div class="card"><div class="card__label">Заработано</div><div class="card__value">${fmtMoney(earned)}</div></div>
+        <div class="card"><div class="card__label">Откликов за месяц</div><div class="card__value">${monthReviews}</div></div>
+        <div class="card"><div class="card__label">Начислено за месяц</div><div class="card__value">${fmtMoney(monthEarned)}</div></div>
+        <div class="card"><div class="card__label">Откликов всего</div><div class="card__value">${reviews}</div></div>
         <div class="card"><div class="card__label">Закрыто по ЗП</div><div class="card__value pos">${fmtMoney(paidTotal)}</div></div>
         <div class="card"><div class="card__label">К выплате</div><div class="card__value ${debt>0?'neg':''}">${fmtMoney(debt)}</div></div>
         <div class="card"><div class="card__label">Долг сотрудников</div><div class="card__value ${advanceDebt>0?'neg':''}">${fmtMoney(advanceDebt)}</div></div>
       `;
+    }
+
+    function renderEmployeeOverview(rows) {
+      const root = document.getElementById('empOverview');
+      root.innerHTML = rows.map(employee => {
+        const stats = compensation(employee);
+        const rate = Math.max(0, Number(employee.ratePerReview) || 0);
+        return `<article class="emp-person" data-employee-card="${escapeHtml(employee.id)}">
+          <div class="emp-person__head">
+            <div><strong>${escapeHtml(employee.name || '—')}</strong><div class="emp-person__meta">${escapeHtml(employee.role || 'Сотрудник')} · ${fmtMoney(rate)} за отклик</div></div>
+            <span class="badge ${employee.status === 'active' ? 'badge--green' : ''}">${employee.status === 'active' ? 'Активен' : 'Неактивен'}</span>
+          </div>
+          <div class="emp-person__periods">
+            <div class="emp-person__period"><span>Эта неделя</span><strong>${stats.week.count} откл.</strong><small>${fmtMoney(stats.week.earned)}${stats.week.bonusEarned ? `, премии ${fmtMoney(stats.week.bonusEarned)}` : ''}</small></div>
+            <div class="emp-person__period"><span>Этот месяц</span><strong>${stats.month.count} откл.</strong><small>${fmtMoney(stats.month.earned)}${stats.month.bonusEarned ? `, премии ${fmtMoney(stats.month.bonusEarned)}` : ''}</small></div>
+            <div class="emp-person__period"><span>Всё время</span><strong>${stats.all.count} откл.</strong><small>${fmtMoney(stats.all.earned)} начислено</small></div>
+            <div class="emp-person__period"><span>К выплате</span><strong class="${stats.all.outstanding > 0 ? 'neg' : 'pos'}">${fmtMoney(stats.all.outstanding)}</strong><small>${fmtMoney(stats.all.paid)} уже закрыто</small></div>
+          </div>
+          <div class="emp-person__actions">
+            <button class="btn btn--ghost btn--sm" data-card-act="stats" data-id="${escapeHtml(employee.id)}">Статистика</button>
+            <button class="btn btn--primary btn--sm" data-card-act="bonus" data-id="${escapeHtml(employee.id)}">Премировать</button>
+            <button class="btn btn--ghost btn--sm" data-card-act="payments" data-id="${escapeHtml(employee.id)}">Выплаты</button>
+          </div>
+        </article>`;
+      }).join('');
+      root.querySelectorAll('[data-card-act]').forEach(button => button.addEventListener('click', () => {
+        const id = button.dataset.id;
+        if (button.dataset.cardAct === 'stats') openStats(id);
+        if (button.dataset.cardAct === 'bonus') openBonus(id);
+        if (button.dataset.cardAct === 'payments') openPayments(id);
+      }));
     }
 
     /* ---- Фильтрация ---- */
@@ -219,19 +352,28 @@
       const tbody = document.getElementById('empRows');
       const tfoot = document.getElementById('empFoot');
       if (rows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="11" class="empty">Нет сотрудников. Нажмите «Добавить сотрудника».</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="14" class="empty">Нет сотрудников. Нажмите «Добавить сотрудника».</td></tr>`;
         tfoot.innerHTML = '';
       } else {
         tbody.innerHTML = rows.map(r => rowHtml(r)).join('');
-        const reviews = rows.reduce((s, r) => s + (+r.reviewsDone || 0), 0);
-        const earned = rows.reduce((s, r) => s + (+r.reviewsDone || 0) * (+r.ratePerReview || 0), 0);
-        const paid = rows.reduce((s, r) => s + (+r.paid || 0), 0);
+        const stats = rows.map(employee => compensation(employee));
+        const weekCount = stats.reduce((sum, item) => sum + item.week.count, 0);
+        const weekEarned = stats.reduce((sum, item) => sum + item.week.earned, 0);
+        const monthCount = stats.reduce((sum, item) => sum + item.month.count, 0);
+        const monthEarned = stats.reduce((sum, item) => sum + item.month.earned, 0);
+        const reviews = stats.reduce((sum, item) => sum + item.all.count, 0);
+        const earned = stats.reduce((sum, item) => sum + item.all.earned, 0);
+        const bonuses = stats.reduce((sum, item) => sum + item.all.bonusEarned, 0);
+        const paid = stats.reduce((sum, item) => sum + item.all.paid, 0);
         const advanceDebt = rows.reduce((s, r) => s + (+r.advanceDebt || 0), 0);
         tfoot.innerHTML = `
           <tr>
             <td colspan="3">ИТОГО</td>
+            <td class="num emp-period-cell"><strong>${weekCount}</strong><small>${fmtMoney(weekEarned)}</small></td>
+            <td class="num emp-period-cell"><strong>${monthCount}</strong><small>${fmtMoney(monthEarned)}</small></td>
             <td class="num">${reviews}</td>
             <td class="num">${fmtMoney(earned)}</td>
+            <td class="num">${fmtMoney(bonuses)}</td>
             <td class="num pos">${fmtMoney(paid)}</td>
             <td class="num ${earned-paid>0?'neg':''}">${fmtMoney(Math.max(0, earned - paid))}</td>
             <td class="num ${advanceDebt>0?'neg':''}">${fmtMoney(advanceDebt)}</td>
@@ -240,23 +382,28 @@
         bindRowEditors();
       }
       renderKpis(rows);
+      renderEmployeeOverview(rows);
     }
 
     function rowHtml(r) {
-      const reviews = +r.reviewsDone || 0;
+      const stats = compensation(r);
+      const reviews = stats.all.count;
       const rate = +r.ratePerReview || 0;
-      const earned = reviews * rate;
-      const paid = +r.paid || 0;
-      const debt = Math.max(0, earned - paid);
+      const earned = stats.all.earned;
+      const paid = stats.all.paid;
+      const debt = stats.all.outstanding;
       const advanceDebt = Math.max(0, +r.advanceDebt || 0);
       return `
         <tr data-id="${r.id}">
           <td data-field="name"><strong>${escapeHtml(r.name || '—')}</strong></td>
           <td data-field="role">${escapeHtml(r.role || '—')}</td>
           <td class="num" data-field="ratePerReview" data-type="number">${rate}</td>
+          <td class="num emp-period-cell"><strong>${stats.week.count}</strong><small>${fmtMoney(stats.week.earned)}</small></td>
+          <td class="num emp-period-cell"><strong>${stats.month.count}</strong><small>${fmtMoney(stats.month.earned)}</small></td>
           <td class="num" title="Считается автоматически по отметкам «Кто делал · для ЗП» в аккаунтах"><strong>${reviews}</strong></td>
           <td class="num"><strong>${fmtMoney(earned)}</strong></td>
-          <td class="num pos" title="Меняется только через добавление или удаление выплаты">${paid}</td>
+          <td class="num">${stats.all.bonusEarned ? fmtMoney(stats.all.bonusEarned) : '—'}</td>
+          <td class="num pos" title="Меняется только через добавление или удаление выплаты">${fmtMoney(paid)}</td>
           <td class="num ${debt>0?'neg':''}">${fmtMoney(debt)}</td>
           <td class="num ${advanceDebt>0?'neg':''}" title="Сумма, которую сотрудник возвращает из будущей зарплаты">${fmtMoney(advanceDebt)}</td>
           <td><input type="date" class="input" style="padding:4px 6px;background:transparent;border:1px solid transparent" data-field="hired" value="${r.hired || ''}"/></td>
@@ -267,6 +414,8 @@
             </select>
           </td>
           <td class="actions">
+            <button class="btn btn--ghost btn--sm" data-act="stats" title="Подробная статистика">Статистика</button>
+            <button class="btn btn--primary btn--sm" data-act="bonus" title="Начислить премию">Премия</button>
             ${debt > 0 ? `
               <button class="btn btn--primary btn--sm" data-act="payout" title="Внести выплату">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;vertical-align:middle"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
@@ -322,6 +471,8 @@
         });
         // payments
         tr.querySelector('[data-act="history"]').addEventListener('click', () => openPayments(id));
+        tr.querySelector('[data-act="stats"]').addEventListener('click', () => openStats(id));
+        tr.querySelector('[data-act="bonus"]').addEventListener('click', () => openBonus(id));
 
         // Ввод суммы и даты выплаты
         const payoutBtn = tr.querySelector('[data-act="payout"]');
@@ -336,8 +487,8 @@
       currentEmpId = id;
       const e = Store.state.employees.find(x => x.id === id);
       if (!e) return;
-      const earned = (+e.reviewsDone || 0) * (+e.ratePerReview || 0);
-      const debt = Math.max(0, earned - (+e.paid || 0));
+      const stats = compensation(e);
+      const debt = stats.all.outstanding;
       const advanceDebt = Math.max(0, +e.advanceDebt || 0);
       document.getElementById('payTitle').textContent = `Выплаты — ${e.name} · к выплате ${fmtMoney(debt)} · долг ${fmtMoney(advanceDebt)}`;
       document.getElementById('pDate').value = todayISO();
@@ -446,6 +597,134 @@
       render();
     });
 
+    /* ---- Премии ---- */
+    function openBonus(id) {
+      currentBonusEmpId = id;
+      const employee = Store.state.employees.find(item => item.id === id);
+      if (!employee) return;
+      const stats = compensation(employee);
+      document.getElementById('bonusTitle').textContent = `Премия · ${employee.name || 'сотрудник'}`;
+      document.getElementById('bonusContext').innerHTML = `
+        <strong>Эта неделя: ${stats.week.count} откл. · ${fmtMoney(stats.week.baseEarned)}</strong>
+        <div class="emp-person__meta">Этот месяц: ${stats.month.count} откл. · ${fmtMoney(stats.month.baseEarned)} без премий</div>`;
+      document.getElementById('bDate').value = todayISO();
+      document.getElementById('bAmount').value = '';
+      document.getElementById('bNote').value = '';
+      renderBonuses(employee);
+      Modal.open('bonusModal');
+      setTimeout(() => document.getElementById('bAmount').focus(), 60);
+    }
+
+    function renderBonuses(employee) {
+      const list = document.getElementById('bonusList');
+      const bonuses = (employee.bonuses || []).slice()
+        .sort((left, right) => String(right.date || '').localeCompare(String(left.date || '')));
+      if (!bonuses.length) {
+        list.innerHTML = '<div class="empty">Премий ещё не было.</div>';
+        return;
+      }
+      list.innerHTML = `<div class="emp-detail-scroll"><table class="table" style="min-width:480px">
+        <thead><tr><th>Дата</th><th class="num">Сумма</th><th>Комментарий</th><th class="actions"></th></tr></thead>
+        <tbody>${bonuses.map(bonus => `<tr data-bonus-id="${escapeHtml(bonus.id)}">
+          <td>${fmtDate(bonus.date)}</td><td class="num pos"><strong>${fmtMoney(bonus.amount)}</strong></td>
+          <td>${escapeHtml(bonus.note || 'Без комментария')}</td>
+          <td class="actions"><button class="btn--icon" data-remove-bonus title="Удалить премию">×</button></td>
+        </tr>`).join('')}</tbody>
+      </table></div>`;
+      list.querySelectorAll('[data-remove-bonus]').forEach(button => button.addEventListener('click', () => {
+        if (!confirmDelete('Удалить эту премию?')) return;
+        const bonusId = button.closest('tr').dataset.bonusId;
+        if (!Store.deleteEmployeeBonus(employee.id, bonusId)) return;
+        renderBonuses(employee);
+        render();
+        toast('Премия удалена');
+      }));
+    }
+
+    document.getElementById('bAdd').addEventListener('click', () => {
+      const employee = Store.state.employees.find(item => item.id === currentBonusEmpId);
+      if (!employee) return;
+      const amount = Math.max(0, Number(document.getElementById('bAmount').value) || 0);
+      if (!amount) { toast('Укажите сумму премии', 'error'); return; }
+      Store.addEmployeeBonus(employee.id, {
+        date: document.getElementById('bDate').value || todayISO(),
+        amount,
+        note: document.getElementById('bNote').value.trim()
+      });
+      toast(`Премия ${fmtMoney(amount)} начислена`);
+      const stats = compensation(employee);
+      document.getElementById('bonusContext').innerHTML = `
+        <strong>Эта неделя: ${stats.week.count} откл. · ${fmtMoney(stats.week.earned)} с премиями</strong>
+        <div class="emp-person__meta">Этот месяц: ${stats.month.count} откл. · ${fmtMoney(stats.month.earned)} с премиями</div>`;
+      document.getElementById('bAmount').value = '';
+      document.getElementById('bNote').value = '';
+      renderBonuses(employee);
+      render();
+    });
+
+    /* ---- Подробная статистика ---- */
+    function openStats(id) {
+      currentStatsEmpId = id;
+      document.getElementById('statsMonth').value = todayISO().slice(0, 7);
+      renderStats();
+      Modal.open('statsModal');
+    }
+
+    function renderStats() {
+      const employee = Store.state.employees.find(item => item.id === currentStatsEmpId);
+      if (!employee) return;
+      const month = document.getElementById('statsMonth').value || todayISO().slice(0, 7);
+      const stats = compensation(employee, month);
+      document.getElementById('statsTitle').textContent = `${employee.name || 'Сотрудник'} · к выплате ${fmtMoney(stats.all.outstanding)}`;
+      const weekRows = stats.weeks.length ? stats.weeks.map(week => `<tr>
+        <td>${fmtDate(week.start)} – ${fmtDate(week.end)}</td>
+        <td class="num"><strong>${week.count}</strong></td>
+        <td class="num">${fmtMoney(week.baseEarned)}</td>
+        <td class="num">${week.bonusEarned ? fmtMoney(week.bonusEarned) : '—'}</td>
+        <td class="num"><strong>${fmtMoney(week.earned)}</strong></td>
+        <td class="num pos">${week.paid ? fmtMoney(week.paid) : '—'}</td>
+      </tr>`).join('') : '<tr><td colspan="6" class="empty">За этот месяц данных нет.</td></tr>';
+      const workRows = stats.month.work.length ? stats.month.work.map(item => `<tr>
+        <td>${fmtDate(item.date)}</td>
+        <td><strong>${escapeHtml(String(item.mentorCode || '—').toUpperCase())}</strong>${item.mentorName ? ` · ${escapeHtml(item.mentorName)}` : ''}</td>
+        <td>${escapeHtml(item.profileCode || '—')}${item.archived ? ' · архив' : ''}</td>
+        <td>${escapeHtml(item.status || '—')}</td>
+        <td class="num">${fmtMoney(item.rate)}</td>
+      </tr>`).join('') : '<tr><td colspan="5" class="empty">Откликов за этот месяц нет.</td></tr>';
+      const financeRows = [
+        ...stats.month.bonuses.map(item => ({ date: item.date, type: 'Премия', amount: item.amount, note: item.note || '' })),
+        ...stats.month.payments.map(item => ({ date: item.date, type: 'Выплата', amount: item.amount, note: item.note || '' }))
+      ].sort((left, right) => String(right.date).localeCompare(String(left.date)));
+      document.getElementById('statsBody').innerHTML = `
+        <div class="emp-detail-kpis">
+          <div class="emp-detail-kpi"><span>Откликов за месяц</span><strong>${stats.month.count}</strong></div>
+          <div class="emp-detail-kpi"><span>За отклики</span><strong>${fmtMoney(stats.month.baseEarned)}</strong></div>
+          <div class="emp-detail-kpi"><span>Премии</span><strong>${fmtMoney(stats.month.bonusEarned)}</strong></div>
+          <div class="emp-detail-kpi"><span>Начислено всего</span><strong>${fmtMoney(stats.month.earned)}</strong></div>
+          <div class="emp-detail-kpi"><span>Выплачено за месяц</span><strong>${fmtMoney(stats.month.paid)}</strong></div>
+          <div class="emp-detail-kpi"><span>К выплате всего</span><strong>${fmtMoney(stats.all.outstanding)}</strong></div>
+        </div>
+        <div class="emp-detail-section"><h4>По неделям</h4><div class="emp-detail-scroll"><table class="table">
+          <thead><tr><th>Неделя</th><th class="num">Отклики</th><th class="num">За отклики</th><th class="num">Премии</th><th class="num">Начислено</th><th class="num">Выплачено</th></tr></thead>
+          <tbody>${weekRows}</tbody>
+        </table></div></div>
+        <div class="emp-detail-section"><h4>Какие отклики вошли в расчёт</h4><div class="emp-detail-scroll"><table class="table">
+          <thead><tr><th>Дата</th><th>Анкета</th><th>Аккаунт</th><th>Статус</th><th class="num">Начислено</th></tr></thead>
+          <tbody>${workRows}</tbody>
+        </table></div></div>
+        <div class="emp-detail-section"><h4>Премии и выплаты за месяц</h4>${financeRows.length ? `<div class="emp-detail-scroll"><table class="table" style="min-width:520px">
+          <thead><tr><th>Дата</th><th>Операция</th><th class="num">Сумма</th><th>Комментарий</th></tr></thead>
+          <tbody>${financeRows.map(item => `<tr><td>${fmtDate(item.date)}</td><td>${item.type}</td><td class="num">${fmtMoney(item.amount)}</td><td>${escapeHtml(item.note || '—')}</td></tr>`).join('')}</tbody>
+        </table></div>` : '<div class="empty">Премий и выплат за этот месяц нет.</div>'}</div>`;
+    }
+
+    document.getElementById('statsMonth').addEventListener('change', renderStats);
+    document.getElementById('statsBonus').addEventListener('click', () => {
+      const id = currentStatsEmpId;
+      Modal.close('statsModal');
+      openBonus(id);
+    });
+
     /* ---- Фильтры ---- */
     document.getElementById('fStatus').addEventListener('change', e => { filters.status = e.target.value; render(); });
     document.getElementById('fSearch').addEventListener('input',  e => { filters.q = e.target.value.trim().toLowerCase(); render(); });
@@ -473,6 +752,7 @@
         advanceDebt:   0,
         hired:         document.getElementById('mHired').value || tomorrowISO(),
         status:        document.getElementById('mStatus').value,
+        bonuses:       [],
         payments:      []
       });
       Modal.close('addModal');
