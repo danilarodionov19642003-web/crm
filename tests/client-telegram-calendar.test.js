@@ -14,6 +14,7 @@ const sundaySql = read('sql/migrations/2026-08-26_client_outreach_sunday_day_off
 const capacitySql = read('sql/migrations/2026-08-26_client_outreach_daily_capacity.sql');
 const currentSundayClosureSql = read('sql/migrations/2026-08-27_client_outreach_close_current_sunday.sql');
 const accountSql = read('sql/migrations/2026-08-26_client_telegram_z_account_details.sql');
+const moscowExpirySql = read('sql/migrations/2026-08-27_client_outreach_moscow_expiry.sql');
 
 test('Telegram calendar uses short-lived hashed tokens without portal password', () => {
   assert.match(sql, /token_hash bytea not null unique/);
@@ -119,4 +120,23 @@ test('Mini App applies the shared weekday, Saturday and Sunday capacity', () => 
   assert.match(capacitySql, /client_outreach_capacity/);
   assert.match(capacitySql, /get_client_telegram_calendar_v1/);
   assert.match(capacitySql, /OUTREACH_SATURDAY_FULL/);
+});
+
+test('Mini App expires old plans and starts new planning from Moscow tomorrow', () => {
+  assert.match(moscowExpirySql, /get_client_telegram_calendar_v2\(text,date,date\)/);
+  assert.match(moscowExpirySql, /manage_client_telegram_outreach_slot_v1\(text,text,text,bigint,date\)/);
+  assert.match(moscowExpirySql, /to_regprocedure\('public\.get_client_telegram_calendar_v2/,
+    'calendar delegate rename must be safe on migration rerun');
+  assert.match(moscowExpirySql, /to_regprocedure\('public\.manage_client_telegram_outreach_slot_v1/,
+    'management delegate rename must be safe on migration rerun');
+  assert.match(moscowExpirySql, /client_telegram_webapp_context\(p_token\)[\s\S]*TOKEN_INVALID_OR_EXPIRED[\s\S]*expire_past_client_outreach_slots/,
+    'only a valid Telegram token may trigger cleanup through a public wrapper');
+  assert.match(moscowExpirySql, /v_from date := greatest\(coalesce\(p_from, v_business_today \+ 1\), v_business_today \+ 1\)/);
+  assert.match(moscowExpirySql, /'\{minimum_date\}'[\s\S]*v_business_today \+ 1/);
+  assert.match(moscowExpirySql, /p_target_date < v_business_today \+ 1/,
+    'Telegram add and move must reject the Moscow current day');
+  assert.match(moscowExpirySql, /get_client_telegram_calendar_v2\(p_token, v_from, v_to\)/,
+    'Moscow wrapper must retain the complete existing cabinet payload');
+  assert.match(moscowExpirySql, /manage_client_telegram_outreach_slot_v1\([\s\S]*p_token, p_action, p_mentor_id, p_slot_id, p_target_date/,
+    'Moscow wrapper must retain existing capacity, package, notification and audit checks');
 });

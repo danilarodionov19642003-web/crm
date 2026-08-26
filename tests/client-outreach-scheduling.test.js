@@ -13,6 +13,7 @@ const clientCss = fs.readFileSync(path.join(root, 'pages/client/client.css'), 'u
 const clientsHtml = fs.readFileSync(path.join(root, 'pages/clients.html'), 'utf8');
 const tasksHtml = fs.readFileSync(path.join(root, 'pages/tasks.html'), 'utf8');
 const planHtml = fs.readFileSync(path.join(root, 'pages/plan.html'), 'utf8');
+const dashboardHtml = fs.readFileSync(path.join(root, 'pages/dashboard.html'), 'utf8');
 const migration = fs.readFileSync(
   path.join(root, 'sql/migrations/2026-08-20_client_outreach_slots.sql'),
   'utf8'
@@ -39,6 +40,10 @@ const dailyCapacityMigration = fs.readFileSync(
 );
 const currentSundayClosureMigration = fs.readFileSync(
   path.join(root, 'sql/migrations/2026-08-27_client_outreach_close_current_sunday.sql'),
+  'utf8'
+);
+const moscowExpiryMigration = fs.readFileSync(
+  path.join(root, 'sql/migrations/2026-08-27_client_outreach_moscow_expiry.sql'),
   'utf8'
 );
 
@@ -92,11 +97,12 @@ Store.state = {
 };
 
 context.window.OutreachScheduleSync.syncStateFromRows([
+  { id: 0, mentor_id: 'mentor-a1', scheduled_date: '2026-08-19', slot_status: 'scheduled' },
   { id: 1, mentor_id: 'mentor-a1', scheduled_date: '2026-08-20', slot_status: 'completed' },
   { id: 2, mentor_id: 'mentor-a1', scheduled_date: '2026-08-20', slot_status: 'scheduled' },
   { id: 3, mentor_id: 'mentor-a1', scheduled_date: '2026-08-20', slot_status: 'scheduled' },
   { id: 4, mentor_id: 'mentor-a1', scheduled_date: '2026-08-21', slot_status: 'cancelled' }
-]);
+], '2026-08-20');
 
 assert.deepEqual(JSON.parse(JSON.stringify(Store.state.clients[0].schedule)), [
   { date: '2026-08-20', count: 3 }
@@ -110,6 +116,25 @@ assert.deepEqual(JSON.parse(JSON.stringify(Store.state.clients[1].schedule)), [
   { date: '2026-08-25', count: 1 }
 ], 'clients without canonical rows must stay untouched');
 assert.equal(saves, 1);
+assert.equal(
+  context.window.OutreachScheduleSync.moscowTodayISO(new Date('2026-08-26T22:30:00.000Z')),
+  '2026-08-27',
+  'рабочий день должен переключаться в полночь по Москве, а не по UTC'
+);
+
+context.window.OutreachScheduleSync.syncStateFromRows([
+  { id: 1, mentor_id: 'mentor-a1', scheduled_date: '2026-08-20', slot_status: 'completed' },
+  { id: 2, mentor_id: 'mentor-a1', scheduled_date: '2026-08-20', slot_status: 'scheduled' },
+  { id: 3, mentor_id: 'mentor-a1', scheduled_date: '2026-08-20', slot_status: 'scheduled' }
+], '2026-08-21');
+assert.deepEqual(JSON.parse(JSON.stringify(Store.state.clients[0].schedule)), [
+  { date: '2026-08-20', count: 1 }
+], 'после смены московского дня незавершённые слоты исчезают, а фактический старт остаётся в истории');
+assert.equal(
+  context.window.App.clientScheduleBreakdown(Store.state, Store.state.clients[0])[0].remaining,
+  0,
+  'вчерашний незавершённый отклик не должен висеть остатком в старом плане'
+);
 
 let completedArgs = null;
 context.window.CloudSync = {
@@ -185,6 +210,22 @@ assert.match(currentSundayClosureMigration, /client_outreach_day_off/);
 assert.match(currentSundayClosureMigration, /client_outreach_capacity/);
 assert.doesNotMatch(currentSundayClosureMigration, /delete from public\.client_outreach_slots|update public\.client_outreach_slots/,
   'уже поставленный отклик 30.08 должен сохраниться');
+assert.match(moscowExpiryMigration, /now\(\) at time zone 'Europe\/Moscow'/,
+  'истечение плана должно переключаться в московскую полночь');
+assert.match(moscowExpiryMigration, /scheduled_date < v_business_today/);
+assert.match(moscowExpiryMigration, /slot_status = 'cancelled'/,
+  'просроченный план должен освобождать остаток, а не считаться выполненным');
+assert.match(moscowExpiryMigration, /changed_by = 'system-expired-outreach'/,
+  'автоматическое снятие должно оставаться в аудите');
+assert.doesNotMatch(moscowExpiryMigration, /delete\s+from\s+public\.client_outreach_slots/i,
+  'историческая строка не должна удаляться');
+assert.match(moscowExpiryMigration, /staff_expire_past_client_outreach_slots/);
+assert.match(moscowExpiryMigration, /v_auth_role <> 'service_role'[\s\S]*v_app_role not in \('owner', 'team'\)/,
+  'RPC очистки должен принимать только сервис или сотрудников CRM');
+assert.match(moscowExpiryMigration, /from public, anon, authenticated, service_role;[\s\S]*to authenticated, service_role/,
+  'анонимные и клиентские вызовы не должны получать прямой доступ к очистке');
+assert.match(moscowExpiryMigration, /select public\.expire_past_client_outreach_slots\(\);/,
+  'миграция должна сразу снять уже просроченные планы');
 
 assert.match(clientApp, /manage_client_outreach_slot/);
 assert.match(clientApp, /get_client_outreach_calendar/);
@@ -245,5 +286,17 @@ assert.match(clientsHtml, /delta > 0 && isOutreachDayOff\(isoDate\)/,
   'CRM должна запрещать добавление, но сохранять возможность снять план');
 assert.match(tasksHtml, /outreach-schedule-sync\.js/);
 assert.match(planHtml, /outreach-schedule-sync\.js/);
+assert.match(syncSource, /timeZone: 'Europe\/Moscow'/,
+  'просрочка должна определяться по рабочей московской дате');
+assert.match(syncSource, /row\.slot_status === 'scheduled' && row\.scheduled_date >= businessToday/,
+  'даже при недоступном RPC прошедший слот не должен оставаться в плане');
+assert.match(syncSource, /rpc\/staff_expire_past_client_outreach_slots[\s\S]*const nextRows = await request/,
+  'перед чтением расписания CRM должна попросить сервер закрыть просроченные слоты');
+assert.match(syncSource, /expiry RPC failed[\s\S]*const nextRows = await request/,
+  'ошибка очистки не должна блокировать загрузку актуального расписания');
+[dashboardHtml, planHtml, clientsHtml, tasksHtml].forEach(html => {
+  assert.match(html, /outreach-schedule-sync\.js\?v=20260827a/,
+    'все административные страницы должны получить новую версию синхронизации');
+});
 
 console.log('client outreach scheduling: OK');

@@ -13,6 +13,12 @@
   const { Store, normalizeClientCode, clientOutreachStartsByDate } = window.App;
   const TABLE = 'client_outreach_slots';
   const POLL_MS = 30 * 1000;
+  const MOSCOW_DATE_FORMATTER = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Moscow',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
   let rows = [];
   let refreshPromise = null;
   let refreshTimer = null;
@@ -72,7 +78,13 @@
     return JSON.stringify(normalizedSchedule(left)) === JSON.stringify(normalizedSchedule(right));
   }
 
-  function syncStateFromRows(nextRows) {
+  function moscowTodayISO(now = new Date()) {
+    const parts = MOSCOW_DATE_FORMATTER.formatToParts(now);
+    const value = type => parts.find(part => part.type === type)?.value || '';
+    return `${value('year')}-${value('month')}-${value('day')}`;
+  }
+
+  function syncStateFromRows(nextRows, businessToday = moscowTodayISO()) {
     if (!Store.state || !Array.isArray(Store.state.clients)) return false;
     const byMentor = new Map();
     (nextRows || []).forEach(row => {
@@ -93,7 +105,7 @@
       const managedDates = new Set();
       clientRows.forEach(row => {
         managedDates.add(row.scheduled_date);
-        if (row.slot_status === 'scheduled') {
+        if (row.slot_status === 'scheduled' && row.scheduled_date >= businessToday) {
           activeByDate.set(row.scheduled_date, (activeByDate.get(row.scheduled_date) || 0) + 1);
         }
       });
@@ -118,6 +130,16 @@
   async function refresh() {
     if (refreshPromise) return refreshPromise;
     refreshPromise = (async () => {
+      try {
+        await request('rpc/staff_expire_past_client_outreach_slots', {
+          method: 'POST',
+          body: '{}'
+        });
+      } catch (error) {
+        // Keep admin pages usable during a rolling release. The local Moscow
+        // date guard below still hides overdue slots until the RPC is present.
+        console.warn('[outreach-schedule-sync] expiry RPC failed', error);
+      }
       const nextRows = await request(
         `${TABLE}?select=id,client_email,mentor_id,anketa_code,anketa_name,scheduled_date,slot_status,source,updated_at&order=id.asc`
       );
@@ -195,6 +217,7 @@
     refresh,
     rows: () => rows.slice(),
     syncStateFromRows,
+    moscowTodayISO,
     mentorIdsForClient,
     mentorIdForClient,
     adjustStaff,
