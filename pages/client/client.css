@@ -704,6 +704,44 @@
   font-size: 9px; font-weight: 750; line-height: 1; white-space: nowrap;
 }
 .cli-account-proof b { font-size: 10px; }
+.cli-account-proof--button {
+  appearance: none; font-family: inherit; cursor: pointer;
+  transition: border-color .15s, background .15s, transform .15s;
+}
+.cli-account-proof--button:hover,
+.cli-account-proof--button.is-open {
+  border-color: rgba(34,197,94,.62); background: rgba(34,197,94,.2);
+}
+.cli-account-proof--button:active { transform: translateY(1px); }
+.cli-status-approved-row td {
+  padding: 0 14px 12px; background: rgba(34,197,94,.025);
+}
+.cli-approved-text-panel {
+  display: grid; gap: 9px; padding: 12px 14px;
+  border: 1px solid rgba(34,197,94,.24); border-radius: 10px;
+  background: var(--bg);
+}
+.cli-approved-text-panel__title {
+  color: var(--cli-green); font-size: 10px; font-weight: 750;
+  letter-spacing: .05em; text-transform: uppercase;
+}
+.cli-approved-text-panel__item {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start; gap: 12px;
+}
+.cli-approved-text-panel__item + .cli-approved-text-panel__item {
+  padding-top: 9px; border-top: 1px solid var(--border);
+}
+.cli-approved-text-panel__item p {
+  margin: 0; color: var(--text); font-size: 12px; line-height: 1.55;
+  overflow-wrap: anywhere; white-space: pre-wrap;
+}
+.cli-approved-text-panel__copy {
+  padding: 6px 9px; border: 1px solid var(--border); border-radius: 7px;
+  background: var(--bg-2); color: var(--text); font: inherit;
+  font-size: 10px; font-weight: 700; cursor: pointer;
+}
+.cli-approved-text-panel__copy:hover { border-color: rgba(34,197,94,.5); color: var(--cli-green); }
 .cli-pub-actions { display: flex; align-items: center; gap: 6px; }
 .cli-pub-date {
   min-width: 132px; height: 34px; box-sizing: border-box;

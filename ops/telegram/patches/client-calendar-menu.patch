@@ -1,0 +1,95 @@
+--- a/backend/bot.py
++++ b/backend/bot.py
+@@ -15,0 +16 @@
++from urllib.parse import quote
+@@ -27,0 +29 @@
++    BotCommand,
+@@ -34,0 +37 @@
++    WebAppInfo,
+@@ -948,0 +952,3 @@
++
++
++CALENDAR_WEB_APP_URL = "https://app.mentori.tech/pages/client/telegram-calendar.html"
+@@ -950,0 +957,27 @@
++async def _send_client_calendar_button(m: Message) -> bool:
++    """Issue a fresh short-lived token instead of exposing portal credentials."""
++    if m.chat.type != "private":
++        return False
++    result = await crm_client.issue_client_telegram_webapp_token(m.chat.id)
++    token = result.get("token") if result.get("ok") else None
++    if not token:
++        await m.answer(
++            "Календарь доступен после подключения Telegram к личному кабинету. "
++            "Если аккаунт уже подключён, попросите менеджера проверить привязку."
++        )
++        return False
++    calendar_url = f"{CALENDAR_WEB_APP_URL}?token={quote(str(token), safe='')}"
++    markup = InlineKeyboardMarkup(inline_keyboard=[[
++        InlineKeyboardButton(
++            text="📅 Открыть календарь",
++            web_app=WebAppInfo(url=calendar_url),
++        )
++    ]])
++    await m.answer(
++        "📅 <b>Календарь откликов</b>\n"
++        "Выберите свободную дату или измените запланированный отклик.",
++        reply_markup=markup,
++    )
++    return True
++
++
+@@ -1061,0 +1095 @@
++        await _send_client_calendar_button(m)
+@@ -1095 +1129,3 @@
+-    await client_ui.entry_start(m, bot, state)
++    is_client = await client_ui.entry_start(m, bot, state)
++    if is_client:
++        await _send_client_calendar_button(m)
+@@ -1390,0 +1427,19 @@
++
++
++@dp.message(Command("calendar"))
++async def cmd_client_calendar(m: Message) -> None:
++    """Open the client Mini App with a newly issued 30-minute token."""
++    await _send_client_calendar_button(m)
++
++
++@dp.message(
++    StateFilter(
++        _ui.ClientUIFSM.client_root,
++        _ui.ClientUIFSM.client_anketas_list,
++        _ui.ClientUIFSM.client_anketa,
++        _ui.ClientUIFSM.client_accounts,
++    ),
++    F.text == _ui.BTN_CAB_CALENDAR,
++)
++async def ui_client_calendar(m: Message) -> None:
++    await _send_client_calendar_button(m)
+@@ -2514,0 +2570,8 @@
++    try:
++        await bot.set_my_commands([
++            BotCommand(command="start", description="Открыть главное меню"),
++            BotCommand(command="calendar", description="Открыть календарь откликов"),
++            BotCommand(command="my_schedule", description="Показать запланированные отклики"),
++        ])
++    except Exception:
++        log.warning("Не удалось обновить список команд Telegram", exc_info=True)
+--- a/backend/client_ui.py
++++ b/backend/client_ui.py
+@@ -222,0 +223 @@
++BTN_CAB_CALENDAR  = "📅 Открыть календарь"
+@@ -271 +272 @@
+-    """Главное меню CRM-клиента — всего 4 кнопки. Список анкет открывается
++    """Главное меню CRM-клиента. Список анкет открывается
+@@ -273,0 +275 @@
++        [BTN_CAB_CALENDAR],
+--- a/backend/crm_client.py
++++ b/backend/crm_client.py
+@@ -279,0 +280,7 @@
++async def issue_client_telegram_webapp_token(telegram_chat_id: int) -> dict[str, Any]:
++    ok, body = await _rpc(
++        "issue_client_telegram_webapp_token", {"p_telegram_chat_id": int(telegram_chat_id)}
++    )
++    return body if ok and isinstance(body, dict) else {"ok": False}
++
++

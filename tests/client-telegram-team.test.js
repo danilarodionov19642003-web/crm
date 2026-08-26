@@ -22,6 +22,7 @@ const appJs = read('js/app.js');
 const cloudSyncJs = read('js/cloud-sync.js');
 const botPatch = read('ops/telegram/patches/client-telegram-team.patch');
 const notificationBotPatch = read('ops/telegram/patches/client-notification-upgrades.patch');
+const calendarMenuBotPatch = read('ops/telegram/patches/client-calendar-menu.patch');
 
 test('client login uses an immutable portal key', () => {
   const supabase = read('js/supabase-client.js');
@@ -131,6 +132,9 @@ test('client cabinet displays and can resolve its own text approvals', () => {
   assert.match(clientApp, /Текст <b>✓<\/b>/);
   assert.match(clientApp, /Отзыв <b>✓<\/b>/);
   assert.match(clientApp, /Согласованный текст/);
+  assert.match(clientApp, /data-approved-text-toggle/);
+  assert.match(clientApp, /data-approved-text-row/);
+  assert.match(clientApp, /data-approved-text-copy/);
   assert.match(approvalJs, /reviewAccountLabel/);
   assert.match(approvalJs, /Текст отзыва'[\s\S]*code[\s\S]*account/);
 });
@@ -164,4 +168,11 @@ test('bot patch links before ordinary start routing and supports decisions', () 
   assert.match(notificationBotPatch, /issue_client_telegram_webapp_token/);
   assert.match(notificationBotPatch, /📅 Открыть календарь/);
   assert.match(notificationBotPatch, /decision="changes_requested"/);
+  assert.match(calendarMenuBotPatch, /Command\("calendar"\)/);
+  assert.match(calendarMenuBotPatch, /BTN_CAB_CALENDAR/);
+  assert.match(calendarMenuBotPatch, /set_my_commands/);
+  assert.match(calendarMenuBotPatch, /_send_client_calendar_button/);
+  assert.match(calendarMenuBotPatch, /issue_client_telegram_webapp_token/);
+  assert.match(calendarMenuBotPatch, /WebAppInfo/);
+  assert.doesNotMatch(calendarMenuBotPatch, /portal.password|signInWithPassword/);
 });

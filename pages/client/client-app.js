@@ -1590,12 +1590,14 @@
       approvedTextsByProfile.get(String(status.profileId || '')) || [];
     const isPublishedStatus = status =>
       isReadyStatus(status) || publishedReviewsByProfile.has(String(status.profileId || ''));
-    const accountProofs = status => {
+    const accountProofs = (status, interactive = false) => {
       const hasText = approvedTextsForStatus(status).length > 0;
       const hasReview = isPublishedStatus(status);
       if (!hasText && !hasReview) return '';
       return `<span class="cli-account-proofs">
-        ${hasText ? '<span class="cli-account-proof">Текст <b>✓</b></span>' : ''}
+        ${hasText && interactive
+          ? `<button type="button" class="cli-account-proof cli-account-proof--button" data-approved-text-toggle="${escapeAttr(status.id)}" aria-expanded="false">Текст <b>✓</b></button>`
+          : (hasText ? '<span class="cli-account-proof">Текст <b>✓</b></span>' : '')}
         ${hasReview ? '<span class="cli-account-proof">Отзыв <b>✓</b></span>' : ''}
       </span>`;
     };
@@ -1606,6 +1608,21 @@
         <span>Согласованный текст</span>
         ${items.map(row => `<p>${escapeHtml(row.body || '')}</p>`).join('')}
       </div>`;
+    };
+    const approvedTextDesktopRow = status => {
+      const items = approvedTextsForStatus(status);
+      if (!items.length) return '';
+      return `<tr class="cli-status-approved-row" data-approved-text-row="${escapeAttr(status.id)}" hidden>
+        <td colspan="5">
+          <div class="cli-approved-text-panel">
+            <span class="cli-approved-text-panel__title">Согласованный текст</span>
+            ${items.map(row => `<div class="cli-approved-text-panel__item">
+              <p>${escapeHtml(row.body || '')}</p>
+              <button type="button" class="cli-approved-text-panel__copy" data-approved-text-copy>Копировать</button>
+            </div>`).join('')}
+          </div>
+        </td>
+      </tr>`;
     };
     const statusAge = status => isReadyStatus(status)
       ? '<span class="cli-status-days is-complete">Завершён</span>'
@@ -1673,9 +1690,10 @@
             <td data-label="Аккаунт"><strong>${escapeHtml(s.profileName || '—')}</strong></td>
             <td data-label="Статус"><span class="cli-status-pill">${escapeHtml(s.status || '')}</span></td>
             <td data-label="Обновлён">${fmtDate(s.date)}</td>
-            <td data-label="В статусе"><div class="cli-status-age-proof">${statusAge(s)}${accountProofs(s)}</div></td>
+            <td data-label="В статусе"><div class="cli-status-age-proof">${statusAge(s)}${accountProofs(s, true)}</div></td>
             <td data-label="Публикация">${publicationControl(s)}</td>
           </tr>
+          ${approvedTextDesktopRow(s)}
         `).join('')}</tbody>
       </table>
       </div>
@@ -1759,6 +1777,30 @@
       renderProfileDetail(
         payload, mentorId, orders, publicationRequests, outreachSlots, updatedApprovals
       );
+    });
+
+    root.querySelectorAll('[data-approved-text-toggle]').forEach(button => {
+      button.addEventListener('click', () => {
+        const row = root.querySelector(`[data-approved-text-row="${CSS.escape(button.dataset.approvedTextToggle || '')}"]`);
+        if (!row) return;
+        const willOpen = row.hidden;
+        row.hidden = !willOpen;
+        button.setAttribute('aria-expanded', String(willOpen));
+        button.classList.toggle('is-open', willOpen);
+      });
+    });
+    root.querySelectorAll('[data-approved-text-copy]').forEach(button => {
+      button.addEventListener('click', async () => {
+        const text = button.closest('.cli-approved-text-panel__item')?.querySelector('p')?.textContent || '';
+        const original = button.textContent;
+        try {
+          await navigator.clipboard.writeText(text);
+          button.textContent = 'Скопировано';
+          setTimeout(() => { button.textContent = original; }, 1200);
+        } catch (_) {
+          button.textContent = 'Скопируйте вручную';
+        }
+      });
     });
 
     root.querySelectorAll('[data-publication-submit]').forEach(button => {

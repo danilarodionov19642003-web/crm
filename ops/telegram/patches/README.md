@@ -28,6 +28,12 @@ two direct actions approve or cancel, and adds a short-lived Telegram Mini App
 calendar button to client notifications. Apply it after
 `client-telegram-team.patch`.
 
+`client-calendar-menu.patch` makes that Mini App discoverable without waiting
+for a notification: linked clients get a persistent reply-keyboard button, a
+fresh calendar button after `/start`, and the `/calendar` command. Every open
+still issues a new short-lived token. Apply it after
+`client-notification-upgrades.patch`.
+
 Apply from the bot repository root with zero-context support:
 
 ```bash
