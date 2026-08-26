@@ -23,8 +23,8 @@ assert.match(clientApp, /data-anketa-mode="active"/);
 assert.match(clientApp, /data-anketa-mode="completed"/);
 assert.match(clientApp, /Завершённые/);
 assert.match(clientCss, /\.cli-anketa-tabs/);
-assert.match(clientIndex, /client-app\.js\?v=20260825a/);
-assert.match(clientIndex, /client\.css\?v=20260825b/);
+assert.match(clientIndex, /client-app\.js\?v=20260826a/);
+assert.match(clientIndex, /client\.css\?v=20260826a/);
 assert.match(clientCss, /\.cli-tg-connect > \.cli-check-row \{ margin: 10px 0 13px; \}/,
   'чекбокс согласования не должен прилипать к кнопке подключения Telegram');
 assert.match(migration, /client_snapshots/);

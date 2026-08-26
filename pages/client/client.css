@@ -98,6 +98,97 @@
 /* ---------- main ---------- */
 .cli-main { padding: 20px 16px 40px; max-width: 1080px; margin: 0 auto; }
 
+/* Ненавязчивое тестовое напоминание о подключении Telegram. */
+.cli-tg-reminder[hidden] { display: none !important; }
+.cli-tg-reminder {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 20px;
+  padding: 13px 14px;
+  overflow: hidden;
+  border: 1px solid rgba(255,122,0,.34);
+  border-radius: 18px;
+  background: linear-gradient(115deg, rgba(255,122,0,.12), rgba(255,122,0,.045) 58%, var(--bg-2));
+  box-shadow: 0 10px 28px rgba(255,122,0,.08);
+  opacity: 0;
+  transform: translateY(-8px);
+}
+.cli-tg-reminder.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+  animation: cliTgReminderIn .32s ease-out, cliTgReminderGlow 4.8s ease-in-out 1s infinite;
+}
+.cli-tg-reminder::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(105deg, transparent 26%, rgba(255,255,255,.11) 45%, transparent 64%);
+  transform: translateX(-120%);
+  animation: cliTgReminderSheen 7s ease-in-out 1.4s infinite;
+}
+.cli-tg-reminder__icon,
+.cli-tg-reminder__copy,
+.cli-tg-reminder__action,
+.cli-tg-reminder__close { position: relative; z-index: 1; }
+.cli-tg-reminder__icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  background: var(--cli-accent);
+  color: #fff;
+  box-shadow: 0 6px 16px rgba(255,122,0,.24);
+}
+.cli-tg-reminder__copy { min-width: 0; }
+.cli-tg-reminder__copy strong { display: block; font-size: 13.5px; line-height: 1.35; }
+.cli-tg-reminder__copy span { display: block; margin-top: 3px; color: var(--text-mute); font-size: 11.5px; line-height: 1.4; }
+.cli-tg-reminder__action {
+  min-height: 38px;
+  padding: 8px 13px;
+  border: 0;
+  border-radius: 11px;
+  background: var(--cli-accent);
+  color: #fff;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 750;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.cli-tg-reminder__action:hover { filter: brightness(1.06); }
+.cli-tg-reminder__close {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-mute);
+  cursor: pointer;
+}
+.cli-tg-reminder__close:hover { background: rgba(127,127,127,.08); color: var(--text); }
+@keyframes cliTgReminderIn {
+  from { opacity: 0; transform: translateY(-8px) scale(.99); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes cliTgReminderGlow {
+  0%, 100% { border-color: rgba(255,122,0,.28); box-shadow: 0 10px 28px rgba(255,122,0,.06); }
+  50% { border-color: rgba(255,122,0,.48); box-shadow: 0 10px 30px rgba(255,122,0,.12); }
+}
+@keyframes cliTgReminderSheen {
+  0%, 72%, 100% { transform: translateX(-120%); }
+  86% { transform: translateX(120%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cli-tg-reminder,
+  .cli-tg-reminder.is-visible,
+  .cli-tg-reminder::after { animation: none; transition: none; }
+}
+
 /* Раскладка ПК: ряд оплат + две колонки. На телефоне всё в одну колонку. */
 .cli-cta-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px; }
 .cli-cta-row > .cli-order-cta { flex: 1 1 280px; margin: 0; }
@@ -1478,6 +1569,13 @@ body:has(.cli-modal:not([hidden])) { overflow: hidden; }
 }
 
 @media (max-width: 420px) {
+  .cli-tg-reminder {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 10px;
+    padding: 12px 42px 12px 12px;
+  }
+  .cli-tg-reminder__action { grid-column: 1 / -1; width: 100%; }
+  .cli-tg-reminder__close { position: absolute; top: 8px; right: 8px; }
   .cli-text-approval__head { flex-direction: column; }
   .cli-text-approval__status { max-width: 100%; }
   .cli-text-approval__actions button,

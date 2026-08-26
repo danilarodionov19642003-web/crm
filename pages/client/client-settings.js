@@ -68,6 +68,9 @@
   async function loadMembers() {
     const result = await rpc('list_my_client_telegram_members');
     members = Array.isArray(result) ? result : [];
+    document.dispatchEvent(new CustomEvent('client-telegram-members-changed', {
+      detail: { count: members.length }
+    }));
     return members;
   }
 
@@ -120,7 +123,7 @@
         </div>
         <div class="cli-tg-member__actions">
           <button type="submit" class="cli-settings__button">Сохранить</button>
-          <button type="button" class="cli-settings__button cli-settings__button--danger" data-member-revoke>Отключить</button>
+          <button type="button" class="cli-settings__button cli-settings__button--danger" data-member-revoke>Отвязать Telegram</button>
           <span class="cli-settings__result" data-member-result aria-live="polite"></span>
         </div>
       </form>`;
@@ -436,8 +439,13 @@
       });
 
       form.querySelector('[data-member-revoke]').addEventListener('click', async () => {
-        if (!confirm('Отключить этот Telegram от кабинета?')) return;
+        const member = members.find(item => Number(item.id) === Number(form.dataset.memberId));
+        const button = form.querySelector('[data-member-revoke]');
+        const label = member ? memberName(member) : 'этот контакт';
+        if (!confirm(`Отвязать Telegram «${label}» от кабинета? Уведомления на него больше приходить не будут.`)) return;
         const result = form.querySelector('[data-member-result]');
+        button.disabled = true;
+        button.textContent = 'Отвязываем…';
         try {
           await rpc('revoke_my_client_telegram_member', {
             p_member_id: Number(form.dataset.memberId)
@@ -447,6 +455,8 @@
         } catch (error) {
           result.textContent = errorMessage(error);
           result.className = 'cli-settings__result is-error';
+          button.disabled = false;
+          button.textContent = 'Отвязать Telegram';
         }
       });
     });
@@ -572,14 +582,16 @@
   }
 
   async function init(options = {}) {
-    if (!root()) return;
+    if (!root()) return null;
     displayName = String(options.displayName || '').trim();
     bindModalEvents();
     try {
       await Promise.all([loadMembers(), loadProfile(), loadReferralDashboard()]);
       render();
+      return { telegramMemberCount: members.length };
     } catch (error) {
       root().innerHTML = `<div class="cli-settings__result is-error">${esc(errorMessage(error))}</div>`;
+      return null;
     }
   }
 

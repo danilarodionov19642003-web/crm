@@ -30,6 +30,18 @@ test('settings open from the client avatar and no longer occupy the dashboard', 
   assert.match(settingsJs, /Реферальная программа/);
 });
 
+test('A34 test cabinet gets a Telegram reminder and any client can unlink a contact', () => {
+  assert.match(indexHtml, /data-cli-tg-reminder/);
+  assert.match(indexHtml, /Подключите Telegram для уведомлений/);
+  assert.match(clientApp, /TELEGRAM_REMINDER_TEST_EMAIL = 'test@test\.com'/);
+  assert.match(clientApp, /email === TELEGRAM_REMINDER_TEST_EMAIL[\s\S]*count === 0/);
+  assert.match(clientApp, /ClientSettings\.open\('telegram'\)/);
+  assert.match(settingsJs, /Отвязать Telegram/);
+  assert.match(settingsJs, /revoke_my_client_telegram_member/);
+  assert.match(clientCss, /@keyframes cliTgReminderGlow/);
+  assert.match(clientCss, /prefers-reduced-motion: reduce/);
+});
+
 test('referral link records Telegram attribution and grants one bonus only on first paid order', () => {
   assert.match(referralMigration, /create table if not exists public\.client_referral_codes/);
   assert.match(referralMigration, /telegram_user_id bigint not null unique/);

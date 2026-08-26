@@ -22,6 +22,8 @@
   const _key = () => window.Supabase.KEY;
 
   const SNAPSHOTS_TABLE = 'client_snapshots';
+  const TELEGRAM_REMINDER_TEST_EMAIL = 'test@test.com';
+  let telegramReminderBound = false;
 
   function fmtDate(iso) {
     if (!iso) return '';
@@ -506,6 +508,36 @@
       if (!confirm('Выйти из кабинета?')) return;
       try { Auth.signOut(); } catch (_) {}
       location.replace(rootHref());
+    });
+  }
+
+  function renderTelegramReminder(memberCount) {
+    const root = document.querySelector('[data-cli-tg-reminder]');
+    if (!root) return;
+    const email = String(Auth.portalEmail() || '').trim().toLowerCase();
+    const count = Number(memberCount);
+    const shouldShow = email === TELEGRAM_REMINDER_TEST_EMAIL
+      && Number.isFinite(count) && count === 0;
+    if (!shouldShow) {
+      root.classList.remove('is-visible');
+      root.hidden = true;
+    } else {
+      root.hidden = false;
+      requestAnimationFrame(() => root.classList.add('is-visible'));
+    }
+    if (telegramReminderBound) return;
+    telegramReminderBound = true;
+    const connect = root.querySelector('[data-cli-tg-reminder-connect]');
+    const close = root.querySelector('[data-cli-tg-reminder-close]');
+    if (connect) connect.addEventListener('click', () => {
+      if (window.ClientSettings && window.ClientSettings.open) window.ClientSettings.open('telegram');
+    });
+    if (close) close.addEventListener('click', () => {
+      root.classList.remove('is-visible');
+      setTimeout(() => { root.hidden = true; }, 180);
+    });
+    document.addEventListener('client-telegram-members-changed', event => {
+      renderTelegramReminder(event.detail && event.detail.count);
     });
   }
 
@@ -2728,6 +2760,7 @@
     preloadLegalDocuments,
     loadSnapshot,
     renderHeader,
+    renderTelegramReminder,
     renderTotals,
     renderAnketas,
     renderFeed,
