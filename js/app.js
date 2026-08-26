@@ -1820,19 +1820,13 @@
       }
     },
 
-    /** Кладёт уведомление о смене статуса в notification_outbox (Supabase).
+    /** Кладёт уведомление о выборе аккаунта в notification_outbox (Supabase).
      *  Бот в /Users/mentori/tg/ опрашивает таблицу и шлёт сообщение клиенту в TG.
-     *  Не падает если: нет CloudSync, нет clientPortal-владельца этой анкеты,
-     *  у кабинета нет подключённых Telegram-контактов, статус не изменился, или это
-     *  создание записи со статусом «Запланировано» (первое назначение).
+     *  Единственный клиентский статус-сигнал: «Выбрать» → «Выбран».
      */
     _queueStatusNotification(mentorId, profileId, newStatus, oldStatus, comment, isNew) {
       if (!window.CloudSync) return;
-      // Не уведомляем если статус по факту не сменился
-      if (!isNew && oldStatus === newStatus) return;
-      // Не уведомляем при ПЕРВОМ назначении статуса «Запланировано» — это просто
-      // заведение в работу, для клиента ничего не произошло
-      if (isNew && newStatus === PROFILE_STATUSES[0]) return;
+      if (isNew || oldStatus !== STATUS_SELECT || newStatus !== STATUS_CHOSEN) return;
 
       // Находим клиента-владельца этой анкеты
       const portal = (this.state.clientPortals || [])

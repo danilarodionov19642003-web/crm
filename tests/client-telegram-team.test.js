@@ -10,6 +10,7 @@ const teamSql = read('sql/migrations/2026-08-20_client_portal_telegram_team.sql'
 const approvalSql = read('sql/migrations/2026-08-20_client_text_approvals.sql');
 const reviewApprovalSql = read('sql/migrations/2026-08-20_review_text_approval_link.sql');
 const accountApprovalSql = read('sql/migrations/2026-08-26_client_text_approval_account_link.sql');
+const selectedStatusSql = read('sql/migrations/2026-08-26_client_status_selected_notification.sql');
 const settingsJs = read('pages/client/client-settings.js');
 const approvalJs = read('js/client-text-approvals.js');
 const clientApp = read('pages/client/client-app.js');
@@ -136,10 +137,15 @@ test('client cabinet displays and can resolve its own text approvals', () => {
 
 test('status notifications fan out with a legacy-only fallback', () => {
   assert.match(appJs, /queueClientTelegramNotification/);
+  assert.match(appJs, /oldStatus !== STATUS_SELECT \|\| newStatus !== STATUS_CHOSEN/);
   assert.doesNotMatch(appJs, /if \(!portal\.telegramChatId\) return/);
   assert.match(cloudSyncJs, /rpc\/queue_client_telegram_notification/);
   assert.match(cloudSyncJs, /no normalized Telegram recipients, using legacy fallback/);
   assert.match(teamSql, /member\.is_active and member\.status_notifications/);
+  assert.match(selectedStatusSql, /NEW\.old_status = '⭐ Выбрать'/);
+  assert.match(selectedStatusSql, /NEW\.new_status = '🏆 Выбран'/);
+  assert.match(selectedStatusSql, /return 0;/);
+  assert.match(selectedStatusSql, /before insert on public\.notification_outbox/);
 });
 
 test('bot patch links before ordinary start routing and supports decisions', () => {
