@@ -1,0 +1,125 @@
+--- a/backend/bot.py
++++ b/backend/bot.py
+@@ -1576,7 +1576,7 @@
+ def _text_approval_markup(request_id: int) -> InlineKeyboardMarkup:
+     return InlineKeyboardMarkup(inline_keyboard=[[
+         InlineKeyboardButton(text="✓ Согласовать", callback_data=f"ctxt:a:{request_id}"),
+-        InlineKeyboardButton(text="✏ Нужны правки", callback_data=f"ctxt:r:{request_id}"),
++        InlineKeyboardButton(text="✕ Отменить", callback_data=f"ctxt:c:{request_id}"),
+     ]])
+ 
+ 
+@@ -1606,7 +1606,7 @@
+ ) -> None:
+     """The primary client contact approves text or starts a correction reply."""
+     parts = (cb.data or "").split(":")
+-    if len(parts) != 3 or parts[1] not in ("a", "r", "x"):
++    if len(parts) != 3 or parts[1] not in ("a", "r", "c", "x"):
+         await cb.answer()
+         return
+     try:
+@@ -1628,6 +1628,29 @@
+         await cb.answer("Ввод правок отменён")
+         return
+ 
++    if parts[1] == "c":
++        result = await crm_client.resolve_client_text_approval(
++            request_id=request_id,
++            decision="changes_requested",
++            telegram_user_id=cb.from_user.id,
++            telegram_chat_id=cb.message.chat.id,
++            comment="Клиент отменил согласование в Telegram",
++        )
++        if not result.get("ok"):
++            reason = str(result.get("reason") or "")
++            message = ("Этот запрос уже обработан."
++                       if "ALREADY_RESOLVED" in reason
++                       else "Отменить может только назначенный контакт.")
++            await cb.answer(message, show_alert=True)
++            return
++        await state.clear()
++        await _finish_text_approval_message(
++            bot, cb.message.chat.id, cb.message.message_id,
++            original_html, "❌ <b>Согласование отменено</b>",
++        )
++        await cb.answer("Согласование отменено")
++        return
++
+     if parts[1] == "r":
+         await state.set_state(TextApprovalFSM.awaiting_comment)
+         await state.update_data(
+--- a/backend/notifier.py
++++ b/backend/notifier.py
+@@ -39,6 +39,7 @@
+ import logging
+ import signal
+ from typing import Any
++from urllib.parse import quote
+ 
+ import aiohttp
+ 
+@@ -50,6 +51,7 @@
+ 
+ 
+ REST_TIMEOUT = aiohttp.ClientTimeout(total=15)
++CALENDAR_WEB_APP_URL = "https://app.mentori.tech/pages/client/telegram-calendar.html"
+ 
+ 
+ def _supabase_headers() -> dict[str, str]:
+@@ -118,6 +120,23 @@
+     ))
+ 
+ 
++async def _calendar_web_app_url(
++    session: aiohttp.ClientSession,
++    telegram_chat_id: int,
++) -> str | None:
++    url = f"{settings.supabase_url}/rest/v1/rpc/issue_client_telegram_webapp_token"
++    async with session.post(
++        url,
++        headers=_supabase_headers(),
++        json={"p_telegram_chat_id": int(telegram_chat_id)},
++    ) as resp:
++        if resp.status != 200:
++            return None
++        payload = await resp.json()
++    token = payload.get("token") if isinstance(payload, dict) and payload.get("ok") else None
++    return f"{CALENDAR_WEB_APP_URL}?token={quote(str(token), safe='')}" if token else None
++
++
+ async def _process_one(session: aiohttp.ClientSession, row: dict[str, Any]) -> None:
+     row_id = row["id"]
+     chat_id = row.get("telegram_chat_id")
+@@ -131,6 +150,16 @@
+     # Для заявок на оплату (kind='client_order') добавляем inline-кнопки
+     # «Подтвердить/Отклонить». order_id лежит в mentor_id (так его кладёт триггер).
+     reply_markup = None
++    calendar_url = None
++    if row.get("client_email") and row.get("kind") in {
++        "schedule", "status_change", "review_published", "low_reviews",
++        "order_completed", "client_text_approval",
++    }:
++        try:
++            calendar_url = await _calendar_web_app_url(session, int(chat_id))
++        except Exception:
++            log.warning("calendar token issue failed for chat %s", chat_id, exc_info=True)
++
+     if row.get("kind") == "client_order" and row.get("mentor_id"):
+         oid = str(row["mentor_id"])
+         reply_markup = {"inline_keyboard": [[
+@@ -147,8 +176,14 @@
+         request_id = str(row["action_ref"])
+         reply_markup = {"inline_keyboard": [[
+             {"text": "✓ Согласовать", "callback_data": f"ctxt:a:{request_id}"},
+-            {"text": "✏ Нужны правки", "callback_data": f"ctxt:r:{request_id}"},
++            {"text": "✕ Отменить", "callback_data": f"ctxt:c:{request_id}"},
+         ]]}
++    if calendar_url:
++        calendar_button = {"text": "📅 Открыть календарь", "web_app": {"url": calendar_url}}
++        if reply_markup is None:
++            reply_markup = {"inline_keyboard": [[calendar_button]]}
++        else:
++            reply_markup["inline_keyboard"].append([calendar_button])
+     try:
+         await bot_notify.send_order_status_message(int(chat_id), message, reply_markup=reply_markup)
+         await _mark_sent(session, row_id)

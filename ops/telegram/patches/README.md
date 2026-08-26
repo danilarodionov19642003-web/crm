@@ -23,6 +23,11 @@ Telegram attribution, and credits one separate zero-value review only after the
 invitee's first paid order is confirmed. Apply it after
 `client-telegram-team.patch`.
 
+`client-notification-upgrades.patch` changes new text-approval messages to the
+two direct actions approve or cancel, and adds a short-lived Telegram Mini App
+calendar button to client notifications. Apply it after
+`client-telegram-team.patch`.
+
 Apply from the bot repository root with zero-context support:
 
 ```bash

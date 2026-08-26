@@ -110,6 +110,7 @@
         p_portal_email: portal.email,
         p_mentor_id: review.mentorId,
         p_source_review_id: review.id,
+        p_source_profile_id: review.profileId,
         p_title: title,
         p_body: String(review.text).trim()
       });
@@ -152,7 +153,7 @@
 
   async function loadRequests(limit = 300) {
     const params = new URLSearchParams({
-      select: 'id,portal_email,mentor_id,anketa_code,anketa_name,title,body,request_status,delivered_to_member_id,delivered_to_telegram_user_id,created_at,updated_at,resolved_at,resolved_by_label,resolution_comment,source_review_id,source_revision',
+      select: 'id,portal_email,mentor_id,anketa_code,anketa_name,title,body,request_status,delivered_to_member_id,delivered_to_telegram_user_id,created_at,updated_at,resolved_at,resolved_by_label,resolution_comment,source_review_id,source_profile_id,source_revision',
       order: 'created_at.desc',
       limit: String(Math.max(1, Math.min(1000, Number(limit) || 300)))
     });

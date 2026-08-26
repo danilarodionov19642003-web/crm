@@ -2012,7 +2012,6 @@
       const client = clientForStatusMentor(this.state, review.mentorId);
       if (!client || Math.max(0, Number(client.ordered) || 0) <= 0) return;
       const remaining = clientRemainingReviews(client, this.state);
-      if (remaining !== 1 && remaining !== 0) return;
 
       const portal = (this.state.clientPortals || [])
         .find(item => Array.isArray(item.mentorIds) && item.mentorIds.includes(review.mentorId));
@@ -2021,11 +2020,20 @@
       const mentorLabel = mentor
         ? `${mentor.code}${mentor.name ? ` «${mentor.name}»` : ''}`
         : (client.code || 'анкете');
+      const registration = this.getAccountReg(review.profileId);
+      const profile = this.getProfileOrArchived(review.profileId);
+      const accountLabel = String(
+        registration && registration.ownerName || profile && profile.code || 'Аккаунт'
+      ).trim();
       const completed = remaining === 0;
-      const kind = completed ? 'order_completed' : 'low_reviews';
+      const kind = completed
+        ? 'order_completed'
+        : (remaining === 1 ? 'low_reviews' : 'review_published');
       const message = completed
-        ? `✅ По анкете ${mentorLabel} пакет выполнен.`
-        : `🔔 По анкете ${mentorLabel} в пакете остался 1 отзыв.`;
+        ? `✅ Последний отзыв опубликован по анкете ${mentorLabel}.\nАккаунт: ${accountLabel}\nРабота по пакету завершена.`
+        : (remaining === 1
+            ? `✅ Опубликован отзыв по анкете ${mentorLabel}.\nАккаунт: ${accountLabel}\nВ пакете остался 1 отзыв.`
+            : `✅ Опубликован отзыв по анкете ${mentorLabel}.\nАккаунт: ${accountLabel}\nОсталось отзывов: ${remaining}.`);
 
       window.CloudSync.queueClientProgressNotification({
         client_email: portal.email,

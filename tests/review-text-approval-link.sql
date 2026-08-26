@@ -44,12 +44,14 @@ begin
   select * into v_first
   from public.create_review_text_approval(
     v_portal, v_mentor_id, 'approval-test-review',
-    'Тест согласования', 'Тестовый текст, не сохраняется.'
+    'Тест согласования', 'Тестовый текст, не сохраняется.',
+    'approval-test-profile'
   );
   select * into v_retry
   from public.create_review_text_approval(
     v_portal, v_mentor_id, 'approval-test-review',
-    'Тест согласования', 'Тестовый текст, не сохраняется.'
+    'Тест согласования', 'Тестовый текст, не сохраняется.',
+    'approval-test-profile'
   );
 
   if v_first.id is distinct from v_retry.id then
@@ -57,6 +59,9 @@ begin
   end if;
   if v_first.source_revision <> 1 or v_first.source_review_id <> 'approval-test-review' then
     raise exception 'SOURCE_LINK_FAILED';
+  end if;
+  if v_first.source_profile_id <> 'approval-test-profile' then
+    raise exception 'PROFILE_LINK_FAILED';
   end if;
 
   perform set_config(

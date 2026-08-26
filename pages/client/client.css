@@ -695,6 +695,15 @@
 }
 .cli-pub-control { min-width: 248px; }
 .cli-status-days { white-space: nowrap; }
+.cli-status-age-proof { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.cli-account-proofs { display: inline-flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 4px; }
+.cli-account-proof {
+  display: inline-flex; align-items: center; gap: 3px; padding: 3px 7px;
+  border: 1px solid rgba(34,197,94,.3); border-radius: 999px;
+  background: rgba(34,197,94,.12); color: var(--cli-green);
+  font-size: 9px; font-weight: 750; line-height: 1; white-space: nowrap;
+}
+.cli-account-proof b { font-size: 10px; }
 .cli-pub-actions { display: flex; align-items: center; gap: 6px; }
 .cli-pub-date {
   min-width: 132px; height: 34px; box-sizing: border-box;
@@ -750,6 +759,7 @@
   .cli-status-mobile__identity .cli-status-pill { width: max-content; max-width: 100%; }
   .cli-status-mobile__meta { align-items: flex-end; text-align: right; }
   .cli-status-mobile__meta .cli-status-days { color: var(--text); font-size: 12px; }
+  .cli-status-mobile__meta .cli-account-proofs { max-width: 120px; }
   .cli-status-mobile__request { color: var(--text-mute); font-size: 9px; white-space: nowrap; }
   .cli-status-mobile__request.is-pending { color: #fa8c16; }
   .cli-status-mobile__request.is-accepted { color: var(--cli-green); }
@@ -757,6 +767,17 @@
   .cli-status-mobile__body {
     display: grid; gap: 12px; padding: 12px;
     border-top: 1px solid var(--border); background: var(--bg);
+  }
+  .cli-status-mobile__approved-text {
+    display: grid; gap: 7px; padding-top: 12px; border-top: 1px solid var(--border);
+  }
+  .cli-status-mobile__approved-text > span {
+    color: var(--cli-green); font-size: 10px; font-weight: 750; text-transform: uppercase;
+    letter-spacing: .05em;
+  }
+  .cli-status-mobile__approved-text p {
+    margin: 0; color: var(--text); font-size: 12px; line-height: 1.55;
+    overflow-wrap: anywhere; white-space: pre-wrap;
   }
   .cli-status-mobile__fact,
   .cli-status-mobile__publication { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 10px; align-items: start; }

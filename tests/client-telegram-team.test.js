@@ -9,6 +9,7 @@ const read = relative => fs.readFileSync(path.join(root, relative), 'utf8');
 const teamSql = read('sql/migrations/2026-08-20_client_portal_telegram_team.sql');
 const approvalSql = read('sql/migrations/2026-08-20_client_text_approvals.sql');
 const reviewApprovalSql = read('sql/migrations/2026-08-20_review_text_approval_link.sql');
+const accountApprovalSql = read('sql/migrations/2026-08-26_client_text_approval_account_link.sql');
 const settingsJs = read('pages/client/client-settings.js');
 const approvalJs = read('js/client-text-approvals.js');
 const clientApp = read('pages/client/client-app.js');
@@ -19,6 +20,7 @@ const reviewsHtml = read('pages/reviews.html');
 const appJs = read('js/app.js');
 const cloudSyncJs = read('js/cloud-sync.js');
 const botPatch = read('ops/telegram/patches/client-telegram-team.patch');
+const notificationBotPatch = read('ops/telegram/patches/client-notification-upgrades.patch');
 
 test('client login uses an immutable portal key', () => {
   const supabase = read('js/supabase-client.js');
@@ -76,12 +78,15 @@ test('review-linked approval is idempotent and survives a missing Telegram conta
   assert.match(reviewApprovalSql, /resolve_my_client_text_approval/);
   assert.match(reviewApprovalSql, /where id = p_request_id and lower\(portal_email\) = lower\(v_portal\)[\s\S]*for update/);
   assert.match(reviewApprovalSql, /cancel_review_text_approval/);
+  assert.match(accountApprovalSql, /source_profile_id text/);
+  assert.match(accountApprovalSql, /create_review_text_approval\([\s\S]*p_source_profile_id text/);
+  assert.match(approvalJs, /p_source_profile_id: review\.profileId/);
 });
 
 test('setting Ready sends the saved review through the linked approval workflow', () => {
   assert.match(statusesHtml, /client-text-approvals\.js/);
-  assert.match(statusesHtml, /client-text-approvals\.js\?v=20260826a/);
-  assert.match(reviewsHtml, /client-text-approvals\.js\?v=20260826a/);
+  assert.match(statusesHtml, /client-text-approvals\.js\?v=20260826b/);
+  assert.match(reviewsHtml, /client-text-approvals\.js\?v=20260826b/);
   assert.equal((statusesHtml.match(/ClientTextApprovals\.sendReview\(Store, review\)/g) || []).length, 1,
     'единая фоновая отправка должна обслуживать оба сценария сохранения');
   assert.match(statusesHtml, /clientApprovalRequired: true/);
@@ -120,6 +125,11 @@ test('client cabinet displays and can resolve its own text approvals', () => {
   assert.match(clientApp, /resolve_my_client_text_approval/);
   assert.match(clientApp, /data-text-approve/);
   assert.match(clientApp, /data-text-change-submit/);
+  assert.match(clientApp, /row\.request_status === 'pending'/);
+  assert.match(clientApp, /approvedTextsByProfile/);
+  assert.match(clientApp, /Текст <b>✓<\/b>/);
+  assert.match(clientApp, /Отзыв <b>✓<\/b>/);
+  assert.match(clientApp, /Согласованный текст/);
   assert.match(approvalJs, /reviewAccountLabel/);
   assert.match(approvalJs, /Текст отзыва'[\s\S]*code[\s\S]*account/);
 });
@@ -143,4 +153,9 @@ test('bot patch links before ordinary start routing and supports decisions', () 
   assert.match(botPatch, /ctxt:a:/);
   assert.match(botPatch, /ctxt:r:/);
   assert.doesNotMatch(botPatch, /(?:patch|post)\([^\n]*crm_state/i);
+  assert.match(notificationBotPatch, /✕ Отменить/);
+  assert.match(notificationBotPatch, /ctxt:c:/);
+  assert.match(notificationBotPatch, /issue_client_telegram_webapp_token/);
+  assert.match(notificationBotPatch, /📅 Открыть календарь/);
+  assert.match(notificationBotPatch, /decision="changes_requested"/);
 });

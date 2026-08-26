@@ -124,6 +124,14 @@ select pg_temp.assert_true(
   'duplicate package-completed notification was queued'
 );
 
+select pg_temp.assert_true(
+  public.queue_client_progress_notification(
+    :'settings_portal_email', 'review_published', 'Опубликован отзыв',
+    'mentor-settings', 'profile-settings', :'settings_action_ref', 'verify'
+  ) = 1,
+  'published-review notification was not queued'
+);
+
 reset role;
 
 select pg_temp.assert_true(
@@ -132,6 +140,14 @@ select pg_temp.assert_true(
      and action_ref = :'settings_action_ref'
      and telegram_chat_id = :'settings_telegram_id'::bigint),
   'package progress outbox row is missing or duplicated'
+);
+
+select pg_temp.assert_true(
+  (select count(*) = 1 from public.notification_outbox
+   where kind = 'review_published'
+     and action_ref = :'settings_action_ref'
+     and telegram_chat_id = :'settings_telegram_id'::bigint),
+  'published-review outbox row is missing or duplicated'
 );
 
 select pg_temp.assert_true(

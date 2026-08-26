@@ -192,7 +192,7 @@
     try {
       const params = new URLSearchParams({
         portal_email: `eq.${email}`,
-        select: 'id,mentor_id,anketa_code,anketa_name,title,body,request_status,created_at,resolved_at,resolved_by_label,resolution_comment,source_review_id,source_revision',
+        select: 'id,mentor_id,anketa_code,anketa_name,title,body,request_status,created_at,resolved_at,resolved_by_label,resolution_comment,source_review_id,source_profile_id,source_revision',
         order: 'created_at.desc',
         limit: '50'
       });
@@ -276,11 +276,11 @@
     return { label: 'Нужно проверить', cls: 'is-pending' };
   }
 
-  function renderTextApprovals(rows, mentorId) {
+  function renderTextApprovals(rows, mentorId, onUpdated) {
     const root = document.querySelector('[data-cli-text-approvals]');
     if (!root) return;
     const items = latestTextApprovals(rows).filter(row =>
-      row.request_status !== 'cancelled'
+      row.request_status === 'pending'
       && (!mentorId || row.mentor_id === mentorId)
     );
     if (!items.length) {
@@ -324,7 +324,7 @@
           </article>`;
         }).join('')}
       </div>`;
-    bindTextApprovalActions(root, mentorId);
+    bindTextApprovalActions(root, mentorId, onUpdated);
   }
 
   function renderTextApprovalNotices(rows, anketas) {
@@ -361,7 +361,7 @@
     }).join('');
   }
 
-  function bindTextApprovalActions(root, mentorId) {
+  function bindTextApprovalActions(root, mentorId, onUpdated) {
     root.querySelectorAll('[data-text-approve]').forEach(button => {
       button.addEventListener('click', async () => {
         if (!window.confirm('Согласовать этот текст?')) return;
@@ -375,7 +375,9 @@
           card.querySelectorAll('button').forEach(item => { item.disabled = false; });
           return;
         }
-        renderTextApprovals(await loadMyTextApprovals(), mentorId);
+        const updatedRows = await loadMyTextApprovals();
+        if (typeof onUpdated === 'function') onUpdated(updatedRows);
+        else renderTextApprovals(updatedRows, mentorId);
       });
     });
     root.querySelectorAll('[data-text-changes]').forEach(button => {
@@ -405,7 +407,9 @@
           card.querySelectorAll('button, textarea').forEach(item => { item.disabled = false; });
           return;
         }
-        renderTextApprovals(await loadMyTextApprovals(), mentorId);
+        const updatedRows = await loadMyTextApprovals();
+        if (typeof onUpdated === 'function') onUpdated(updatedRows);
+        else renderTextApprovals(updatedRows, mentorId);
       });
     });
   }
@@ -1513,6 +1517,22 @@
     (publicationRequests || []).forEach(request => {
       if (!requestsByStatus.has(request.status_id)) requestsByStatus.set(request.status_id, request);
     });
+    const latestApprovalsForAnketa = latestTextApprovals(textApprovals || [])
+      .filter(row => row.mentor_id === mentorId);
+    const approvedTextsByProfile = new Map();
+    latestApprovalsForAnketa.forEach(row => {
+      const profileId = String(row.source_profile_id || '');
+      if (row.request_status !== 'approved' || !profileId) return;
+      if (!approvedTextsByProfile.has(profileId)) approvedTextsByProfile.set(profileId, []);
+      approvedTextsByProfile.get(profileId).push(row);
+    });
+    const publishedReviewsByProfile = new Map();
+    (a.reviews || []).forEach(review => {
+      const profileId = String(review.profileId || '');
+      if (!profileId) return;
+      if (!publishedReviewsByProfile.has(profileId)) publishedReviewsByProfile.set(profileId, []);
+      publishedReviewsByProfile.get(profileId).push(review);
+    });
     const totalsHtml = `
       <div class="cli-kpis" style="margin-bottom:16px">
         <div class="cli-kpi">
@@ -1566,6 +1586,27 @@
         : null;
     };
     const isReadyStatus = status => status.status === '🎯 Готов';
+    const approvedTextsForStatus = status =>
+      approvedTextsByProfile.get(String(status.profileId || '')) || [];
+    const isPublishedStatus = status =>
+      isReadyStatus(status) || publishedReviewsByProfile.has(String(status.profileId || ''));
+    const accountProofs = status => {
+      const hasText = approvedTextsForStatus(status).length > 0;
+      const hasReview = isPublishedStatus(status);
+      if (!hasText && !hasReview) return '';
+      return `<span class="cli-account-proofs">
+        ${hasText ? '<span class="cli-account-proof">Текст <b>✓</b></span>' : ''}
+        ${hasReview ? '<span class="cli-account-proof">Отзыв <b>✓</b></span>' : ''}
+      </span>`;
+    };
+    const approvedTextPanel = status => {
+      const items = approvedTextsForStatus(status);
+      if (!items.length) return '';
+      return `<div class="cli-status-mobile__approved-text">
+        <span>Согласованный текст</span>
+        ${items.map(row => `<p>${escapeHtml(row.body || '')}</p>`).join('')}
+      </div>`;
+    };
     const statusAge = status => isReadyStatus(status)
       ? '<span class="cli-status-days is-complete">Завершён</span>'
       : `<span class="cli-status-days"><strong>${daysSince(status.date)}</strong> дн.</span>`;
@@ -1632,7 +1673,7 @@
             <td data-label="Аккаунт"><strong>${escapeHtml(s.profileName || '—')}</strong></td>
             <td data-label="Статус"><span class="cli-status-pill">${escapeHtml(s.status || '')}</span></td>
             <td data-label="Обновлён">${fmtDate(s.date)}</td>
-            <td data-label="В статусе">${statusAge(s)}</td>
+            <td data-label="В статусе"><div class="cli-status-age-proof">${statusAge(s)}${accountProofs(s)}</div></td>
             <td data-label="Публикация">${publicationControl(s)}</td>
           </tr>
         `).join('')}</tbody>
@@ -1648,6 +1689,7 @@
               </span>
               <span class="cli-status-mobile__meta">
                 ${statusAge(s)}
+                ${accountProofs(s)}
                 ${publicationSummary(s)}
               </span>
             </summary>
@@ -1660,6 +1702,7 @@
                 <span>Дата публикации</span>
                 ${publicationControl(s)}
               </div>
+              ${approvedTextPanel(s)}
             </div>
           </details>
         `).join('')}
@@ -1712,7 +1755,11 @@
       ${reviewsHtml}
     `;
     bindAvatarFallbacks(root);
-    renderTextApprovals(textApprovals || [], mentorId);
+    renderTextApprovals(textApprovals || [], mentorId, updatedApprovals => {
+      renderProfileDetail(
+        payload, mentorId, orders, publicationRequests, outreachSlots, updatedApprovals
+      );
+    });
 
     root.querySelectorAll('[data-publication-submit]').forEach(button => {
       button.addEventListener('click', async () => {
