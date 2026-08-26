@@ -290,6 +290,10 @@ test('Telegram can issue a bounded passwordless client-cabinet login', () => {
   assert.match(passwordlessBotPatch, /auth\/v1\/admin\/generate_link/);
   assert.match(passwordlessBotPatch, /"type": "magiclink"/);
   assert.match(passwordlessBotPatch, /redirect_to/);
+  assert.match(passwordlessBotPatch, /canonical_verify_path/);
+  assert.match(passwordlessBotPatch, /action_url\.path == "\/verify"/);
+  assert.match(passwordlessBotPatch, /_replace\(path=canonical_verify_path\)/);
+  assert.match(passwordlessBotPatch, /action_url\.netloc != public_api\.netloc/);
   assert.match(passwordlessBotPatch, /Войти без пароля/);
   assert.match(passwordlessBotPatch, /Не пересылайте её другим людям/);
   assert.doesNotMatch(passwordlessBotPatch, /signInWithPassword|portal\.password/);

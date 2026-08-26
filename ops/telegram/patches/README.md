@@ -61,6 +61,8 @@ navigation stays disabled. Apply it after `client-miniapp-only-subscription.patc
 login button and four per-contact notification switches to the client bot
 keyboard. It generates a Supabase magic link only after an exact linked
 Telegram user/chat and channel-membership check; no password is read or sent.
+For self-hosted GoTrue v2.158 it also restores the public `/auth/v1/verify`
+prefix that `admin/generate_link` can drop behind a path-stripping proxy.
 Apply it after `client-text-approval-actions.patch` and the
 `2026-08-27_client_telegram_passwordless_login_and_bot_settings.sql` migration.
 
