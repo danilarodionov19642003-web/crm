@@ -45,6 +45,13 @@ backfilled on bot start, and newly linked clients get it immediately. It uses a
 separate revocable menu credential whose raw value stays in the URL fragment.
 Apply it after `client-visual-cabinet.patch`.
 
+`client-miniapp-only-subscription.patch` removes client cabinet, anketa,
+schedule and approval actions from the bot chat. The reply keyboard keeps only
+`Написать менеджеру`; future notifications are informational. Mini App access
+is reconciled against the live `@Mento_ri` membership on start and on channel
+join/leave events. Apply it after `client-direct-menu-app.patch` and the
+`2026-08-27_client_telegram_channel_gate.sql` migration.
+
 Apply from the bot repository root with zero-context support:
 
 ```bash

@@ -118,6 +118,9 @@
 
   function errorMessage(error) {
     const raw = String(error && error.message || error || '');
+    if (raw.includes('CHANNEL_SUBSCRIPTION_REQUIRED')) {
+      return 'Подпишитесь на канал @Mento_ri, затем вернитесь в бот и отправьте /start.';
+    }
     if (raw.includes('TOKEN_INVALID_OR_EXPIRED') || Number(error && error.status) === 401) {
       return 'Доступ устарел. Нажмите «Кабинет» рядом с полем ввода или откройте новое сообщение бота.';
     }

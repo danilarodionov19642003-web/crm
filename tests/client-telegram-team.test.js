@@ -14,6 +14,7 @@ const selectedStatusSql = read('sql/migrations/2026-08-26_client_status_selected
 const settingsJs = read('pages/client/client-settings.js');
 const approvalJs = read('js/client-text-approvals.js');
 const clientApp = read('pages/client/client-app.js');
+const telegramCalendarJs = read('pages/client/telegram-calendar.js');
 const clientIndex = read('pages/client/index.html');
 const clientProfile = read('pages/client/profile.html');
 const statusesHtml = read('pages/statuses.html');
@@ -25,7 +26,9 @@ const notificationBotPatch = read('ops/telegram/patches/client-notification-upgr
 const calendarMenuBotPatch = read('ops/telegram/patches/client-calendar-menu.patch');
 const visualCabinetBotPatch = read('ops/telegram/patches/client-visual-cabinet.patch');
 const directMenuAppPatch = read('ops/telegram/patches/client-direct-menu-app.patch');
+const miniappOnlyPatch = read('ops/telegram/patches/client-miniapp-only-subscription.patch');
 const directMenuSql = read('sql/migrations/2026-08-26_client_telegram_direct_menu.sql');
+const channelGateSql = read('sql/migrations/2026-08-27_client_telegram_channel_gate.sql');
 const ownerInviteSql = read('sql/migrations/2026-08-26_owner_client_telegram_invites.sql');
 const clientsHtml = read('pages/clients.html');
 const clientAccessHtml = read('pages/client-access.html');
@@ -221,4 +224,34 @@ test('bot patch links before ordinary start routing and supports decisions', () 
   assert.match(directMenuSql, /digest\(v_token, 'sha256'\)/);
   assert.match(directMenuSql, /member\.is_active/);
   assert.match(directMenuSql, /auth\.role\(\) <> 'service_role'/);
+});
+
+test('client bot chat is Mini App only and keeps just the manager reply button', () => {
+  assert.match(miniappOnlyPatch, /^\+\s+return _kb\(\[\[BTN_CAB_CONTACT\]\]\)$/m);
+  assert.match(miniappOnlyPatch, /^\+\s+menu_button=MenuButtonCommands\(\),$/m);
+  assert.match(miniappOnlyPatch, /_show_client_miniapp_only/);
+  assert.match(miniappOnlyPatch, /Согласование теперь доступно только в Mini App/);
+  assert.match(miniappOnlyPatch, /График теперь меняется только в Mini App/);
+  assert.match(miniappOnlyPatch, /Согласуйте текст в Mini App через кнопку «Кабинет»/);
+  assert.match(miniappOnlyPatch, /^\+\s+await bot\.send_message\(chat_id=chat_id, text=text\)$/m);
+  assert.doesNotMatch(miniappOnlyPatch, /^\+.*_send_client_calendar_button/m);
+  assert.doesNotMatch(miniappOnlyPatch, /^\+.*callback_data=f"ctxt:/m);
+  assert.match(miniappOnlyPatch, /^-\s+BotCommand\(command="calendar"/m);
+  assert.match(miniappOnlyPatch, /^-\s+BotCommand\(command="my_schedule"/m);
+});
+
+test('Mini App access requires a live Mentori channel subscription', () => {
+  assert.match(channelGateSql, /channel_subscription_active boolean not null default false/);
+  assert.match(channelGateSql, /set_client_telegram_channel_subscription/);
+  assert.match(channelGateSql, /list_client_telegram_channel_members/);
+  assert.match(channelGateSql, /set revoked_at = coalesce\(revoked_at, now\(\)\)/);
+  assert.match(channelGateSql, /CHANNEL_SUBSCRIPTION_REQUIRED/);
+  assert.match(channelGateSql, /issue_client_telegram_webapp_token[\s\S]*channel_subscription_active/);
+  assert.match(channelGateSql, /issue_client_telegram_menu_token[\s\S]*channel_subscription_active/);
+  assert.match(channelGateSql, /activate_client_telegram_menu_token[\s\S]*member\.channel_subscription_active/);
+  assert.match(channelGateSql, /client_telegram_webapp_context[\s\S]*CHANNEL_SUBSCRIPTION_REQUIRED/);
+  assert.match(miniappOnlyPatch, /get_chat_member/);
+  assert.match(miniappOnlyPatch, /set_client_telegram_channel_subscription/);
+  assert.match(miniappOnlyPatch, /on_chat_member/);
+  assert.match(telegramCalendarJs, /CHANNEL_SUBSCRIPTION_REQUIRED/);
 });

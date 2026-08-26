@@ -27,7 +27,7 @@ test('Telegram direct menu keeps its bearer credential out of HTTP requests', ()
   assert.match(js, /fragmentParams/);
   assert.match(js, /location\.hash/);
   assert.match(js, /fragmentParams\.get\('token'\)/);
-  assert.match(html, /telegram-calendar\.js\?v=20260826f/);
+  assert.match(html, /telegram-calendar\.js\?v=20260827a/);
 });
 
 test('Telegram calendar reads capacity and schedules through bounded RPCs', () => {

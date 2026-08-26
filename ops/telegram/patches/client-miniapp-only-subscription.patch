@@ -1,0 +1,689 @@
+--- a/backend/bot.py
++++ b/backend/bot.py
+@@ -33,6 +33,7 @@
+     InlineKeyboardMarkup,
+     KeyboardButton,
+     Message,
++    MenuButtonCommands,
+     MenuButtonWebApp,
+     ReplyKeyboardMarkup,
+     WebAppInfo,
+@@ -1001,54 +1002,117 @@
+     except Exception:
+         log.warning("client cabinet menu setup failed for chat %s", chat_id, exc_info=True)
+         return False
+-
+-
+-async def _sync_client_cabinet_menu_buttons(bot: Bot) -> None:
+-    """Backfill the direct Mini App button for clients linked before release."""
+-    clients = await crm_client.list_clients_with_tg()
+-    configured = 0
+-    for client in clients:
+-        chat_id = client.get("chat_id")
+-        if not chat_id:
+-            continue
+-        if await _ensure_client_cabinet_menu_button(bot, int(chat_id)):
+-            configured += 1
+-        await asyncio.sleep(0.05)
+-    log.info("Client cabinet menu buttons ready: %s/%s", configured, len(clients))
+ 
+ 
+-async def _send_client_calendar_button(m: Message, initial_view: str = "home") -> bool:
+-    """Issue a fresh short-lived token instead of exposing portal credentials."""
+-    if m.chat.type != "private":
+-        return False
+-    result = await crm_client.issue_client_telegram_webapp_token(m.chat.id)
+-    token = result.get("token") if result.get("ok") else None
+-    if not token:
+-        await m.answer(
+-            "Календарь доступен после подключения Telegram к личному кабинету. "
+-            "Если аккаунт уже подключён, попросите менеджера проверить привязку."
++async def _client_channel_membership(bot: Bot, user_id: int) -> bool | None:
++    """Live subscription status. None means Telegram could not be checked."""
++    try:
++        member = await bot.get_chat_member(
++            f"@{client_ui.CHANNEL_USERNAME}", int(user_id)
+         )
+-        return False
+-    view = "calendar" if initial_view == "calendar" else "home"
+-    calendar_url = _client_cabinet_url(str(token), view)
+-    is_calendar = view == "calendar"
+-    markup = InlineKeyboardMarkup(inline_keyboard=[[
+-        InlineKeyboardButton(
+-            text="📅 Открыть календарь" if is_calendar else "📱 Открыть кабинет",
+-            web_app=WebAppInfo(url=calendar_url),
++    except Exception:
++        log.warning("channel membership check failed for user %s", user_id, exc_info=True)
++        return None
++    if member.status in {
++        ChatMemberStatus.MEMBER,
++        ChatMemberStatus.ADMINISTRATOR,
++        ChatMemberStatus.CREATOR,
++    }:
++        return True
++    return bool(
++        member.status == ChatMemberStatus.RESTRICTED
++        and getattr(member, "is_member", False)
++    )
++
++
++async def _clear_client_cabinet_menu_button(bot: Bot, chat_id: int) -> None:
++    """Remove the Mini App entry point until the channel gate is satisfied."""
++    try:
++        await bot.set_chat_menu_button(
++            chat_id=int(chat_id),
++            menu_button=MenuButtonCommands(),
+         )
+-    ]])
++    except Exception:
++        log.warning("client cabinet menu removal failed for chat %s", chat_id, exc_info=True)
++
++
++async def _prepare_client_miniapp_access(
++    m: Message,
++    bot: Bot,
++    *,
++    force: bool = False,
++) -> bool:
++    """Verify channel membership and expose only the persistent Mini App."""
++    membership = await _client_channel_membership(bot, m.from_user.id)
++    if membership is True:
++        result = await crm_client.set_client_telegram_channel_subscription(
++            m.chat.id, True
++        )
++        if result.get("ok") and await _ensure_client_cabinet_menu_button(
++            bot, m.chat.id, force=force
++        ):
++            return True
++        await _clear_client_cabinet_menu_button(bot, m.chat.id)
++        await m.answer(
++            "Не удалось открыть Mini App. Попробуйте ещё раз через /start чуть позже.",
++            reply_markup=client_ui.kb_client_root(),
++        )
++        return False
++
++    if membership is False:
++        await crm_client.set_client_telegram_channel_subscription(m.chat.id, False)
++        await _clear_client_cabinet_menu_button(bot, m.chat.id)
++        await m.answer(
++            f"Чтобы пользоваться личным кабинетом, подпишитесь на канал "
++            f"@{client_ui.CHANNEL_USERNAME}:\n"
++            f"https://t.me/{client_ui.CHANNEL_USERNAME}\n\n"
++            "После подписки кнопка «Кабинет» появится рядом с полем ввода. "
++            "Если она не появилась сразу, отправьте /start.",
++            reply_markup=client_ui.kb_client_root(),
++        )
++        return False
++
++    # A transient Telegram failure must not revoke already verified access.
++    if await _ensure_client_cabinet_menu_button(bot, m.chat.id, force=force):
++        return True
++    await _clear_client_cabinet_menu_button(bot, m.chat.id)
+     await m.answer(
+-        ("📅 <b>Календарь откликов</b>\n"
+-         "Выберите свободную дату или измените запланированный отклик.")
+-        if is_calendar else
+-        ("📱 <b>Личный кабинет Mentori</b>\n"
+-         "Анкеты, прогресс, опубликованные отзывы и календарь в одной мини-апке."),
+-        reply_markup=markup,
++        "Не удалось проверить подписку на канал. Попробуйте ещё раз через /start.",
++        reply_markup=client_ui.kb_client_root(),
+     )
+-    return True
++    return False
+ 
+ 
++async def _sync_client_cabinet_menu_buttons(bot: Bot) -> None:
++    """Verify every linked client and reconcile the subscription-gated menu."""
++    clients = await crm_client.list_client_telegram_channel_members()
++    configured = 0
++    denied = 0
++    for client in clients:
++        chat_id = client.get("telegram_chat_id")
++        user_id = client.get("telegram_user_id") or chat_id
++        if not chat_id or not user_id:
++            continue
++        membership = await _client_channel_membership(bot, int(user_id))
++        if membership is None:
++            continue
++        result = await crm_client.set_client_telegram_channel_subscription(
++            int(chat_id), membership
++        )
++        if not result.get("ok"):
++            continue
++        if membership and await _ensure_client_cabinet_menu_button(bot, int(chat_id)):
++            configured += 1
++        elif not membership:
++            await _clear_client_cabinet_menu_button(bot, int(chat_id))
++            denied += 1
++        await asyncio.sleep(0.05)
++    log.info(
++        "Client Mini App subscription sync: allowed=%s denied=%s total=%s",
++        configured, denied, len(clients),
++    )
++
++
+ # ─────────────────────────────────────────────
+ # Helpers
+ # ─────────────────────────────────────────────
+@@ -1160,8 +1224,7 @@
+                      if result.get("is_text_approver") else "")
+         await m.answer(f"✅ Telegram подключён. Контакт: <b>{html.escape(str(label))}</b>.{role_note}")
+         await client_ui.entry_start(m, bot, state)
+-        await _ensure_client_cabinet_menu_button(bot, m.chat.id, force=True)
+-        await _send_client_calendar_button(m)
++        await _prepare_client_miniapp_access(m, bot, force=True)
+         return
+ 
+     # ── Лид-магнит: вход по deep-link ?start=razbor (из рассылки) ──
+@@ -1197,8 +1260,7 @@
+     # личный кабинет, иначе — лид-меню (услуги/FAQ/связаться).
+     is_client = await client_ui.entry_start(m, bot, state)
+     if is_client:
+-        await _ensure_client_cabinet_menu_button(bot, m.chat.id)
+-        await _send_client_calendar_button(m)
++        await _prepare_client_miniapp_access(m, bot)
+ 
+ 
+ # ─────────────────────────────────────────────
+@@ -1213,6 +1275,17 @@
+ _ui = client_ui  # короткий алиас
+ 
+ 
++async def _show_client_miniapp_only(
++    m: Message,
++    bot: Bot,
++    state: FSMContext,
++) -> None:
++    """Replace every legacy client route with the Mini App entry flow."""
++    is_client = await _ui.entry_start(m, bot, state)
++    if is_client:
++        await _prepare_client_miniapp_access(m, bot)
++
++
+ # Все «лид-стейты» где допустимы глобальные nav-кнопки (Услуги/FAQ/Контакт/
+ # Канал/В начало). order_link / order_name / contact_awaiting сюда НЕ входят —
+ # в них юзер активно вводит данные и его текст не надо переинтерпретировать.
+@@ -1497,9 +1570,9 @@
+ 
+ 
+ @dp.message(Command("calendar"))
+-async def cmd_client_calendar(m: Message) -> None:
+-    """Open the client Mini App with a newly issued 30-minute token."""
+-    await _send_client_calendar_button(m, "calendar")
++async def cmd_client_calendar(m: Message, bot: Bot, state: FSMContext) -> None:
++    """Legacy command: point clients to the persistent Mini App menu."""
++    await _show_client_miniapp_only(m, bot, state)
+ 
+ 
+ @dp.message(
+@@ -1511,8 +1584,8 @@
+     ),
+     F.text == _ui.BTN_CAB_CALENDAR,
+ )
+-async def ui_client_calendar(m: Message) -> None:
+-    await _send_client_calendar_button(m)
++async def ui_client_calendar(m: Message, bot: Bot, state: FSMContext) -> None:
++    await _show_client_miniapp_only(m, bot, state)
+ 
+ 
+ # ── CRM-кабинет ──────────────────────────────────────────────────────────
+@@ -1522,65 +1595,49 @@
+ 
+ 
+ @dp.message(_ui.ClientUIFSM.client_root, F.text == _ui.BTN_CAB_CHANNEL)
+-async def ui_client_channel(m: Message):
+-    await m.answer(f"https://t.me/{_ui.CHANNEL_USERNAME}")
++async def ui_client_channel(m: Message, bot: Bot, state: FSMContext):
++    await _show_client_miniapp_only(m, bot, state)
+ 
+ 
+ @dp.message(_ui.ClientUIFSM.client_root, F.text == _ui.BTN_CAB_SCHEDULE)
+-async def ui_client_schedule(m: Message, bot: Bot):
+-    """Клиент: «📅 Запланированные отклики» из reply-клавиатуры кабинета."""
+-    await schedule_reminder.send_my_schedule(bot, m.chat.id, is_owner=False)
++async def ui_client_schedule(m: Message, bot: Bot, state: FSMContext):
++    await _show_client_miniapp_only(m, bot, state)
+ 
+ 
+ @dp.message(_ui.ClientUIFSM.client_root, F.text == _ui.BTN_CAB_ANKETAS)
+-async def ui_client_open_anketas(m: Message, state: FSMContext):
+-    """«📋 Анкеты» → отдельный экран со списком анкет."""
+-    await _ui.show_client_anketas_list(m, state)
++async def ui_client_open_anketas(m: Message, bot: Bot, state: FSMContext):
++    await _show_client_miniapp_only(m, bot, state)
+ 
+ 
+ @dp.message(_ui.ClientUIFSM.client_root)
+-async def ui_client_root_fallback(m: Message, state: FSMContext):
+-    """Любой неизвестный текст в корне — перерисуем кабинет."""
+-    await _ui.show_client_root(m, state)
++async def ui_client_root_fallback(m: Message, bot: Bot, state: FSMContext):
++    await _show_client_miniapp_only(m, bot, state)
+ 
+ 
+ # ── Экран «список анкет» — клиент выбирает конкретную ────────────────────
+ @dp.message(_ui.ClientUIFSM.client_anketas_list, F.text == _ui.BTN_BACK_ROOT)
+-async def ui_anketas_list_back(m: Message, state: FSMContext):
+-    await _ui.show_client_root(m, state)
++async def ui_anketas_list_back(m: Message, bot: Bot, state: FSMContext):
++    await _show_client_miniapp_only(m, bot, state)
+ 
+ 
+ @dp.message(_ui.ClientUIFSM.client_anketas_list, F.text == _ui.BTN_CAB_SCHEDULE)
+-async def ui_anketas_list_schedule(m: Message, bot: Bot):
+-    await schedule_reminder.send_my_schedule(bot, m.chat.id, is_owner=False)
++async def ui_anketas_list_schedule(m: Message, bot: Bot, state: FSMContext):
++    await _show_client_miniapp_only(m, bot, state)
+ 
+ 
+ @dp.message(_ui.ClientUIFSM.client_anketas_list)
+-async def ui_anketas_list_pick(m: Message, state: FSMContext):
+-    """Выбор конкретной анкеты по тексту кнопки."""
+-    data = await state.get_data()
+-    anketa_map: dict[str, str] = data.get("anketa_map") or {}
+-    label = (m.text or "").strip()
+-    mentor_id = anketa_map.get(label)
+-    if not mentor_id:
+-        # неизвестный текст — переотрисуем список
+-        await _ui.show_client_anketas_list(m, state)
+-        return
+-    await _ui.show_anketa(m, state, mentor_id)
++async def ui_anketas_list_pick(m: Message, bot: Bot, state: FSMContext):
++    await _show_client_miniapp_only(m, bot, state)
+ 
+ 
+ @dp.message(_ui.ClientUIFSM.client_anketa, F.text == _ui.BTN_CAB_ACCOUNTS)
+-async def ui_anketa_to_accounts(m: Message, state: FSMContext):
+-    data = await state.get_data()
+-    mid = data.get("mentor_id")
+-    if not mid:
+-        await _ui.show_client_anketas_list(m, state); return
+-    await _ui.show_accounts(m, state, mid)
++async def ui_anketa_to_accounts(m: Message, bot: Bot, state: FSMContext):
++    await _show_client_miniapp_only(m, bot, state)
+ 
+ 
+ @dp.message(_ui.ClientUIFSM.client_anketa, F.text == _ui.BTN_CAB_BACK_ANKS)
+-async def ui_anketa_back(m: Message, state: FSMContext):
+-    await _ui.show_client_anketas_list(m, state)
++async def ui_anketa_back(m: Message, bot: Bot, state: FSMContext):
++    await _show_client_miniapp_only(m, bot, state)
+ 
+ 
+ @dp.message(_ui.ClientUIFSM.client_anketa, F.text == _ui.BTN_CAB_CONTACT)
+@@ -1589,17 +1646,13 @@
+ 
+ 
+ @dp.message(_ui.ClientUIFSM.client_accounts, F.text == _ui.BTN_CAB_BACK_ANK)
+-async def ui_accounts_back_anketa(m: Message, state: FSMContext):
+-    data = await state.get_data()
+-    mid = data.get("mentor_id")
+-    if not mid:
+-        await _ui.show_client_anketas_list(m, state); return
+-    await _ui.show_anketa(m, state, mid)
++async def ui_accounts_back_anketa(m: Message, bot: Bot, state: FSMContext):
++    await _show_client_miniapp_only(m, bot, state)
+ 
+ 
+ @dp.message(_ui.ClientUIFSM.client_accounts, F.text == _ui.BTN_CAB_BACK_ANKS)
+-async def ui_accounts_back_anks(m: Message, state: FSMContext):
+-    await _ui.show_client_anketas_list(m, state)
++async def ui_accounts_back_anks(m: Message, bot: Bot, state: FSMContext):
++    await _show_client_miniapp_only(m, bot, state)
+ 
+ 
+ # ── Контакт с менеджером (общий FSM для лида и CRM-клиента) ──────────────
+@@ -1670,22 +1723,15 @@
+ # ─────────────────────────────────────────────
+ @dp.callback_query(F.data.startswith("sched:"))
+ async def on_schedule_callback(cb: CallbackQuery, bot: Bot, state: FSMContext) -> None:
+-    """Все callback'и формата `sched:*` — многошаговый диалог
+-    «Да/Нет → дата (если перенос) → время → готово». FSM-state передаётся
+-    для шага «✏ другое время» где бот переходит в ожидание текста."""
+-    owner = await get_owner_chat_id()
+-    chat_id = cb.message.chat.id if cb.message else None
+-    message_id = cb.message.message_id if cb.message else None
+-    if chat_id is None or message_id is None:
+-        return
+-    await schedule_reminder.handle_poll_callback(
+-        bot=bot,
+-        callback_id=cb.id,
+-        chat_id=chat_id,
+-        message_id=message_id,
+-        callback_data=cb.data or "",
+-        owner_chat_id=owner,
+-        state_ctx=state,
++    """Disable actions left in historical messages after the Mini App move."""
++    if cb.message:
++        try:
++            await cb.message.edit_reply_markup(reply_markup=None)
++        except Exception:
++            pass
++    await cb.answer(
++        "График теперь меняется только в Mini App через кнопку «Кабинет».",
++        show_alert=True,
+     )
+ 
+ 
+@@ -1730,6 +1776,17 @@
+     state: FSMContext,
+ ) -> None:
+     """The primary client contact approves text or starts a correction reply."""
++    if cb.message:
++        try:
++            await cb.message.edit_reply_markup(reply_markup=None)
++        except Exception:
++            pass
++    await cb.answer(
++        "Согласование теперь доступно только в Mini App через кнопку «Кабинет».",
++        show_alert=True,
++    )
++    return
++
+     parts = (cb.data or "").split(":")
+     if len(parts) != 3 or parts[1] not in ("a", "r", "c", "x"):
+         await cb.answer()
+@@ -2025,10 +2082,13 @@
+ #   - иначе ищем portal по chat_id → показываем только его анкеты с
+ #     кнопками «✏ Изменить ответ» под каждой.
+ @dp.message(Command("my_schedule"))
+-async def cmd_my_schedule(m: Message, bot: Bot) -> None:
++async def cmd_my_schedule(m: Message, bot: Bot, state: FSMContext) -> None:
+     owner = await get_owner_chat_id()
+     is_owner = _is_owner(m.chat.id, owner)
+-    await schedule_reminder.send_my_schedule(bot, m.chat.id, is_owner)
++    if is_owner:
++        await schedule_reminder.send_my_schedule(bot, m.chat.id, True)
++        return
++    await _show_client_miniapp_only(m, bot, state)
+ 
+ 
+ # ── /run_morning — owner-only ручной триггер утренней рассылки ───────
+@@ -2409,9 +2469,6 @@
+ 
+ @dp.chat_member()
+ async def on_chat_member(event: ChatMemberUpdated, bot: Bot):
+-    owner = await get_owner_chat_id()
+-    if owner is None:
+-        return
+     new, old = event.new_chat_member, event.old_chat_member
+     user, chat = new.user, event.chat
+     if user.is_bot:
+@@ -2424,6 +2481,22 @@
+     elif was_member and not is_member:
+         action = "👋 <b>Отписался</b>"
+     else:
++        return
++
++    # Client Mini App access follows the actual Mentori channel membership.
++    channel_username = str(chat.username or "").lstrip("@").lower()
++    if channel_username == client_ui.CHANNEL_USERNAME.lower():
++        result = await crm_client.set_client_telegram_channel_subscription(
++            user.id, is_member
++        )
++        if result.get("ok"):
++            if is_member:
++                await _ensure_client_cabinet_menu_button(bot, user.id, force=True)
++            else:
++                await _clear_client_cabinet_menu_button(bot, user.id)
++
++    owner = await get_owner_chat_id()
++    if owner is None:
+         return
+ 
+     # Фиксируем: с рассылки ли этот человек (матч по user_id) + ставим subscribed_at
+@@ -2518,7 +2591,9 @@
+ 
+     # Клиент — заходим заново, без потери UX
+     try:
+-        await client_ui.entry_start(m, bot, state)
++        is_client = await client_ui.entry_start(m, bot, state)
++        if is_client:
++            await _prepare_client_miniapp_access(m, bot)
+     except Exception as e:
+         log.warning("fallback entry_start failed for chat %s: %s", m.chat.id, e)
+ 
+@@ -2640,8 +2715,6 @@
+     try:
+         await bot.set_my_commands([
+             BotCommand(command="start", description="Открыть главное меню"),
+-            BotCommand(command="calendar", description="Открыть календарь откликов"),
+-            BotCommand(command="my_schedule", description="Показать запланированные отклики"),
+         ])
+     except Exception:
+         log.warning("Не удалось обновить список команд Telegram", exc_info=True)
+--- a/backend/client_ui.py
++++ b/backend/client_ui.py
+@@ -55,7 +55,7 @@
+     lm_review          = State()    # ждём ссылку на профиль Profi.ru для разбора
+ 
+     # CRM-клиент
+-    client_root          = State()    # корень кабинета: 4 главных кнопки
++    client_root          = State()    # корень кабинета: только связь с менеджером
+     client_anketas_list  = State()    # data: anketa_map (button_text → mentor_id)
+     client_anketa        = State()    # data: mentor_id
+     client_accounts      = State()    # data: mentor_id
+@@ -270,41 +270,24 @@
+ 
+ 
+ def kb_client_root(anketas: list[dict[str, Any]] | None = None) -> ReplyKeyboardMarkup:
+-    """Главное меню CRM-клиента. Список анкет открывается
+-    отдельным экраном по кнопке «📋 Анкеты», чтобы не засорять клавиатуру."""
+-    return _kb([
+-        [BTN_CAB_CALENDAR],
+-        [BTN_CAB_ANKETAS],
+-        [BTN_CAB_SCHEDULE],
+-        [BTN_CAB_CONTACT],
+-        [BTN_CAB_CHANNEL],
+-    ])
++    """В чате клиенту доступна только связь с менеджером.
++
++    Кабинет, анкеты, согласования и календарь открываются через постоянную
++    кнопку Telegram Mini App рядом с полем ввода.
++    """
++    return _kb([[BTN_CAB_CONTACT]])
+ 
+ 
+ def kb_client_anketas_list(anketas: list[dict[str, Any]]) -> ReplyKeyboardMarkup:
+-    rows = []
+-    for a in anketas:
+-        label = f"📋 {a['code']}"
+-        if a.get("name"):
+-            label += f" · {a['name']}"
+-        rows.append([label])
+-    rows.append([BTN_BACK_ROOT])
+-    return _kb(rows)
++    return kb_client_root(anketas)
+ 
+ 
+ def kb_client_anketa() -> ReplyKeyboardMarkup:
+-    return _kb([
+-        [BTN_CAB_ACCOUNTS],
+-        [BTN_CAB_BACK_ANKS],
+-        [BTN_CAB_CONTACT],
+-    ])
++    return kb_client_root()
+ 
+ 
+ def kb_client_accounts() -> ReplyKeyboardMarkup:
+-    return _kb([
+-        [BTN_CAB_BACK_ANK],
+-        [BTN_CAB_BACK_ANKS],
+-    ])
++    return kb_client_root()
+ 
+ 
+ def kb_contact_cancel() -> ReplyKeyboardMarkup:
+@@ -509,9 +492,7 @@
+     await m.answer(text, reply_markup=reply_markup)
+ 
+ async def show_client_root(m: Message, state: FSMContext) -> None:
+-    """Главный экран кабинета — 4 ключевые кнопки. Anketa_map сохраняем
+-    в state чтобы клавиатура «📋 Анкеты» могла его подтянуть без
+-    повторного запроса в Supabase."""
++    """Главный экран чата: Mini App для работы и одна кнопка менеджера."""
+     view = await crm_client.build_client_view(m.chat.id)
+     if view is None:
+         await state.set_state(ClientUIFSM.client_root)
+@@ -538,9 +519,10 @@
+     await _answer_client_visual(
+         m,
+         f"👋 Привет, <b>{html.escape(name)}</b>!\n"
+-        f"Это твой кабинет Mentori.\n\n"
++        f"Личный кабинет Mentori открывается кнопкой <b>«Кабинет»</b> "
++        f"рядом с полем ввода.\n\n"
+         f"📋 Анкет в работе: <b>{len(anketas)}</b>\n\n"
+-        "Выбери раздел внизу 👇",
++        "Если нужна помощь, напиши менеджеру 👇",
+         kb_client_root(),
+     )
+ 
+--- a/backend/crm_client.py
++++ b/backend/crm_client.py
+@@ -300,6 +300,24 @@
+         "p_token": token,
+     })
+     return bool(body) if ok else False
++
++
++async def set_client_telegram_channel_subscription(
++    telegram_chat_id: int,
++    is_subscribed: bool,
++) -> dict[str, Any]:
++    """Persist a live Telegram channel membership check for Mini App access."""
++    ok, body = await _rpc("set_client_telegram_channel_subscription", {
++        "p_telegram_chat_id": int(telegram_chat_id),
++        "p_is_subscribed": bool(is_subscribed),
++    })
++    return body if ok and isinstance(body, dict) else {"ok": False}
++
++
++async def list_client_telegram_channel_members() -> list[dict[str, Any]]:
++    """All active linked contacts, including those currently unsubscribed."""
++    ok, body = await _rpc("list_client_telegram_channel_members", {})
++    return body if ok and isinstance(body, list) else []
+ 
+ 
+ async def register_client_referral(
+--- a/backend/notifier.py
++++ b/backend/notifier.py
+@@ -39,7 +39,6 @@
+ import logging
+ import signal
+ from typing import Any
+-from urllib.parse import quote
+ 
+ import aiohttp
+ 
+@@ -51,7 +50,6 @@
+ 
+ 
+ REST_TIMEOUT = aiohttp.ClientTimeout(total=15)
+-CALENDAR_WEB_APP_URL = "https://app.mentori.tech/pages/client/telegram-calendar.html"
+ 
+ 
+ def _supabase_headers() -> dict[str, str]:
+@@ -120,23 +118,6 @@
+     ))
+ 
+ 
+-async def _calendar_web_app_url(
+-    session: aiohttp.ClientSession,
+-    telegram_chat_id: int,
+-) -> str | None:
+-    url = f"{settings.supabase_url}/rest/v1/rpc/issue_client_telegram_webapp_token"
+-    async with session.post(
+-        url,
+-        headers=_supabase_headers(),
+-        json={"p_telegram_chat_id": int(telegram_chat_id)},
+-    ) as resp:
+-        if resp.status != 200:
+-            return None
+-        payload = await resp.json()
+-    token = payload.get("token") if isinstance(payload, dict) and payload.get("ok") else None
+-    return f"{CALENDAR_WEB_APP_URL}?token={quote(str(token), safe='')}" if token else None
+-
+-
+ async def _process_one(session: aiohttp.ClientSession, row: dict[str, Any]) -> None:
+     row_id = row["id"]
+     chat_id = row.get("telegram_chat_id")
+@@ -150,16 +131,6 @@
+     # Для заявок на оплату (kind='client_order') добавляем inline-кнопки
+     # «Подтвердить/Отклонить». order_id лежит в mentor_id (так его кладёт триггер).
+     reply_markup = None
+-    calendar_url = None
+-    if row.get("client_email") and row.get("kind") in {
+-        "schedule", "status_change", "review_published", "low_reviews",
+-        "order_completed", "client_text_approval",
+-    }:
+-        try:
+-            calendar_url = await _calendar_web_app_url(session, int(chat_id))
+-        except Exception:
+-            log.warning("calendar token issue failed for chat %s", chat_id, exc_info=True)
+-
+     if row.get("kind") == "client_order" and row.get("mentor_id"):
+         oid = str(row["mentor_id"])
+         reply_markup = {"inline_keyboard": [[
+@@ -172,18 +143,11 @@
+             {"text": "✓ Подтвердить дату", "callback_data": f"cpub:c:{request_id}"},
+             {"text": "✕ Отклонить", "callback_data": f"cpub:r:{request_id}"},
+         ]]}
+-    elif row.get("kind") == "client_text_approval" and row.get("action_ref"):
+-        request_id = str(row["action_ref"])
+-        reply_markup = {"inline_keyboard": [[
+-            {"text": "✓ Согласовать", "callback_data": f"ctxt:a:{request_id}"},
+-            {"text": "✕ Отменить", "callback_data": f"ctxt:c:{request_id}"},
+-        ]]}
+-    if calendar_url:
+-        calendar_button = {"text": "📅 Открыть календарь", "web_app": {"url": calendar_url}}
+-        if reply_markup is None:
+-            reply_markup = {"inline_keyboard": [[calendar_button]]}
+-        else:
+-            reply_markup["inline_keyboard"].append([calendar_button])
++    elif row.get("kind") == "client_text_approval":
++        message = (
++            f"{message}\n\n"
++            "Согласуйте текст в Mini App через кнопку «Кабинет» рядом с полем ввода."
++        )
+     try:
+         await bot_notify.send_order_status_message(int(chat_id), message, reply_markup=reply_markup)
+         await _mark_sent(session, row_id)
+--- a/backend/schedule_reminder.py
++++ b/backend/schedule_reminder.py
+@@ -247,7 +247,7 @@
+                 lines.append(f"  • <code>{c['code']}</code> · {c['name']} · {c['count']} откл.")
+         if any(c.get("telegramChatId") for c in clients_today):
+             lines.append("")
+-            lines.append("📱 — клиенту параллельно отправлен опрос «Сможете сегодня?»")
++            lines.append("📱 — клиенту параллельно отправлено напоминание")
+         _append_status_actions(lines, status_due, status_tomorrow)
+         text = "\n".join(lines)
+     try:
+@@ -375,7 +375,7 @@
+ # ── Отправка первого вопроса клиенту ─────────────────────────────────────────
+ 
+ async def send_client_poll(bot: Bot, client: dict[str, Any], today_iso: str) -> bool:
+-    """Шлёт клиенту вопрос Да/Нет. Возвращает True если отправлено."""
++    """Шлёт напоминание без действий: весь график управляется в Mini App."""
+     chat_id = client.get("telegramChatId")
+     if not chat_id:
+         return False
+@@ -383,14 +383,11 @@
+     text = (
+         "🌅 <b>Доброе утро!</b>\n\n"
+         f"По анкете «<b>{anketa_name}</b>» сегодня запланирован отклик.\n"
+-        "Сможете сделать сегодня?"
++        "Проверить или изменить график можно в Mini App через кнопку "
++        "«Кабинет» рядом с полем ввода."
+     )
+     try:
+-        await bot.send_message(
+-            chat_id=chat_id,
+-            text=text,
+-            reply_markup=_kb_yes_no(client.get("mentorId") or "", today_iso),
+-        )
++        await bot.send_message(chat_id=chat_id, text=text)
+         await write_response(
+             client_email=client.get("portalEmail"),
+             client_name=client.get("portalName") or client.get("name"),
