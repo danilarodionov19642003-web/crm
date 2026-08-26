@@ -20,6 +20,13 @@ test('Telegram calendar uses short-lived hashed tokens without portal password',
   assert.doesNotMatch(js, /signIn|password|localStorage/);
 });
 
+test('Telegram direct menu keeps its bearer credential out of HTTP requests', () => {
+  assert.match(js, /fragmentParams/);
+  assert.match(js, /location\.hash/);
+  assert.match(js, /fragmentParams\.get\('token'\)/);
+  assert.match(html, /telegram-calendar\.js\?v=20260826c/);
+});
+
 test('Telegram calendar reads capacity and schedules through bounded RPCs', () => {
   assert.match(sql, /get_client_telegram_calendar/);
   assert.match(sql, /manage_client_telegram_outreach_slot/);

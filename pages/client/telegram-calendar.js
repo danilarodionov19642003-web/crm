@@ -8,8 +8,10 @@
   };
   const tg = window.Telegram && window.Telegram.WebApp;
   const params = new URLSearchParams(location.search);
-  const token = params.get('token') || '';
-  const initialView = params.get('view') === 'home' ? 'home' : 'calendar';
+  const fragmentParams = new URLSearchParams(String(location.hash || '').replace(/^#/, ''));
+  const token = fragmentParams.get('token') || params.get('token') || '';
+  const requestedView = fragmentParams.get('view') || params.get('view');
+  const initialView = requestedView === 'home' ? 'home' : 'calendar';
   const state = {
     payload: null,
     mentorId: '',
@@ -98,7 +100,7 @@
   function errorMessage(error) {
     const raw = String(error && error.message || error || '');
     if (raw.includes('TOKEN_INVALID_OR_EXPIRED') || Number(error && error.status) === 401) {
-      return 'Ссылка устарела. Откройте кабинет заново из свежего сообщения бота.';
+      return 'Доступ устарел. Нажмите «Кабинет» рядом с полем ввода или откройте новое сообщение бота.';
     }
     if (raw.includes('DAY_FULL')) return 'На этот день свободных мест уже нет.';
     if (raw.includes('SCHEDULE_LIMIT_REACHED')) return 'Все доступные отклики уже запланированы.';

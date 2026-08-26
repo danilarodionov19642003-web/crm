@@ -39,6 +39,12 @@ compact visual cabinet, keeps `/calendar` focused on the calendar tab, and adds
 branded welcome photos plus real anketa avatars to the bot dialog. Apply it
 after `client-calendar-menu.patch`.
 
+`client-direct-menu-app.patch` replaces the per-client Telegram command menu
+button with a direct `Кабинет` Mini App button. Existing linked clients are
+backfilled on bot start, and newly linked clients get it immediately. It uses a
+separate revocable menu credential whose raw value stays in the URL fragment.
+Apply it after `client-visual-cabinet.patch`.
+
 Apply from the bot repository root with zero-context support:
 
 ```bash

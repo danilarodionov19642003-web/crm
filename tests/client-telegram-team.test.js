@@ -24,6 +24,8 @@ const botPatch = read('ops/telegram/patches/client-telegram-team.patch');
 const notificationBotPatch = read('ops/telegram/patches/client-notification-upgrades.patch');
 const calendarMenuBotPatch = read('ops/telegram/patches/client-calendar-menu.patch');
 const visualCabinetBotPatch = read('ops/telegram/patches/client-visual-cabinet.patch');
+const directMenuAppPatch = read('ops/telegram/patches/client-direct-menu-app.patch');
+const directMenuSql = read('sql/migrations/2026-08-26_client_telegram_direct_menu.sql');
 
 test('client login uses an immutable portal key', () => {
   const supabase = read('js/supabase-client.js');
@@ -181,4 +183,17 @@ test('bot patch links before ordinary start routing and supports decisions', () 
   assert.match(visualCabinetBotPatch, /avatar_url/);
   assert.match(visualCabinetBotPatch, /initial_view/);
   assert.match(visualCabinetBotPatch, /"calendar"/);
+  assert.match(directMenuAppPatch, /MenuButtonWebApp/);
+  assert.match(directMenuAppPatch, /text="Кабинет"/);
+  assert.match(directMenuAppPatch, /set_chat_menu_button/);
+  assert.match(directMenuAppPatch, /get_chat_menu_button/);
+  assert.match(directMenuAppPatch, /#token=/);
+  assert.match(directMenuAppPatch, /_sync_client_cabinet_menu_buttons/);
+  assert.match(directMenuAppPatch, /force=True/);
+  assert.match(directMenuSql, /token_kind text not null default 'session'/);
+  assert.match(directMenuSql, /issue_client_telegram_menu_token/);
+  assert.match(directMenuSql, /activate_client_telegram_menu_token/);
+  assert.match(directMenuSql, /digest\(v_token, 'sha256'\)/);
+  assert.match(directMenuSql, /member\.is_active/);
+  assert.match(directMenuSql, /auth\.role\(\) <> 'service_role'/);
 });

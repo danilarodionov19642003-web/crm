@@ -1,0 +1,141 @@
+--- a/backend/bot.py
++++ b/backend/bot.py
+@@ -33,6 +33,7 @@
+     InlineKeyboardMarkup,
+     KeyboardButton,
+     Message,
++    MenuButtonWebApp,
+     ReplyKeyboardMarkup,
+     WebAppInfo,
+ )
+@@ -952,6 +953,68 @@
+ 
+ 
+ CALENDAR_WEB_APP_URL = "https://app.mentori.tech/pages/client/telegram-calendar.html"
++
++
++def _client_cabinet_url(token: str, initial_view: str = "home") -> str:
++    """Keep bearer tokens in the URL fragment so they never reach web logs."""
++    view = "calendar" if initial_view == "calendar" else "home"
++    return (
++        f"{CALENDAR_WEB_APP_URL}#token={quote(str(token), safe='')}&view={view}"
++    )
++
++
++async def _ensure_client_cabinet_menu_button(
++    bot: Bot,
++    chat_id: int,
++    *,
++    force: bool = False,
++) -> bool:
++    """Put a direct, persistent Mini App button beside the message field."""
++    try:
++        if not force:
++            current = await bot.get_chat_menu_button(chat_id=int(chat_id))
++            current_url = str(getattr(getattr(current, "web_app", None), "url", "") or "")
++            if (
++                isinstance(current, MenuButtonWebApp)
++                and current.text == "Кабинет"
++                and current_url.startswith(f"{CALENDAR_WEB_APP_URL}#token=")
++            ):
++                return True
++
++        result = await crm_client.issue_client_telegram_menu_token(int(chat_id))
++        token = result.get("token") if result.get("ok") else None
++        if not token:
++            return False
++        menu_url = _client_cabinet_url(str(token), "home")
++        await bot.set_chat_menu_button(
++            chat_id=int(chat_id),
++            menu_button=MenuButtonWebApp(
++                text="Кабинет",
++                web_app=WebAppInfo(url=menu_url),
++            ),
++        )
++        if not await crm_client.activate_client_telegram_menu_token(
++            int(chat_id), str(token)
++        ):
++            log.warning("menu token activation failed for chat %s", chat_id)
++        return True
++    except Exception:
++        log.warning("client cabinet menu setup failed for chat %s", chat_id, exc_info=True)
++        return False
++
++
++async def _sync_client_cabinet_menu_buttons(bot: Bot) -> None:
++    """Backfill the direct Mini App button for clients linked before release."""
++    clients = await crm_client.list_clients_with_tg()
++    configured = 0
++    for client in clients:
++        chat_id = client.get("chat_id")
++        if not chat_id:
++            continue
++        if await _ensure_client_cabinet_menu_button(bot, int(chat_id)):
++            configured += 1
++        await asyncio.sleep(0.05)
++    log.info("Client cabinet menu buttons ready: %s/%s", configured, len(clients))
+ 
+ 
+ async def _send_client_calendar_button(m: Message, initial_view: str = "home") -> bool:
+@@ -967,9 +1030,7 @@
+         )
+         return False
+     view = "calendar" if initial_view == "calendar" else "home"
+-    calendar_url = (
+-        f"{CALENDAR_WEB_APP_URL}?token={quote(str(token), safe='')}&view={view}"
+-    )
++    calendar_url = _client_cabinet_url(str(token), view)
+     is_calendar = view == "calendar"
+     markup = InlineKeyboardMarkup(inline_keyboard=[[
+         InlineKeyboardButton(
+@@ -1099,6 +1160,7 @@
+                      if result.get("is_text_approver") else "")
+         await m.answer(f"✅ Telegram подключён. Контакт: <b>{html.escape(str(label))}</b>.{role_note}")
+         await client_ui.entry_start(m, bot, state)
++        await _ensure_client_cabinet_menu_button(bot, m.chat.id, force=True)
+         await _send_client_calendar_button(m)
+         return
+ 
+@@ -1135,6 +1197,7 @@
+     # личный кабинет, иначе — лид-меню (услуги/FAQ/связаться).
+     is_client = await client_ui.entry_start(m, bot, state)
+     if is_client:
++        await _ensure_client_cabinet_menu_button(bot, m.chat.id)
+         await _send_client_calendar_button(m)
+ 
+ 
+@@ -2582,6 +2645,7 @@
+         ])
+     except Exception:
+         log.warning("Не удалось обновить список команд Telegram", exc_info=True)
++    await _sync_client_cabinet_menu_buttons(bot)
+     log.info("Бот запущен: @%s (id=%s)", me.username, me.id)
+ 
+     # Утренние напоминания по графику отзывов (settings.schedule_reminder_hour
+--- a/backend/crm_client.py
++++ b/backend/crm_client.py
+@@ -282,6 +282,24 @@
+         "issue_client_telegram_webapp_token", {"p_telegram_chat_id": int(telegram_chat_id)}
+     )
+     return body if ok and isinstance(body, dict) else {"ok": False}
++
++
++async def issue_client_telegram_menu_token(telegram_chat_id: int) -> dict[str, Any]:
++    ok, body = await _rpc(
++        "issue_client_telegram_menu_token", {"p_telegram_chat_id": int(telegram_chat_id)}
++    )
++    return body if ok and isinstance(body, dict) else {"ok": False}
++
++
++async def activate_client_telegram_menu_token(
++    telegram_chat_id: int,
++    token: str,
++) -> bool:
++    ok, body = await _rpc("activate_client_telegram_menu_token", {
++        "p_telegram_chat_id": int(telegram_chat_id),
++        "p_token": token,
++    })
++    return bool(body) if ok else False
+ 
+ 
+ async def register_client_referral(
