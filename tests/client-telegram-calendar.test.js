@@ -11,6 +11,7 @@ const css = read('pages/client/telegram-calendar.css');
 const sql = read('sql/migrations/2026-08-26_client_telegram_calendar.sql');
 const cabinetSql = read('sql/migrations/2026-08-26_client_telegram_miniapp_cabinet.sql');
 const sundaySql = read('sql/migrations/2026-08-26_client_outreach_sunday_day_off.sql');
+const capacitySql = read('sql/migrations/2026-08-26_client_outreach_daily_capacity.sql');
 
 test('Telegram calendar uses short-lived hashed tokens without portal password', () => {
   assert.match(sql, /token_hash bytea not null unique/);
@@ -25,7 +26,7 @@ test('Telegram direct menu keeps its bearer credential out of HTTP requests', ()
   assert.match(js, /fragmentParams/);
   assert.match(js, /location\.hash/);
   assert.match(js, /fragmentParams\.get\('token'\)/);
-  assert.match(html, /telegram-calendar\.js\?v=20260826d/);
+  assert.match(html, /telegram-calendar\.js\?v=20260826e/);
 });
 
 test('Telegram calendar reads capacity and schedules through bounded RPCs', () => {
@@ -72,4 +73,13 @@ test('Mini App marks Sundays as days off after the preserved nearest Sunday', ()
   assert.match(js, /dayOff \? 'выходной'/);
   assert.match(css, /\.tgcal-day\.is-day-off/);
   assert.match(sundaySql, /OUTREACH_DAY_OFF/);
+});
+
+test('Mini App applies the shared weekday, Saturday and Sunday capacity', () => {
+  assert.match(js, /function outreachCapacityForDate/);
+  assert.match(js, /day === 6 \? 3 : 7/);
+  assert.match(js, /OUTREACH_SATURDAY_FULL/);
+  assert.match(capacitySql, /client_outreach_capacity/);
+  assert.match(capacitySql, /get_client_telegram_calendar_v1/);
+  assert.match(capacitySql, /OUTREACH_SATURDAY_FULL/);
 });

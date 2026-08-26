@@ -851,62 +851,6 @@
       </button>`;
     }
 
-    function clientPortalForClient(client) {
-      const code = String(client && client.code || '').trim().toLowerCase();
-      if (!code) return null;
-      const mentorIds = new Set((Store.state.mentors || [])
-        .filter(mentor => String(mentor.code || '').trim().toLowerCase() === code)
-        .map(mentor => mentor.id));
-      if (!mentorIds.size) return null;
-      return (Store.state.clientPortals || []).find(portal =>
-        (portal.mentorIds || []).some(mentorId => mentorIds.has(mentorId))
-      ) || null;
-    }
-
-    async function createOwnerTelegramLink(client, button) {
-      const portal = clientPortalForClient(client);
-      if (!portal || !portal.email) {
-        toast('У этой анкеты пока нет личного кабинета.', 'error');
-        return;
-      }
-      const sb = window.Supabase;
-      if (!sb || typeof sb.authFetch !== 'function') {
-        toast('Нет связи с сервером. Обнови страницу.', 'error');
-        return;
-      }
-      button.disabled = true;
-      try {
-        const response = await sb.authFetch(`${sb.URL}/rest/v1/rpc/create_client_telegram_invite_for_owner`, {
-          method: 'POST',
-          headers: { apikey: sb.KEY, 'Content-Type': 'application/json', Accept: 'application/json' },
-          body: JSON.stringify({
-            p_portal_email: portal.email,
-            p_contact_label: portal.name || client.customer || client.name || null,
-            p_is_text_approver: false
-          })
-        });
-        const result = await response.json().catch(() => ({}));
-        if (!response.ok || !result.token) {
-          throw new Error(String(result.message || result.details || `HTTP ${response.status}`));
-        }
-        const url = `https://t.me/${encodeURIComponent(result.bot_username || 'MentoriTG_bot')}?start=link_${encodeURIComponent(result.token)}`;
-        try {
-          await navigator.clipboard.writeText(url);
-          toast(`Ссылка для ${portal.name || portal.email} скопирована. Действует 24 часа и только один раз.`);
-        } catch (_) {
-          window.prompt('Скопируй ссылку для клиента. Она действует 24 часа и только один раз.', url);
-        }
-      } catch (error) {
-        const raw = String(error && error.message || error || '');
-        if (raw.includes('MEMBER_LIMIT_REACHED')) toast('К кабинету уже подключено максимальное число Telegram-контактов.', 'error');
-        else if (raw.includes('PORTAL_NOT_FOUND')) toast('Снимок личного кабинета ещё не создан. Сохрани CRM и повтори.', 'error');
-        else if (raw.includes('AUTH_REQUIRED')) toast('Создать ссылку может только владелец CRM.', 'error');
-        else toast('Не удалось создать ссылку Telegram. Попробуй ещё раз.', 'error');
-      } finally {
-        button.disabled = false;
-      }
-    }
-
     function clientActionsHtml(r, className = 'cl-card__actions') {
       return `
         <div class="${className}">
@@ -919,9 +863,6 @@
           <button class="btn btn--ghost btn--sm" data-act="schedule" title="График откликов по дням">
             ${ico('<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>')} ${countScheduledForClient(r)}
           </button>
-          ${clientPortalForClient(r) ? `<button class="btn btn--ghost btn--sm" data-act="telegram-link" title="Скопировать одноразовую ссылку для подключения Telegram">
-            ${ico('<line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>')} TG
-          </button>` : ''}
           <label class="btn btn--ghost btn--sm" title="Показывать этому клиенту тариф Постоянник 800 ₽/шт в личном кабинете" style="gap:4px">
             <input type="checkbox" data-act="toggle-regular-tariff" ${r.allowRegularTariff ? 'checked' : ''} style="margin:0"/>
             800
@@ -1121,6 +1062,15 @@
       return new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))).getUTCDay() === 0;
     }
 
+    function outreachCapacityForDate(isoDate) {
+      const value = String(isoDate || '').slice(0, 10);
+      if (isOutreachDayOff(value)) return 0;
+      const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+      if (!match) return 0;
+      const day = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))).getUTCDay();
+      return day === 6 ? 3 : 7;
+    }
+
     function getScheduleBreakdown(c) {
       return clientScheduleBreakdown(Store.state, c);
     }
@@ -1267,12 +1217,6 @@
         // график отзывов
         const schBtn = tr.querySelector('[data-act="schedule"]');
         if (schBtn) schBtn.addEventListener('click', e => { e.stopPropagation(); openSchedule(id); });
-        const telegramLinkBtn = tr.querySelector('[data-act="telegram-link"]');
-        if (telegramLinkBtn) telegramLinkBtn.addEventListener('click', async e => {
-          e.stopPropagation();
-          const client = Store.state.clients.find(item => item.id === id);
-          if (client) await createOwnerTelegramLink(client, telegramLinkBtn);
-        });
         const regularChk = tr.querySelector('[data-act="toggle-regular-tariff"]');
         if (regularChk) regularChk.addEventListener('change', e => {
           e.stopPropagation();
@@ -1511,9 +1455,10 @@
         const accHere = accMap[iso] || [];
         // Загрузка дня считается по отдельным откликам, а не по числу клиентов.
         const daySlots = outreachSlotsOnDate(iso);
-        const dayFull = daySlots >= MAX_OUTREACH_PER_DAY;
+        const dayCapacity = outreachCapacityForDate(iso);
+        const dayFull = daySlots >= dayCapacity;
         const loadBadge = daySlots > 0
-          ? ` <span style="font-size:9px;font-weight:700;color:${dayFull ? '#ef4444' : 'var(--text-mute)'}" title="Откликов в этот день: ${daySlots} из ${MAX_OUTREACH_PER_DAY}">📅${daySlots}/7</span>`
+          ? ` <span style="font-size:9px;font-weight:700;color:${dayFull ? '#ef4444' : 'var(--text-mute)'}" title="Откликов в этот день: ${daySlots} из ${dayCapacity}">📅${daySlots}/${dayCapacity}</span>`
           : '';
         const dayOffBadge = isDayOff
           ? ' <span style="font-size:8px;color:var(--text-mute)">выходной</span>'
@@ -1591,9 +1536,6 @@
       });
     }
 
-    /* Общий предел на день: семь отдельных откликов по всем клиентам. */
-    const MAX_OUTREACH_PER_DAY = 7;
-
     function outreachSlotsOnDate(isoDate) {
       return (Store.state.clients || []).reduce((total, client) => {
         const day = clientScheduleBreakdown(Store.state, client)
@@ -1605,6 +1547,7 @@
     function outreachErrorText(error, isoDate) {
       const raw = String(error && error.message || '');
       const dmy = isoDate.split('-').reverse().join('.');
+      if (raw.includes('OUTREACH_SATURDAY_FULL')) return `На ${dmy} в субботу уже стоит максимум 3 отклика. Выбери другой день.`;
       if (raw.includes('DAY_FULL')) return `На ${dmy} уже запланировано 7 откликов. Выбери другой день.`;
       if (raw.includes('OUTREACH_DAY_OFF')) return `На ${dmy} воскресенье. В этот день отклики не планируем.`;
       if (raw.includes('AUTH_REQUIRED')) return 'Сессия истекла. Обнови страницу и войди снова.';
@@ -1639,8 +1582,9 @@
         }
       }
 
-      if (delta > 0 && outreachSlotsOnDate(isoDate) >= MAX_OUTREACH_PER_DAY) {
-        toast(outreachErrorText(new Error('DAY_FULL'), isoDate), 'error');
+      const dayCapacity = outreachCapacityForDate(isoDate);
+      if (delta > 0 && outreachSlotsOnDate(isoDate) >= dayCapacity) {
+        toast(outreachErrorText(new Error(dayCapacity === 3 ? 'OUTREACH_SATURDAY_FULL' : 'DAY_FULL'), isoDate), 'error');
         return;
       }
 

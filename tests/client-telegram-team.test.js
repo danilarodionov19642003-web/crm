@@ -28,6 +28,7 @@ const directMenuAppPatch = read('ops/telegram/patches/client-direct-menu-app.pat
 const directMenuSql = read('sql/migrations/2026-08-26_client_telegram_direct_menu.sql');
 const ownerInviteSql = read('sql/migrations/2026-08-26_owner_client_telegram_invites.sql');
 const clientsHtml = read('pages/clients.html');
+const clientAccessHtml = read('pages/client-access.html');
 
 test('client login uses an immutable portal key', () => {
   const supabase = read('js/supabase-client.js');
@@ -48,10 +49,14 @@ test('owner can copy a one-time Telegram link without client cabinet login', () 
   assert.match(ownerInviteSql, /client_snapshots/);
   assert.match(ownerInviteSql, /client_telegram_invites/);
   assert.doesNotMatch(ownerInviteSql, /update\s+public\.crm_state/i);
-  assert.match(clientsHtml, /data-act="telegram-link"/);
-  assert.match(clientsHtml, /create_client_telegram_invite_for_owner/);
-  assert.match(clientsHtml, /navigator\.clipboard\.writeText\(url\)/);
-  assert.match(clientsHtml, /Действует 24 часа и только один раз/);
+  assert.doesNotMatch(clientsHtml, /data-act="telegram-link"/,
+    'в карточке отдельной анкеты не должно быть ссылки всего кабинета');
+  assert.match(clientAccessHtml, /data-act="telegram-link"/);
+  assert.match(clientAccessHtml, /create_client_telegram_invite_for_owner/);
+  assert.match(clientAccessHtml, /p_portal_email: portal\.email/,
+    'одна ссылка должна создаваться по ключу кабинета, а не по анкете');
+  assert.match(clientAccessHtml, /navigator\.clipboard\.writeText\(url\)/);
+  assert.match(clientAccessHtml, /Действует 24 часа и только один раз/);
 });
 
 test('Telegram linking is short-lived, one-time and bounded', () => {

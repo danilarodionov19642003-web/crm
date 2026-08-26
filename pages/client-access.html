@@ -182,6 +182,37 @@
     let telegramMembers = [];
     let loginByPortal = new Map();
 
+    async function createOwnerTelegramLink(portal, button) {
+      if (!portal || !portal.email) {
+        toast('У этого клиента пока нет личного кабинета.', 'error');
+        return;
+      }
+      button.disabled = true;
+      try {
+        const result = await callAuthRpc('create_client_telegram_invite_for_owner', {
+          p_portal_email: portal.email,
+          p_contact_label: portal.name || portal.email,
+          p_is_text_approver: false
+        });
+        if (!result || !result.token) throw new Error('INVITE_TOKEN_MISSING');
+        const url = `https://t.me/${encodeURIComponent(result.bot_username || 'MentoriTG_bot')}?start=link_${encodeURIComponent(result.token)}`;
+        try {
+          await navigator.clipboard.writeText(url);
+          toast(`Ссылка для кабинета ${portal.name || portal.email} скопирована. Действует 24 часа и только один раз.`);
+        } catch (_) {
+          window.prompt('Скопируй ссылку для клиента. Она действует 24 часа и только один раз.', url);
+        }
+      } catch (error) {
+        const raw = String(error && error.message || error || '');
+        if (raw.includes('MEMBER_LIMIT_REACHED')) toast('К кабинету уже подключено максимальное число Telegram-контактов.', 'error');
+        else if (raw.includes('PORTAL_NOT_FOUND')) toast('Снимок личного кабинета ещё не создан. Сохрани CRM и повтори.', 'error');
+        else if (raw.includes('AUTH_REQUIRED')) toast('Создать ссылку может только владелец CRM.', 'error');
+        else toast('Не удалось создать ссылку Telegram. Попробуй ещё раз.', 'error');
+      } finally {
+        button.disabled = false;
+      }
+    }
+
     function escapeHtml(s) {
       return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
         '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
@@ -314,20 +345,24 @@
         const normalizedMembers = telegramMembers.filter(member =>
           String(member.portal_email || '').toLowerCase() === String(p.email || '').toLowerCase()
         );
-        let tgCell;
+        let tgStatus;
         if (normalizedMembers.length) {
-          tgCell = `<div class="cp-tg-summary">${normalizedMembers.map(member => `
+          tgStatus = `${normalizedMembers.map(member => `
             <div class="cp-tg-summary__row">
               <span style="color:#389e0d;font-weight:700">✓</span>
               <span>${escapeHtml(member.contact_label || (member.telegram_username ? '@' + member.telegram_username : 'Контакт'))}</span>
               ${member.telegram_username ? `<span style="color:var(--text-mute)">@${escapeHtml(member.telegram_username)}</span>` : ''}
               ${member.is_text_approver ? '<span class="cp-tg-summary__approver">согласует тексты</span>' : ''}
-            </div>`).join('')}</div>`;
+            </div>`).join('')}`;
         } else if (p.telegramChatId) {
-          tgCell = `<span title="Старое подключение будет перенесено автоматически" style="color:#fa8c16;font-weight:600">Старый контакт · ожидает перенос</span>`;
+          tgStatus = `<span title="Старое подключение будет перенесено автоматически" style="color:#fa8c16;font-weight:600">Старый контакт · ожидает перенос</span>`;
         } else {
-          tgCell = `<span style="color:var(--text-mute)">Подключается клиентом в кабинете</span>`;
+          tgStatus = `<span style="color:var(--text-mute)">Telegram пока не подключён</span>`;
         }
+        const tgCell = `<div class="cp-tg-summary">
+          ${tgStatus}
+          <button type="button" class="btn btn--ghost btn--sm" data-act="telegram-link" data-id="${escapeHtml(p.id)}" title="Скопировать одну ссылку для всего кабинета и всех его анкет">TG-ссылка</button>
+        </div>`;
         const loginEmail = loginByPortal.get(String(p.email || '').toLowerCase()) || p.email;
         const loginCell = String(loginEmail || '').toLowerCase() === String(p.email || '').toLowerCase()
           ? `<code class="cp-login-email">${escapeHtml(loginEmail)}</code>`
@@ -352,6 +387,12 @@
 
       tbody.querySelectorAll('button[data-act="edit"]').forEach(b => {
         b.addEventListener('click', () => openEdit(b.dataset.id));
+      });
+      tbody.querySelectorAll('button[data-act="telegram-link"]').forEach(b => {
+        b.addEventListener('click', async () => {
+          const portal = (Store.state.clientPortals || []).find(item => item.id === b.dataset.id);
+          if (portal) await createOwnerTelegramLink(portal, b);
+        });
       });
       tbody.querySelectorAll('button[data-act="del"]').forEach(b => {
         b.addEventListener('click', () => {

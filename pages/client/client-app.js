@@ -497,6 +497,7 @@
 
   function outreachErrorMessage(rawError) {
     const raw = String(rawError && rawError.message || rawError || '');
+    if (raw.includes('OUTREACH_SATURDAY_FULL')) return 'В субботу можно запланировать не больше трёх откликов. Выберите другой день.';
     if (raw.includes('DAY_FULL')) return 'На этот день уже нет мест. Выберите другой.';
     if (raw.includes('NO_AVAILABLE_OUTREACH')) return 'Все доступные отклики этой анкеты уже запланированы или находятся в работе.';
     if (raw.includes('OUTREACH_PREPARATION_DAY')) return 'На закупку и подготовку нужен один день. Выберите дату начиная с завтра.';

@@ -33,6 +33,10 @@ const sundayDayOffMigration = fs.readFileSync(
   path.join(root, 'sql/migrations/2026-08-26_client_outreach_sunday_day_off.sql'),
   'utf8'
 );
+const dailyCapacityMigration = fs.readFileSync(
+  path.join(root, 'sql/migrations/2026-08-26_client_outreach_daily_capacity.sql'),
+  'utf8'
+);
 
 const noop = () => {};
 const context = {
@@ -157,6 +161,20 @@ assert.match(sundayDayOffMigration, /before insert or update of scheduled_date/,
 assert.match(sundayDayOffMigration, /OUTREACH_DAY_OFF/);
 assert.doesNotMatch(sundayDayOffMigration, /delete from public\.client_outreach_slots|update public\.client_outreach_slots/,
   'миграция не должна снимать уже запланированные отклики');
+assert.match(dailyCapacityMigration, /client_outreach_capacity/);
+assert.match(dailyCapacityMigration, /extract\(isodow from p_date\) = 6 then 3/,
+  'в субботу общий предел должен быть равен трём');
+assert.match(dailyCapacityMigration, /else 7/,
+  'с понедельника по пятницу общий предел должен оставаться равным семи');
+assert.match(dailyCapacityMigration, /date '2026-09-06'[\s\S]*extract\(isodow from p_date\) = 7 then 0/,
+  'воскресенье должно быть закрыто после сохранённого исключения 30.08');
+assert.match(dailyCapacityMigration, /OUTREACH_SATURDAY_FULL/);
+assert.match(dailyCapacityMigration, /client-outreach-capacity:/,
+  'единый триггер должен сериализовать конкурирующие записи на одну дату');
+assert.match(dailyCapacityMigration, /before insert or update of scheduled_date, slot_status/,
+  'лимит должен действовать на все способы вернуть слот в активное расписание');
+assert.doesNotMatch(dailyCapacityMigration, /delete from public\.client_outreach_slots|update public\.client_outreach_slots/,
+  'новый предел не должен удалять или переносить существующие планы');
 
 assert.match(clientApp, /manage_client_outreach_slot/);
 assert.match(clientApp, /get_client_outreach_calendar/);
@@ -183,6 +201,7 @@ assert.match(clientApp, /OUTREACH_PREPARATION_DAY/);
 assert.match(clientApp, /OUTREACH_SUNDAY_DAY_OFF_FROM = '2026-09-06'/);
 assert.match(clientApp, /isOutreachDayOff/);
 assert.match(clientApp, /OUTREACH_DAY_OFF/);
+assert.match(clientApp, /OUTREACH_SATURDAY_FULL/);
 assert.match(clientApp, /isDayOff \? 'выходной'/);
 assert.match(clientApp, /На закупку и подготовку нужен один день/);
 assert.match(clientApp, /const isPastDate = date < today/);
@@ -206,8 +225,11 @@ assert.match(clientCss, /\.cli-outreach-cal__grid/);
 assert.match(clientCss, /\.cli-outreach__body/);
 assert.match(clientCss, /grid-template-columns: minmax\(260px, \.85fr\) minmax\(380px, 1\.15fr\)/);
 assert.match(clientCss, /\.cli-donut__sub \{[^}]*letter-spacing: 0/);
-assert.match(clientsHtml, /const MAX_OUTREACH_PER_DAY = 7/);
 assert.match(clientsHtml, /outreachSlotsOnDate/);
+assert.match(clientsHtml, /function outreachCapacityForDate/);
+assert.match(clientsHtml, /day === 6 \? 3 : 7/);
+assert.match(clientsHtml, /\$\{daySlots\}\/\$\{dayCapacity\}/);
+assert.match(clientsHtml, /OUTREACH_SATURDAY_FULL/);
 assert.match(clientsHtml, /OUTREACH_SUNDAY_DAY_OFF_FROM = '2026-09-06'/);
 assert.match(clientsHtml, /delta > 0 && isOutreachDayOff\(isoDate\)/,
   'CRM должна запрещать добавление, но сохранять возможность снять план');

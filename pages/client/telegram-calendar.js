@@ -45,6 +45,15 @@
     return new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))).getUTCDay() === 0;
   }
 
+  function outreachCapacityForDate(iso) {
+    const value = String(iso || '').slice(0, 10);
+    if (isOutreachDayOff(value)) return 0;
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    if (!match) return 0;
+    const day = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))).getUTCDay();
+    return day === 6 ? 3 : 7;
+  }
+
   function escapeHtml(value) {
     return String(value == null ? '' : value).replace(/[&<>"']/g, char => ({
       '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -111,6 +120,7 @@
     if (raw.includes('TOKEN_INVALID_OR_EXPIRED') || Number(error && error.status) === 401) {
       return 'Доступ устарел. Нажмите «Кабинет» рядом с полем ввода или откройте новое сообщение бота.';
     }
+    if (raw.includes('OUTREACH_SATURDAY_FULL')) return 'В субботу можно запланировать не больше трёх откликов. Выберите другой день.';
     if (raw.includes('DAY_FULL')) return 'На этот день свободных мест уже нет.';
     if (raw.includes('SCHEDULE_LIMIT_REACHED')) return 'Все доступные отклики уже запланированы.';
     if (raw.includes('OUTREACH_DAY_OFF')) return 'В воскресенье отклики не планируются. Выберите другой день.';
@@ -393,7 +403,9 @@
               if (!date) return '<span class="tgcal-day is-empty"></span>';
               const iso = isoDate(date);
               const info = days.get(iso);
-              const available = Number(info && info.available_count) || 0;
+              const capacity = outreachCapacityForDate(iso);
+              const used = Number(info && info.used_count) || 0;
+              const available = Math.max(0, capacity - used);
               const owned = ownedDates.has(iso);
               const dayOff = isOutreachDayOff(iso);
               const disabled = iso < minimum || iso > maxDate || !info || available <= 0 || !canAdd || owned || dayOff;
