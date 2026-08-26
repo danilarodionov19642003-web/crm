@@ -25,25 +25,41 @@ function response(status, body, responseHeaders = {}) {
   };
 }
 
-function createAuthRuntime(initialSession, fetchImpl, onLock) {
-  const storage = new Map([[SESSION_KEY, JSON.stringify(initialSession)]]);
+function createAuthRuntime(initialSession, fetchImpl, onLock, urlState = {}) {
+  const storage = new Map();
+  if (initialSession) storage.set(SESSION_KEY, JSON.stringify(initialSession));
   const events = [];
   const localStorage = {
     getItem(key) { return storage.has(key) ? storage.get(key) : null; },
     setItem(key, value) { storage.set(key, String(value)); },
     removeItem(key) { storage.delete(key); }
   };
+  const location = {
+    hash: urlState.hash || '',
+    pathname: urlState.pathname || '/pages/client/login.html',
+    search: urlState.search || ''
+  };
+  const history = {
+    replacedUrl: null,
+    replaceState(_state, _title, url) {
+      this.replacedUrl = url;
+      location.hash = '';
+    }
+  };
   const context = {
     console,
     Date,
     JSON,
     Promise,
+    URLSearchParams,
     localStorage,
+    location,
+    history,
     fetch: fetchImpl,
     clearTimeout() {},
     setTimeout() { return 1; },
     CustomEvent: function CustomEvent(type) { this.type = type; },
-    document: { visibilityState: 'visible', addEventListener() {} },
+    document: { title: 'Client login', visibilityState: 'visible', addEventListener() {} },
     navigator: {
       locks: {
         async request(name, task) {
@@ -61,7 +77,7 @@ function createAuthRuntime(initialSession, fetchImpl, onLock) {
   context.window.window = context.window;
   vm.createContext(context);
   vm.runInContext(authSource, context);
-  return { Supabase: context.window.Supabase, localStorage, events };
+  return { Supabase: context.window.Supabase, localStorage, events, location, history };
 }
 
 const nowSec = Math.floor(Date.now() / 1000);
@@ -160,6 +176,54 @@ const user = { id: 'owner-1', email: 'owner@example.test', app_metadata: { role:
     assert.equal(JSON.parse(runtime.localStorage.getItem(SESSION_KEY)).refresh_token, 'keep-me',
       'temporary server errors must not sign the user out');
     assert.deepEqual(runtime.events, []);
+  }
+
+  {
+    const clientUser = {
+      id: 'client-magic-1',
+      email: 'new-login@example.test',
+      app_metadata: { role: 'client', portal_email: 'portal@example.test' }
+    };
+    const calls = [];
+    const runtime = createAuthRuntime(
+      null,
+      async (url, options = {}) => {
+        calls.push({ url, options });
+        assert.match(url, /\/auth\/v1\/user$/);
+        assert.equal(options.headers.Authorization, 'Bearer magic-access');
+        return response(200, clientUser);
+      },
+      null,
+      {
+        hash: '#access_token=magic-access&refresh_token=magic-refresh&token_type=bearer&expires_in=3600',
+        search: '?telegram=1'
+      }
+    );
+    const restored = await runtime.Supabase.Auth.consumeUrlSession();
+    assert.equal(restored.id, clientUser.id);
+    assert.equal(calls.length, 1);
+    assert.equal(runtime.location.hash, '', 'session tokens must leave the address bar');
+    assert.equal(runtime.history.replacedUrl, '/pages/client/login.html?telegram=1');
+    const stored = JSON.parse(runtime.localStorage.getItem(SESSION_KEY));
+    assert.equal(stored.access_token, 'magic-access');
+    assert.equal(stored.refresh_token, 'magic-refresh');
+    assert.equal(runtime.Supabase.Auth.portalEmail(), 'portal@example.test');
+    assert.equal(runtime.Supabase.Auth.role(), 'client');
+  }
+
+  {
+    const runtime = createAuthRuntime(
+      null,
+      async () => response(401, { message: 'expired' }),
+      null,
+      { hash: '#access_token=expired&refresh_token=expired-refresh' }
+    );
+    await assert.rejects(
+      runtime.Supabase.Auth.consumeUrlSession(),
+      /недействительна или уже истекла/
+    );
+    assert.equal(runtime.location.hash, '', 'invalid tokens must also leave the address bar');
+    assert.equal(runtime.localStorage.getItem(SESSION_KEY), null);
   }
 
   {

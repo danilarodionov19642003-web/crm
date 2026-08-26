@@ -57,6 +57,13 @@ a review-text notification: confirm or reject. It also reformats the message
 into clearly separated anketa, account, review and action sections. Other bot
 navigation stays disabled. Apply it after `client-miniapp-only-subscription.patch`.
 
+`client-passwordless-login-settings.patch` adds a secure one-time full-cabinet
+login button and four per-contact notification switches to the client bot
+keyboard. It generates a Supabase magic link only after an exact linked
+Telegram user/chat and channel-membership check; no password is read or sent.
+Apply it after `client-text-approval-actions.patch` and the
+`2026-08-27_client_telegram_passwordless_login_and_bot_settings.sql` migration.
+
 Apply from the bot repository root with zero-context support:
 
 ```bash

@@ -30,6 +30,8 @@ const miniappOnlyPatch = read('ops/telegram/patches/client-miniapp-only-subscrip
 const textApprovalActionsPatch = read('ops/telegram/patches/client-text-approval-actions.patch');
 const directMenuSql = read('sql/migrations/2026-08-26_client_telegram_direct_menu.sql');
 const channelGateSql = read('sql/migrations/2026-08-27_client_telegram_channel_gate.sql');
+const passwordlessSql = read('sql/migrations/2026-08-27_client_telegram_passwordless_login_and_bot_settings.sql');
+const passwordlessBotPatch = read('ops/telegram/patches/client-passwordless-login-settings.patch');
 const ownerInviteSql = read('sql/migrations/2026-08-26_owner_client_telegram_invites.sql');
 const clientsHtml = read('pages/clients.html');
 const clientAccessHtml = read('pages/client-access.html');
@@ -269,4 +271,49 @@ test('Mini App access requires a live Mentori channel subscription', () => {
   assert.match(miniappOnlyPatch, /set_client_telegram_channel_subscription/);
   assert.match(miniappOnlyPatch, /on_chat_member/);
   assert.match(telegramCalendarJs, /CHANNEL_SUBSCRIPTION_REQUIRED/);
+});
+
+test('Telegram can issue a bounded passwordless client-cabinet login', () => {
+  const authClient = read('js/supabase-client.js');
+  const clientLogin = read('pages/client/login.html');
+  assert.match(passwordlessSql, /prepare_client_telegram_passwordless_login/);
+  assert.match(passwordlessSql, /telegram_user_id = p_telegram_user_id/);
+  assert.match(passwordlessSql, /telegram_chat_id = p_telegram_chat_id/);
+  assert.match(passwordlessSql, /channel_subscription_active/);
+  assert.match(passwordlessSql, /from auth\.users/);
+  assert.match(passwordlessSql, /raw_app_meta_data ->> 'portal_email'/);
+  assert.match(passwordlessSql, /raw_app_meta_data ->> 'role'[^\n]*= 'client'/);
+  assert.match(passwordlessSql, /auth\.role\(\) <> 'service_role'/);
+  assert.match(passwordlessSql, /telegram_passwordless_login_prepared/);
+  assert.doesNotMatch(passwordlessSql, /encrypted_password|password_hash|update\s+auth\.users/i);
+
+  assert.match(passwordlessBotPatch, /auth\/v1\/admin\/generate_link/);
+  assert.match(passwordlessBotPatch, /"type": "magiclink"/);
+  assert.match(passwordlessBotPatch, /redirect_to/);
+  assert.match(passwordlessBotPatch, /Войти без пароля/);
+  assert.match(passwordlessBotPatch, /Не пересылайте её другим людям/);
+  assert.doesNotMatch(passwordlessBotPatch, /signInWithPassword|portal\.password/);
+
+  assert.match(authClient, /async consumeUrlSession\(\)/);
+  assert.match(authClient, /auth\/v1\/user/);
+  assert.match(authClient, /history\.replaceState/);
+  assert.match(clientLogin, /Auth\.consumeUrlSession\(\)/);
+  assert.match(clientLogin, /Auth\.role\(\) !== 'client'/);
+  assert.match(clientLogin, /supabase-client\.js\?v=20260827a/);
+});
+
+test('Telegram notification settings mirror the four cabinet preferences', () => {
+  assert.match(passwordlessSql, /get_client_telegram_bot_settings/);
+  assert.match(passwordlessSql, /update_client_telegram_bot_notification_setting/);
+  assert.match(passwordlessSql, /v_setting not in \('status', 'schedule', 'low_reviews', 'order_completed'\)/);
+  assert.match(passwordlessSql, /member_bot_notifications_updated/);
+  assert.match(passwordlessBotPatch, /BTN_CAB_NOTIFICATIONS/);
+  assert.match(passwordlessBotPatch, /Изменения статусов/);
+  assert.match(passwordlessBotPatch, /Ежедневный план откликов/);
+  assert.match(passwordlessBotPatch, /Остался один отзыв/);
+  assert.match(passwordlessBotPatch, /Пакет выполнен/);
+  assert.match(passwordlessBotPatch, /callback_data=f"ctgn:/);
+  assert.match(passwordlessBotPatch, /update_client_telegram_bot_notification_setting/);
+  assert.match(passwordlessBotPatch, /\[BTN_CAB_LOGIN\][\s\S]*\[BTN_CAB_NOTIFICATIONS\][\s\S]*\[BTN_CAB_CONTACT\]/);
+  assert.doesNotMatch(passwordlessBotPatch, /^\+.*BTN_CAB_(?:ANKETAS|CALENDAR|SCHEDULE)/m);
 });

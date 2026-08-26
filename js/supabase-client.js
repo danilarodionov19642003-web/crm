@@ -197,6 +197,64 @@
       return this.refresh();
     },
 
+    /**
+     * Consume a Supabase implicit-flow session returned in the URL fragment.
+     * Used by the one-time Telegram login link. Tokens are verified against
+     * GoTrue before being stored, then immediately removed from the address bar.
+     */
+    async consumeUrlSession() {
+      const fragment = String(location.hash || '').replace(/^#/, '');
+      if (!fragment) return null;
+      const params = new URLSearchParams(fragment);
+      const accessToken = params.get('access_token');
+      const refreshToken = params.get('refresh_token');
+      const authError = params.get('error_description') || params.get('error');
+
+      const clearFragment = () => {
+        if (history && typeof history.replaceState === 'function') {
+          history.replaceState(null, document.title, `${location.pathname}${location.search}`);
+        } else {
+          location.hash = '';
+        }
+      };
+
+      if (authError) {
+        clearFragment();
+        throw new Error(authError);
+      }
+      if (!accessToken || !refreshToken) return null;
+
+      try {
+        const res = await fetch(`${CURRENT.URL}/auth/v1/user`, {
+          headers: {
+            'apikey': CURRENT.KEY,
+            'Authorization': `Bearer ${accessToken}`
+          }
+        });
+        let user;
+        try { user = await res.json(); } catch (_) { user = null; }
+        if (!res.ok || !user || !user.id) {
+          throw new Error('Ссылка для входа недействительна или уже истекла');
+        }
+
+        const expiresIn = Math.max(60, Number(params.get('expires_in')) || 3600);
+        const expiresAt = Number(params.get('expires_at')) ||
+          Math.floor(Date.now() / 1000) + expiresIn;
+        setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+          token_type: params.get('token_type') || 'bearer',
+          expires_in: expiresIn,
+          expires_at: expiresAt,
+          user
+        });
+        _scheduleRefresh();
+        return user;
+      } finally {
+        clearFragment();
+      }
+    },
+
     async signIn(email, password) {
       // Fallback убран, идём прямо на PRIMARY.
       const res = await fetch(`${PRIMARY.URL}/auth/v1/token?grant_type=password`, {

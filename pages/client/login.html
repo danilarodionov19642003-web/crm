@@ -49,13 +49,38 @@
     </div>
   </main>
 
-  <script src="../../js/supabase-client.js?v=20260820d"></script>
+  <script src="../../js/supabase-client.js?v=20260827a"></script>
   <script>
   (async () => {
     const { Auth } = window.Supabase;
+    const err = document.getElementById('err');
+    const btn = document.getElementById('btnLogin');
 
     function landing() {
       return './index.html';
+    }
+
+    function showErr(msg) { err.textContent = msg; err.hidden = false; }
+
+    if (location.hash) {
+      btn.disabled = true;
+      btn.textContent = 'Входим через Telegram…';
+      try {
+        const telegramUser = await Auth.consumeUrlSession();
+        if (telegramUser) {
+          if (Auth.role() !== 'client') {
+            try { Auth.signOut(); } catch (_) {}
+            throw new Error('Эта ссылка не относится к клиентскому кабинету');
+          }
+          location.replace(landing());
+          return;
+        }
+      } catch (e) {
+        showErr(e.message || 'Не удалось войти через Telegram');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Войти';
+      }
     }
 
     const restored = Auth.ensureFresh ? await Auth.ensureFresh() : await Auth.refresh();
@@ -63,16 +88,12 @@
       if (Auth.role() === 'client') { location.replace(landing()); return; }
     }
 
-    const err = document.getElementById('err');
-    function showErr(msg) { err.textContent = msg; err.hidden = false; }
-
     async function submit() {
       err.hidden = true;
       const email = document.getElementById('email').value.trim().toLowerCase();
       const pwd   = document.getElementById('password').value;
       if (!email || !pwd) return showErr('Введите email и пароль');
 
-      const btn = document.getElementById('btnLogin');
       btn.disabled = true; btn.textContent = 'Входим…';
       try {
         await Auth.signIn(email, pwd);
