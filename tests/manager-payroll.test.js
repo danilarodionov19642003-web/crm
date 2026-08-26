@@ -129,8 +129,10 @@ assert.match(employeesHtml, /data-act="payout" title="Внести выплат�
   'главная кнопка должна предлагать ввод выплаты, а не оплату всего долга');
 assert.match(employeesHtml, /payoutBtn\.addEventListener\('click', \(\) => openPayments\(id\)\)/,
   'кнопка выплаты должна открывать форму с редактируемой суммой и датой');
-assert.doesNotMatch(employeesHtml, /обнулить долг/,
-  'быстрая выплата всего долга не должна обходить форму частичной выплаты');
+assert.match(employeesHtml, /id="pDebtOffset"/,
+  'в форме выплаты должна редактироваться сумма, направляемая в счёт долга');
+assert.match(employeesHtml, /Math\.min\(debt, gross, requestedOffset\)/,
+  'зачёт долга можно увеличить до всей выплаты, но не выше остатка долга');
 assert.match(clientsHtml, /data-field="manager"/, 'в карточке клиента нужен селектор менеджера');
 assert.match(clientsHtml, /id="mManager"/, 'менеджер должен назначаться при создании клиента');
 assert.match(tasksHtml, /id="fManager"/, 'в задачах нужен фильтр по менеджеру');

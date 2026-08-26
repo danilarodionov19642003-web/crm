@@ -141,6 +141,11 @@
               <input type="number" id="pAmount" class="input" value="0" min="0" step="1"/>
             </div>
           </div>
+          <div class="field" style="margin-top:12px">
+            <label for="pDebtOffset">В счёт долга, ₽</label>
+            <input type="number" id="pDebtOffset" class="input" value="0" min="0" step="1"/>
+            <div style="margin-top:6px;font-size:12px;color:var(--text-mute)">По умолчанию 50% выплаты. Сумму можно изменить вплоть до полного погашения долга.</div>
+          </div>
           <div id="pSplit" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px"></div>
           <div class="field" style="margin-top:12px">
             <label for="pNote">Комментарий</label>
@@ -337,6 +342,7 @@
       document.getElementById('payTitle').textContent = `Выплаты — ${e.name} · к выплате ${fmtMoney(debt)} · долг ${fmtMoney(advanceDebt)}`;
       document.getElementById('pDate').value = todayISO();
       document.getElementById('pAmount').value = debt > 0 ? debt : 0;
+      document.getElementById('pDebtOffset').value = Math.min(advanceDebt, Math.floor((debt > 0 ? debt : 0) * 0.5));
       document.getElementById('pNote').value = '';
       renderPaymentSplit();
       renderPayments(e);
@@ -381,29 +387,44 @@
       });
     }
 
-    function paymentSplit(employee, grossValue) {
+    function paymentSplit(employee, grossValue, debtOffsetValue) {
       const gross = Math.max(0, Number(grossValue) || 0);
       const debt = Math.max(0, Number(employee && employee.advanceDebt) || 0);
-      const debtOffset = Math.min(debt, Math.floor(gross * 0.5));
+      const requestedOffset = Math.max(0, Number(debtOffsetValue) || 0);
+      const debtOffset = Math.min(debt, gross, requestedOffset);
       return { gross, debtOffset, cashAmount: gross - debtOffset, debtAfter: debt - debtOffset };
     }
 
     function renderPaymentSplit() {
       const employee = Store.state.employees.find(x => x.id === currentEmpId);
       if (!employee) return;
-      const split = paymentSplit(employee, document.getElementById('pAmount').value);
+      const offsetInput = document.getElementById('pDebtOffset');
+      const split = paymentSplit(employee, document.getElementById('pAmount').value, offsetInput.value);
+      offsetInput.max = Math.min(split.gross, Math.max(0, Number(employee.advanceDebt) || 0));
+      if (Number(offsetInput.value) !== split.debtOffset) offsetInput.value = split.debtOffset;
       document.getElementById('pSplit').innerHTML = `
         <div class="panel" style="padding:10px"><div class="card__label">На руки</div><strong>${fmtMoney(split.cashAmount)}</strong></div>
         <div class="panel" style="padding:10px"><div class="card__label">В счёт долга</div><strong>${fmtMoney(split.debtOffset)}</strong></div>
         <div class="panel" style="padding:10px"><div class="card__label">Долг после</div><strong>${fmtMoney(split.debtAfter)}</strong></div>`;
     }
 
-    document.getElementById('pAmount').addEventListener('input', renderPaymentSplit);
+    document.getElementById('pAmount').addEventListener('input', () => {
+      const employee = Store.state.employees.find(x => x.id === currentEmpId);
+      const gross = Math.max(0, Number(document.getElementById('pAmount').value) || 0);
+      const debt = Math.max(0, Number(employee && employee.advanceDebt) || 0);
+      document.getElementById('pDebtOffset').value = Math.min(debt, Math.floor(gross * 0.5));
+      renderPaymentSplit();
+    });
+    document.getElementById('pDebtOffset').addEventListener('input', renderPaymentSplit);
 
     document.getElementById('pAdd').addEventListener('click', () => {
       if (!currentEmpId) return;
       const employee = Store.state.employees.find(x => x.id === currentEmpId);
-      const split = paymentSplit(employee, document.getElementById('pAmount').value);
+      const split = paymentSplit(
+        employee,
+        document.getElementById('pAmount').value,
+        document.getElementById('pDebtOffset').value
+      );
       const p = {
         date:   document.getElementById('pDate').value || todayISO(),
         amount: split.gross,
@@ -419,6 +440,7 @@
       const e = Store.state.employees.find(x => x.id === currentEmpId);
       renderPayments(e);
       document.getElementById('pAmount').value = '0';
+      document.getElementById('pDebtOffset').value = '0';
       document.getElementById('pNote').value = '';
       renderPaymentSplit();
       render();
