@@ -1053,7 +1053,7 @@
       return Array.isArray(c.schedule) ? c.schedule : [];
     }
 
-    const OUTREACH_SUNDAY_DAY_OFF_FROM = '2026-09-06';
+    const OUTREACH_SUNDAY_DAY_OFF_FROM = '2026-08-30';
     function isOutreachDayOff(isoDate) {
       const value = String(isoDate || '').slice(0, 10);
       if (value < OUTREACH_SUNDAY_DAY_OFF_FROM) return false;

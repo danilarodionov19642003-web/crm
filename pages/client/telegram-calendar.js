@@ -7,7 +7,7 @@
     KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzc5MzE4NDc3LCJleHAiOjIwOTQ2Nzg0Nzd9.XuMHwfOo8qcycoooOMGwWd3R9_YA55JQZwaJBh132N8'
   };
   const tg = window.Telegram && window.Telegram.WebApp;
-  const OUTREACH_SUNDAY_DAY_OFF_FROM = '2026-09-06';
+  const OUTREACH_SUNDAY_DAY_OFF_FROM = '2026-08-30';
   const params = new URLSearchParams(location.search);
   const fragmentParams = new URLSearchParams(String(location.hash || '').replace(/^#/, ''));
   const token = fragmentParams.get('token') || params.get('token') || '';

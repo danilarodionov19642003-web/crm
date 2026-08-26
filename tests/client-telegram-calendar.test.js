@@ -12,6 +12,7 @@ const sql = read('sql/migrations/2026-08-26_client_telegram_calendar.sql');
 const cabinetSql = read('sql/migrations/2026-08-26_client_telegram_miniapp_cabinet.sql');
 const sundaySql = read('sql/migrations/2026-08-26_client_outreach_sunday_day_off.sql');
 const capacitySql = read('sql/migrations/2026-08-26_client_outreach_daily_capacity.sql');
+const currentSundayClosureSql = read('sql/migrations/2026-08-27_client_outreach_close_current_sunday.sql');
 const accountSql = read('sql/migrations/2026-08-26_client_telegram_z_account_details.sql');
 
 test('Telegram calendar uses short-lived hashed tokens without portal password', () => {
@@ -27,7 +28,7 @@ test('Telegram direct menu keeps its bearer credential out of HTTP requests', ()
   assert.match(js, /fragmentParams/);
   assert.match(js, /location\.hash/);
   assert.match(js, /fragmentParams\.get\('token'\)/);
-  assert.match(html, /telegram-calendar\.js\?v=20260827b/);
+  assert.match(html, /telegram-calendar\.js\?v=20260827c/);
   assert.match(html, /telegram-calendar\.css\?v=20260827b/);
 });
 
@@ -100,13 +101,15 @@ test('Mini App highlights every pending text and opens its exact account directl
   assert.match(css, /\.tgapp-status-row\.is-approval-pending/);
 });
 
-test('Mini App marks Sundays as days off after the preserved nearest Sunday', () => {
-  assert.match(js, /OUTREACH_SUNDAY_DAY_OFF_FROM = '2026-09-06'/);
+test('Mini App closes the nearest Sunday while preserving existing rows', () => {
+  assert.match(js, /OUTREACH_SUNDAY_DAY_OFF_FROM = '2026-08-30'/);
   assert.match(js, /isOutreachDayOff/);
   assert.match(js, /OUTREACH_DAY_OFF/);
   assert.match(js, /dayOff \? 'выходной'/);
   assert.match(css, /\.tgcal-day\.is-day-off/);
   assert.match(sundaySql, /OUTREACH_DAY_OFF/);
+  assert.match(currentSundayClosureSql, /date '2026-08-30'/);
+  assert.doesNotMatch(currentSundayClosureSql, /delete from public\.client_outreach_slots|update public\.client_outreach_slots/);
 });
 
 test('Mini App applies the shared weekday, Saturday and Sunday capacity', () => {

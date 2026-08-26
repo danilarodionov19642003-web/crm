@@ -23,7 +23,7 @@
 
   const SNAPSHOTS_TABLE = 'client_snapshots';
   const TELEGRAM_REMINDER_TEST_EMAIL = 'test@test.com';
-  const OUTREACH_SUNDAY_DAY_OFF_FROM = '2026-09-06';
+  const OUTREACH_SUNDAY_DAY_OFF_FROM = '2026-08-30';
   let telegramReminderBound = false;
 
   function fmtDate(iso) {

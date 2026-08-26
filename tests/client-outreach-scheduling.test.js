@@ -37,6 +37,10 @@ const dailyCapacityMigration = fs.readFileSync(
   path.join(root, 'sql/migrations/2026-08-26_client_outreach_daily_capacity.sql'),
   'utf8'
 );
+const currentSundayClosureMigration = fs.readFileSync(
+  path.join(root, 'sql/migrations/2026-08-27_client_outreach_close_current_sunday.sql'),
+  'utf8'
+);
 
 const noop = () => {};
 const context = {
@@ -175,6 +179,12 @@ assert.match(dailyCapacityMigration, /before insert or update of scheduled_date,
   'лимит должен действовать на все способы вернуть слот в активное расписание');
 assert.doesNotMatch(dailyCapacityMigration, /delete from public\.client_outreach_slots|update public\.client_outreach_slots/,
   'новый предел не должен удалять или переносить существующие планы');
+assert.match(currentSundayClosureMigration, /date '2026-08-30'/,
+  'новые записи должны быть закрыты уже на ближайшее воскресенье');
+assert.match(currentSundayClosureMigration, /client_outreach_day_off/);
+assert.match(currentSundayClosureMigration, /client_outreach_capacity/);
+assert.doesNotMatch(currentSundayClosureMigration, /delete from public\.client_outreach_slots|update public\.client_outreach_slots/,
+  'уже поставленный отклик 30.08 должен сохраниться');
 
 assert.match(clientApp, /manage_client_outreach_slot/);
 assert.match(clientApp, /get_client_outreach_calendar/);
@@ -198,7 +208,7 @@ assert.match(clientApp, /const canAdd = date >= minimumDate/,
 assert.match(clientApp, /const disabled = date < minimumDate/,
   'окно переноса также должно начинаться только с завтра');
 assert.match(clientApp, /OUTREACH_PREPARATION_DAY/);
-assert.match(clientApp, /OUTREACH_SUNDAY_DAY_OFF_FROM = '2026-09-06'/);
+assert.match(clientApp, /OUTREACH_SUNDAY_DAY_OFF_FROM = '2026-08-30'/);
 assert.match(clientApp, /isOutreachDayOff/);
 assert.match(clientApp, /OUTREACH_DAY_OFF/);
 assert.match(clientApp, /OUTREACH_SATURDAY_FULL/);
@@ -230,7 +240,7 @@ assert.match(clientsHtml, /function outreachCapacityForDate/);
 assert.match(clientsHtml, /day === 6 \? 3 : 7/);
 assert.match(clientsHtml, /\$\{daySlots\}\/\$\{dayCapacity\}/);
 assert.match(clientsHtml, /OUTREACH_SATURDAY_FULL/);
-assert.match(clientsHtml, /OUTREACH_SUNDAY_DAY_OFF_FROM = '2026-09-06'/);
+assert.match(clientsHtml, /OUTREACH_SUNDAY_DAY_OFF_FROM = '2026-08-30'/);
 assert.match(clientsHtml, /delta > 0 && isOutreachDayOff\(isoDate\)/,
   'CRM должна запрещать добавление, но сохранять возможность снять план');
 assert.match(tasksHtml, /outreach-schedule-sync\.js/);
