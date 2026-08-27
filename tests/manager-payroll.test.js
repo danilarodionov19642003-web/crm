@@ -88,6 +88,53 @@ assert.equal(stats.all.outstanding, 8700, 'премия увеличивает �
 assert.equal(Store.deleteEmployeeBonus(ilya.id, 'ilya-bonus-1'), true,
   'ошибочно начисленную премию можно удалить');
 
+const dailyPlanIlya = {
+  id: 'ilya-daily-plan', name: 'Илья', ratePerReview: 300,
+  bonuses: [{ id: 'manual-extra', date: '2026-08-25', amount: 200, note: 'ручная премия' }],
+  payments: [], paid: 0
+};
+const makeDailyWork = (date, count, performer = 'Илья') => Array.from({ length: count }, (_, index) => ({
+  id: `${performer}-${date}-${index}`,
+  performer,
+  date,
+  status: '⭐ Выбрать',
+  history: []
+}));
+const dailyPlanState = {
+  employees: [dailyPlanIlya], mentors: [], profiles: [], archivedProfiles: [],
+  profileStatuses: [
+    ...makeDailyWork('2026-08-24', 4),
+    ...makeDailyWork('2026-08-25', 5),
+    ...makeDailyWork('2026-08-26', 7)
+  ]
+};
+const dailyPlanStats = employeeCompensationStats(dailyPlanState, dailyPlanIlya, {
+  today: '2026-08-26', month: '2026-08'
+});
+assert.equal(dailyPlanStats.month.count, 16);
+assert.equal(dailyPlanStats.month.baseEarned, 4800,
+  'обычная ставка за каждый отклик продолжает начисляться');
+assert.equal(dailyPlanStats.month.dailyPlan.completedDays, 2,
+  'порог 5+ должен выполняться один раз за каждый подходящий день');
+assert.equal(dailyPlanStats.month.dailyPlanBonusEarned, 1000,
+  'два выполненных дневных плана автоматически дают 2 × 500 ₽');
+assert.equal(dailyPlanStats.month.manualBonusEarned, 200,
+  'ручная премия остаётся отдельной и не затирается автопланом');
+assert.equal(dailyPlanStats.month.earned, 6000,
+  'итого складывается из ставки за отклики, автоплана и ручных премий');
+assert.equal(dailyPlanStats.dailyPlanDays.find(item => item.date === '2026-08-24').amount, 0,
+  'четыре отклика не должны выполнять дневной план');
+assert.equal(dailyPlanStats.dailyPlanDays.find(item => item.date === '2026-08-26').amount, 500,
+  'семь откликов всё равно дают одну дневную премию, а не несколько');
+
+const danilNoDailyPlan = { id: 'danil-no-plan', name: 'Данил', ratePerReview: 0, bonuses: [], payments: [] };
+const danilPlanStats = employeeCompensationStats({
+  employees: [danilNoDailyPlan], mentors: [], profiles: [], archivedProfiles: [],
+  profileStatuses: makeDailyWork('2026-08-26', 5, 'Данил')
+}, danilNoDailyPlan, { today: '2026-08-26', month: '2026-08' });
+assert.equal(danilPlanStats.month.dailyPlanBonusEarned, 0,
+  'автоматический дневной бонус применяется только к Илье');
+
 const payment = Store.addPayment(ilya.id, {
   id: 'ilya-pay-1', date: '2026-07-10', amount: 1234, note: 'частичная выплата'
 });
@@ -164,6 +211,14 @@ assert.match(employeesHtml, /За месяц/, 'в таблице должна �
 assert.match(employeesHtml, /data-act="bonus"/, 'у сотрудника должна быть кнопка премии');
 assert.match(employeesHtml, /id="statsMonth"/, 'подробную статистику можно открыть за выбранный месяц');
 assert.match(employeesHtml, /Какие отклики вошли в расчёт/, 'месячное начисление должно раскрываться до отдельных откликов');
+assert.match(employeesHtml, /Для Ильи при 5 и более откликах за день автоматически добавляется 500 ₽/,
+  'правило дневного плана должно быть явно показано в зарплатах');
+assert.match(employeesHtml, /Дневной план · \$\{stats\.dailyPlan\.target\} откликов = \+\$\{fmtMoney\(stats\.dailyPlan\.bonus\)\}/,
+  'в подробной статистике нужна разбивка выполнения плана по дням');
+assert.match(employeesHtml, /item\.source === 'daily_plan' \? 'Автопремия' : 'Премия'/,
+  'автоматическое начисление должно отличаться от ручной премии');
+assert.match(employeesHtml, /js\/app\.js\?v=20260827d/,
+  'страница зарплат должна обходить старый кэш расчёта');
 assert.match(employeesHtml, /Math\.min\(debt, gross, requestedOffset\)/,
   'зачёт долга можно увеличить до всей выплаты, но не выше остатка долга');
 assert.match(clientsHtml, /data-field="manager"/, 'в карточке клиента нужен селектор менеджера');

@@ -80,6 +80,9 @@
   // (Илья) работают под ОДНИМ логином CRM, поэтому на каждом статусе аккаунта
   // можно отметить, КТО делал работу. Пустое значение = не указан.
   const PERFORMERS = ['Данил', 'Илья'];
+  const EMPLOYEE_DAILY_PLAN_RULES = Object.freeze({
+    'илья': Object.freeze({ target: 5, bonus: 500 })
+  });
   const CITIES = ['МСК', 'СПБ', 'Прочее'];
 
   /** Извлекает город из кода аккаунта вида "2-1" (2=МСК, 3=СПБ, иначе — Прочее) */
@@ -271,18 +274,55 @@
     parsed.setDate(parsed.getDate() - shift);
     return _iso(parsed);
   }
+  function employeeDailyPlanRule(employee) {
+    const key = String(employee && employee.name || '').trim().toLowerCase();
+    const rule = EMPLOYEE_DAILY_PLAN_RULES[key];
+    if (!rule) return { enabled: false, target: 0, bonus: 0 };
+    return { enabled: true, target: rule.target, bonus: rule.bonus };
+  }
   function employeeCompensationStats(state, employee, options = {}) {
     const today = String(options.today || todayISO()).slice(0, 10);
     const selectedMonth = /^\d{4}-\d{2}$/.test(String(options.month || ''))
       ? String(options.month)
       : today.slice(0, 7);
     const work = employeeWorkEntries(state || {}, employee || {});
-    const bonuses = (Array.isArray(employee && employee.bonuses) ? employee.bonuses : [])
+    const dailyPlan = employeeDailyPlanRule(employee);
+    const dailyPlanCounts = new Map();
+    if (dailyPlan.enabled) {
+      work.forEach(item => {
+        const date = String(item && item.date || '').slice(0, 10);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
+        dailyPlanCounts.set(date, (dailyPlanCounts.get(date) || 0) + 1);
+      });
+    }
+    const dailyPlanDays = [...dailyPlanCounts.entries()]
+      .map(([date, count]) => ({
+        date,
+        count,
+        target: dailyPlan.target,
+        completed: count >= dailyPlan.target,
+        amount: count >= dailyPlan.target ? dailyPlan.bonus : 0
+      }))
+      .sort((left, right) => String(right.date).localeCompare(String(left.date)));
+    const automaticPlanBonuses = dailyPlanDays
+      .filter(item => item.completed)
+      .map(item => ({
+        id: `daily-plan-${String(employee && (employee.id || employee.name) || 'employee')}-${item.date}`,
+        date: item.date,
+        amount: dailyPlan.bonus,
+        note: `Дневной план выполнен: ${item.count} из ${dailyPlan.target} откликов`,
+        source: 'daily_plan',
+        automatic: true
+      }));
+    const manualBonuses = (Array.isArray(employee && employee.bonuses) ? employee.bonuses : [])
       .map(item => ({
         ...item,
         date: String(item && item.date || '').slice(0, 10),
-        amount: Math.max(0, Number(item && item.amount) || 0)
+        amount: Math.max(0, Number(item && item.amount) || 0),
+        source: String(item && item.source || 'manual'),
+        automatic: false
       }));
+    const bonuses = [...manualBonuses, ...automaticPlanBonuses];
     const payments = (Array.isArray(employee && employee.payments) ? employee.payments : [])
       .map(item => ({
         ...item,
@@ -297,21 +337,36 @@
     const summarize = predicate => {
       const periodWork = work.filter(item => predicate(item.date));
       const periodBonuses = bonuses.filter(item => predicate(item.date));
+      const periodPlanDays = dailyPlanDays.filter(item => predicate(item.date));
       const periodPayments = payments.filter(item => predicate(item.date));
       const baseEarned = periodWork.reduce((sum, item) => sum + item.rate, 0);
       const bonusEarned = periodBonuses.reduce((sum, item) => sum + item.amount, 0);
+      const manualBonusEarned = periodBonuses
+        .filter(item => item.source !== 'daily_plan')
+        .reduce((sum, item) => sum + item.amount, 0);
+      const dailyPlanBonusEarned = periodBonuses
+        .filter(item => item.source === 'daily_plan')
+        .reduce((sum, item) => sum + item.amount, 0);
       const paid = periodPayments.reduce((sum, item) => sum + item.amount, 0);
       const cashPaid = periodPayments.reduce((sum, item) => sum + item.cashAmount, 0);
       return {
         count: periodWork.length,
         baseEarned,
         bonusEarned,
+        manualBonusEarned,
+        dailyPlanBonusEarned,
         earned: baseEarned + bonusEarned,
         paid,
         cashPaid,
         work: periodWork,
         bonuses: periodBonuses,
-        payments: periodPayments
+        payments: periodPayments,
+        dailyPlan: {
+          ...dailyPlan,
+          days: periodPlanDays,
+          completedDays: periodPlanDays.filter(item => item.completed).length,
+          bonusEarned: dailyPlanBonusEarned
+        }
       };
     };
     const all = summarize(() => true);
@@ -335,6 +390,7 @@
       });
     return {
       today, selectedMonth, weekStart, weekEnd,
+      dailyPlan, dailyPlanDays,
       week, month, all,
       weeks: [...weeks.values()].sort((left, right) => right.start.localeCompare(left.start))
     };
@@ -3197,7 +3253,7 @@
     uid, todayISO, tomorrowISO, addDaysISO, addMonthsISO, daysBetweenISO, deriveStatusAction,
     normalizeClientCode, normalizeSearchText, compareClientCodes, clientReviewsRemaining,
     statusOutreachStartDate, statusOutreachStartDates,
-    employeeWorkDate, employeeWorkEntries, employeeCompensationStats, weekStartISO,
+    employeeWorkDate, employeeWorkEntries, employeeDailyPlanRule, employeeCompensationStats, weekStartISO,
     clientOutreachStartsByDate, clientScheduleBreakdown,
     scheduledReviewCount, manualScheduleLimit,
     SERVICES, EXPENSE_CATEGORIES, PERSONAL_CATEGORIES, PHONE_EXPENSE_AMOUNT, TARIFFS, TARIFF_NAMES,

@@ -19,6 +19,7 @@
     .emp-person__head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:14px; }
     .emp-person__head strong { display:block; font-size:17px; }
     .emp-person__meta { color:var(--text-mute); font-size:12px; margin-top:3px; }
+    .emp-person__plan { color:#ff9a2f; font-size:11px; font-weight:600; margin-top:5px; }
     .emp-person__periods { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
     .emp-person__period { border:1px solid var(--border); border-radius:12px; padding:10px; background:var(--bg-elev-2); }
     .emp-person__period span { display:block; color:var(--text-mute); font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; }
@@ -31,9 +32,10 @@
     .emp-detail-kpi { border:1px solid var(--border); border-radius:12px; padding:11px; background:var(--bg-elev-2); }
     .emp-detail-kpi span { color:var(--text-mute); display:block; font-size:11px; }
     .emp-detail-kpi strong { display:block; font-size:19px; margin-top:4px; }
+    #statsBody,.emp-detail-section { min-width:0; max-width:100%; }
     .emp-detail-section { margin-top:16px; }
     .emp-detail-section h4 { margin:0 0 8px; font-size:13px; }
-    .emp-detail-scroll { overflow:auto; border:1px solid var(--border); border-radius:12px; }
+    .emp-detail-scroll { min-width:0; max-width:100%; overflow:auto; border:1px solid var(--border); border-radius:12px; }
     .emp-detail-scroll .table { min-width:620px; }
     @media (max-width: 520px) {
       #pSplit { grid-template-columns: 1fr !important; }
@@ -55,7 +57,7 @@
         <div class="page-title">
           <div>
             <h1>Команда</h1>
-            <p>Зарплата = отклики в разделе «Аккаунты» × ставка менеджера. Отклик засчитывается тому, кто указан в поле «Кто делал · для ЗП».</p>
+            <p>Зарплата = отклики в разделе «Аккаунты» × ставка менеджера. Для Ильи при 5 и более откликах за день автоматически добавляется 500 ₽.</p>
           </div>
           <button class="btn btn--primary" id="btnAdd">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -131,7 +133,7 @@
           <input type="text" id="bNote" class="input" maxlength="200" placeholder="Например, выполнен недельный объём"/>
         </div>
         <div class="emp-detail-section">
-          <h4>История премий</h4>
+          <h4>История ручных премий</h4>
           <div id="bonusList"></div>
         </div>
       </div>
@@ -250,7 +252,7 @@
   </div>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260827c"></script>
+  <script src="../js/app.js?v=20260827d"></script>
   <script src="../js/supabase-client.js?v=20260820d"></script>
   <script src="../js/auth-gate.js?v=20260726a"></script>
   <script src="../js/cloud-sync.js?v=20260820d"></script>
@@ -309,9 +311,13 @@
       root.innerHTML = rows.map(employee => {
         const stats = compensation(employee);
         const rate = Math.max(0, Number(employee.ratePerReview) || 0);
+        const todayPlan = stats.dailyPlanDays.find(item => item.date === stats.today);
+        const planMeta = stats.dailyPlan.enabled
+          ? `<div class="emp-person__plan">Дневной план: ${todayPlan ? todayPlan.count : 0}/${stats.dailyPlan.target} · выполнение +${fmtMoney(stats.dailyPlan.bonus)}</div>`
+          : '';
         return `<article class="emp-person" data-employee-card="${escapeHtml(employee.id)}">
           <div class="emp-person__head">
-            <div><strong>${escapeHtml(employee.name || '—')}</strong><div class="emp-person__meta">${escapeHtml(employee.role || 'Сотрудник')} · ${fmtMoney(rate)} за отклик</div></div>
+            <div><strong>${escapeHtml(employee.name || '—')}</strong><div class="emp-person__meta">${escapeHtml(employee.role || 'Сотрудник')} · ${fmtMoney(rate)} за отклик</div>${planMeta}</div>
             <span class="badge ${employee.status === 'active' ? 'badge--green' : ''}">${employee.status === 'active' ? 'Активен' : 'Неактивен'}</span>
           </div>
           <div class="emp-person__periods">
@@ -691,8 +697,24 @@
         <td>${escapeHtml(item.status || '—')}</td>
         <td class="num">${fmtMoney(item.rate)}</td>
       </tr>`).join('') : '<tr><td colspan="5" class="empty">Откликов за этот месяц нет.</td></tr>';
+      const planRows = stats.month.dailyPlan.days.length ? stats.month.dailyPlan.days.map(item => `<tr>
+        <td>${fmtDate(item.date)}</td>
+        <td class="num"><strong>${item.count}/${item.target}</strong></td>
+        <td>${item.completed ? '<span class="badge badge--green">План выполнен</span>' : '<span class="badge">Не выполнен</span>'}</td>
+        <td class="num ${item.completed ? 'pos' : ''}">${item.completed ? `+${fmtMoney(item.amount)}` : '—'}</td>
+      </tr>`).join('') : '<tr><td colspan="4" class="empty">В этом месяце откликов пока нет.</td></tr>';
+      const planSection = stats.dailyPlan.enabled ? `
+        <div class="emp-detail-section"><h4>Дневной план · ${stats.dailyPlan.target} откликов = +${fmtMoney(stats.dailyPlan.bonus)}</h4><div class="emp-detail-scroll"><table class="table" style="min-width:520px">
+          <thead><tr><th>Дата</th><th class="num">Отклики</th><th>Результат</th><th class="num">Автопремия</th></tr></thead>
+          <tbody>${planRows}</tbody>
+        </table></div></div>` : '';
       const financeRows = [
-        ...stats.month.bonuses.map(item => ({ date: item.date, type: 'Премия', amount: item.amount, note: item.note || '' })),
+        ...stats.month.bonuses.map(item => ({
+          date: item.date,
+          type: item.source === 'daily_plan' ? 'Автопремия' : 'Премия',
+          amount: item.amount,
+          note: item.note || ''
+        })),
         ...stats.month.payments.map(item => ({ date: item.date, type: 'Выплата', amount: item.amount, note: item.note || '' }))
       ].sort((left, right) => String(right.date).localeCompare(String(left.date)));
       document.getElementById('statsBody').innerHTML = `
@@ -700,6 +722,7 @@
           <div class="emp-detail-kpi"><span>Откликов за месяц</span><strong>${stats.month.count}</strong></div>
           <div class="emp-detail-kpi"><span>За отклики</span><strong>${fmtMoney(stats.month.baseEarned)}</strong></div>
           <div class="emp-detail-kpi"><span>Премии</span><strong>${fmtMoney(stats.month.bonusEarned)}</strong></div>
+          ${stats.dailyPlan.enabled ? `<div class="emp-detail-kpi"><span>План выполнен</span><strong>${stats.month.dailyPlan.completedDays} дн.</strong><small>+${fmtMoney(stats.month.dailyPlan.bonusEarned)}</small></div>` : ''}
           <div class="emp-detail-kpi"><span>Начислено всего</span><strong>${fmtMoney(stats.month.earned)}</strong></div>
           <div class="emp-detail-kpi"><span>Выплачено за месяц</span><strong>${fmtMoney(stats.month.paid)}</strong></div>
           <div class="emp-detail-kpi"><span>К выплате всего</span><strong>${fmtMoney(stats.all.outstanding)}</strong></div>
@@ -708,6 +731,7 @@
           <thead><tr><th>Неделя</th><th class="num">Отклики</th><th class="num">За отклики</th><th class="num">Премии</th><th class="num">Начислено</th><th class="num">Выплачено</th></tr></thead>
           <tbody>${weekRows}</tbody>
         </table></div></div>
+        ${planSection}
         <div class="emp-detail-section"><h4>Какие отклики вошли в расчёт</h4><div class="emp-detail-scroll"><table class="table">
           <thead><tr><th>Дата</th><th>Анкета</th><th>Аккаунт</th><th>Статус</th><th class="num">Начислено</th></tr></thead>
           <tbody>${workRows}</tbody>
