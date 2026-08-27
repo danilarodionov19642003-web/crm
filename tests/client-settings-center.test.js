@@ -16,6 +16,7 @@ const migration = read('sql/migrations/2026-08-20_client_settings_center.sql');
 const referralMigration = read('sql/migrations/2026-08-20_client_referrals.sql');
 const notificationEventsMigration = read('sql/migrations/2026-08-26_client_notification_events.sql');
 const notificationTemplatesMigration = read('sql/migrations/2026-08-27_client_schedule_notification_templates.sql');
+const scheduleConfirmationCopyMigration = read('sql/migrations/2026-08-27_client_schedule_confirmation_copy.sql');
 const notificationCopyPatch = read('ops/telegram/patches/client-notification-copy.patch');
 const paymentDomain = read('payments/app/domain.py');
 const paymentMain = read('payments/app/main.py');
@@ -125,7 +126,7 @@ test('package progress is queued only after review approval and deduplicated', (
   assert.match(notificationEventsMigration, /member\.schedule_notifications/);
 });
 
-test('client Telegram notifications share one visual system and the schedule names the start time', () => {
+test('client Telegram notifications share one visual system and only the morning reminder names the start time', () => {
   const headings = [
     'АККАУНТ ВЫБРАН',
     'ОТЗЫВ ОПУБЛИКОВАН',
@@ -138,11 +139,11 @@ test('client Telegram notifications share one visual system and the schedule nam
   assert.match(appJs, /🏆 <b>АККАУНТ ВЫБРАН<\/b>/);
   assert.match(appJs, /telegramHtml\(mentorLabel\)/);
   assert.match(appJs, /telegramHtml\(accountLabel\)/);
-  assert.match(notificationTemplatesMigration, /📅 <b>ОТКЛИК ЗАПЛАНИРОВАН<\/b>/);
-  assert.match(notificationTemplatesMigration, /🔄 <b>ДАТА ОТКЛИКА ИЗМЕНЕНА<\/b>/);
-  assert.match(notificationTemplatesMigration, /❌ <b>ОТКЛИК ОТМЕНЁН<\/b>/);
-  assert.match(notificationTemplatesMigration, /не раньше 13:30 по МСК/);
-  assert.match(notificationTemplatesMigration, /Отклик снова доступен для планирования/);
+  assert.match(scheduleConfirmationCopyMigration, /📅 <b>ОТКЛИК ЗАПЛАНИРОВАН<\/b>/);
+  assert.match(scheduleConfirmationCopyMigration, /🔄 <b>ДАТА ОТКЛИКА ИЗМЕНЕНА<\/b>/);
+  assert.match(scheduleConfirmationCopyMigration, /❌ <b>ОТКЛИК ОТМЕНЁН<\/b>/);
+  assert.doesNotMatch(scheduleConfirmationCopyMigration, /13:30|не раньше/);
+  assert.match(scheduleConfirmationCopyMigration, /Отклик снова доступен для планирования/);
   assert.match(notificationCopyPatch, /🌅 <b>ДОБРОЕ УТРО!<\/b>/);
   assert.match(notificationCopyPatch, /не раньше 13:30 по МСК/);
   assert.match(notificationCopyPatch, /html\.escape/);
