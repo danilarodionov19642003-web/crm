@@ -33,13 +33,13 @@ test('settings open from the client avatar and no longer occupy the dashboard', 
   assert.match(settingsJs, /Реферальная программа/);
 });
 
-test('A34 test cabinet gets a Telegram reminder and any client can unlink a contact', () => {
+test('every cabinet without Telegram gets a reminder and any client can unlink a contact', () => {
   assert.match(indexHtml, /data-cli-tg-reminder/);
   assert.match(indexHtml, /Подключите Telegram для уведомлений/);
   assert.match(indexHtml, /cli-tg-reminder__mobile">Telegram для уведомлений/);
   assert.match(indexHtml, /cli-tg-reminder__mobile">Подключить/);
-  assert.match(clientApp, /TELEGRAM_REMINDER_TEST_EMAIL = 'test@test\.com'/);
-  assert.match(clientApp, /email === TELEGRAM_REMINDER_TEST_EMAIL[\s\S]*count === 0/);
+  assert.doesNotMatch(clientApp, /TELEGRAM_REMINDER_TEST_EMAIL|test@test\.com/);
+  assert.match(clientApp, /const shouldShow = Number\.isFinite\(count\) && count === 0/);
   assert.match(clientApp, /ClientSettings\.open\('telegram'\)/);
   assert.match(settingsJs, /Отвязать Telegram/);
   assert.match(settingsJs, /revoke_my_client_telegram_member/);

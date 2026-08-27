@@ -22,7 +22,6 @@
   const _key = () => window.Supabase.KEY;
 
   const SNAPSHOTS_TABLE = 'client_snapshots';
-  const TELEGRAM_REMINDER_TEST_EMAIL = 'test@test.com';
   const OUTREACH_SUNDAY_DAY_OFF_FROM = '2026-08-30';
   let telegramReminderBound = false;
 
@@ -565,10 +564,8 @@
   function renderTelegramReminder(memberCount) {
     const root = document.querySelector('[data-cli-tg-reminder]');
     if (!root) return;
-    const email = String(Auth.portalEmail() || '').trim().toLowerCase();
     const count = Number(memberCount);
-    const shouldShow = email === TELEGRAM_REMINDER_TEST_EMAIL
-      && Number.isFinite(count) && count === 0;
+    const shouldShow = Number.isFinite(count) && count === 0;
     if (!shouldShow) {
       root.classList.remove('is-visible');
       root.hidden = true;
