@@ -56,11 +56,62 @@
     .cp-tg-summary { display:flex; flex-direction:column; gap:4px; min-width:170px; }
     .cp-tg-summary__row { display:flex; align-items:center; flex-wrap:wrap; gap:4px 6px; font-size:12px; }
     .cp-tg-summary__approver { padding:2px 5px; border-radius:999px; background:rgba(255,122,0,.12); color:#ff7a00; font-size:9px; font-weight:700; }
+    .cp-tg-invite-client {
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--bg-elev-2);
+      font-size: 13px;
+      overflow-wrap: anywhere;
+    }
+    .cp-tg-role-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .cp-tg-role {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 44px;
+      padding: 9px 11px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      cursor: pointer;
+      background: var(--bg-elev-1);
+    }
+    .cp-tg-role:has(input:checked) {
+      border-color: #ff7a00;
+      background: rgba(255, 122, 0, .09);
+    }
+    .cp-tg-role input { margin: 0; accent-color: #ff7a00; }
+    .cp-tg-approver {
+      display: flex;
+      align-items: flex-start;
+      gap: 9px;
+      padding: 11px 12px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--bg-elev-1);
+      cursor: pointer;
+    }
+    .cp-tg-approver input { margin: 2px 0 0; accent-color: #ff7a00; }
+    .cp-tg-invite-help { margin-top: 5px; color: var(--text-mute); font-size: 11px; line-height: 1.45; }
+    .cp-tg-link-result {
+      padding: 12px;
+      border: 1px solid rgba(82, 196, 26, .35);
+      border-radius: 10px;
+      background: rgba(82, 196, 26, .08);
+    }
+    .cp-tg-link-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; margin-top: 7px; }
+    .cp-tg-link-row .input { min-width: 0; font-size: 12px; }
     .cp-login-email { display:block; overflow-wrap:anywhere; }
     .cp-portal-key { display:block; margin-top:3px; color:var(--text-mute); font-size:10px; overflow-wrap:anywhere; }
     @media (max-width: 640px) {
       .cp-mentors { max-height: 280px; }
       .cp-mentor-fields { grid-template-columns: minmax(0, 1fr); }
+      .cp-tg-role-grid, .cp-tg-link-row { grid-template-columns: minmax(0, 1fr); }
+      .cp-tg-link-row .btn { width: 100%; justify-content: center; }
     }
   </style>
 </head>
@@ -165,6 +216,63 @@
     </div>
   </div>
 
+  <!-- Персональная одноразовая Telegram-ссылка -->
+  <div class="modal-backdrop" id="cpTelegramInviteModal">
+    <div class="modal" style="max-width:480px">
+      <div class="modal__header">
+        <h3>Подключить Telegram</h3>
+        <button class="btn--icon" data-close aria-label="Закрыть">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal__body">
+        <div class="cp-tg-invite-client" id="cpTgInviteClient"></div>
+
+        <div id="cpTgInviteForm">
+          <div class="field" style="margin-top:14px">
+            <label>Кого подключаем</label>
+            <div class="cp-tg-role-grid">
+              <label class="cp-tg-role">
+                <input type="radio" name="cpTgInviteRole" value="owner" checked/>
+                <span><strong>Владелец</strong><br><small style="color:var(--text-mute)">Основной контакт</small></span>
+              </label>
+              <label class="cp-tg-role">
+                <input type="radio" name="cpTgInviteRole" value="manager"/>
+                <span><strong>Менеджер</strong><br><small style="color:var(--text-mute)">Дополнительный контакт</small></span>
+              </label>
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="cpTgInviteName">Имя контакта</label>
+            <input type="text" id="cpTgInviteName" class="input" maxlength="80" placeholder="Например, Кирилл или Анна" autocomplete="off"/>
+          </div>
+
+          <div class="field">
+            <label class="cp-tg-approver">
+              <input type="checkbox" id="cpTgInviteApprover"/>
+              <span><strong>Согласовывает тексты</strong><br><small style="color:var(--text-mute)">У кабинета может быть только один ответственный за согласование.</small></span>
+            </label>
+            <div class="cp-tg-invite-help" id="cpTgInviteApproverHelp"></div>
+          </div>
+        </div>
+
+        <div class="cp-tg-link-result" id="cpTgInviteResult" hidden>
+          <strong>Ссылка готова</strong>
+          <div class="cp-tg-link-row">
+            <input type="text" class="input" id="cpTgInviteUrl" readonly/>
+            <button type="button" class="btn btn--ghost" id="cpTgInviteCopy">Копировать</button>
+          </div>
+          <div class="cp-tg-invite-help">Действует 24 часа и только для одного Telegram-аккаунта.</div>
+        </div>
+      </div>
+      <div class="modal__footer">
+        <button class="btn btn--ghost" data-close>Закрыть</button>
+        <button class="btn btn--primary" id="cpTgInviteCreate">Создать и скопировать</button>
+      </div>
+    </div>
+  </div>
+
   <script src="../data/seed.js"></script>
   <script src="../js/app.js?v=20260827c"></script>
   <script src="../js/supabase-client.js?v=20260820d"></script>
@@ -181,35 +289,133 @@
     let editingId = null;
     let telegramMembers = [];
     let loginByPortal = new Map();
+    let telegramInvitePortal = null;
+    let telegramInviteReady = false;
+    let telegramInviteHasApprover = false;
+    const plannedApproverPortals = new Set();
 
-    async function createOwnerTelegramLink(portal, button) {
+    function telegramPortalKey(portal) {
+      return String(portal && portal.email || '').trim().toLowerCase();
+    }
+
+    function setTelegramInviteFormEnabled(enabled) {
+      document.querySelectorAll('#cpTgInviteForm input').forEach(input => {
+        input.disabled = !enabled;
+      });
+    }
+
+    function updateTelegramInviteApproverHelp() {
+      const help = document.getElementById('cpTgInviteApproverHelp');
+      help.textContent = telegramInviteHasApprover
+        ? 'Если включить, после подключения право согласования перейдёт этому человеку.'
+        : 'Ответственного пока нет. Первый подключившийся контакт станет им автоматически.';
+    }
+
+    function resetTelegramInviteForm(forNextContact) {
+      const ownerRole = document.querySelector('input[name="cpTgInviteRole"][value="owner"]');
+      const managerRole = document.querySelector('input[name="cpTgInviteRole"][value="manager"]');
+      ownerRole.checked = !forNextContact;
+      managerRole.checked = !!forNextContact;
+      document.getElementById('cpTgInviteName').value = forNextContact
+        ? ''
+        : String(telegramInvitePortal && telegramInvitePortal.name || '').trim();
+      document.getElementById('cpTgInviteApprover').checked = !telegramInviteHasApprover;
+      document.getElementById('cpTgInviteUrl').value = '';
+      document.getElementById('cpTgInviteResult').hidden = true;
+      document.getElementById('cpTgInviteForm').hidden = false;
+      const createButton = document.getElementById('cpTgInviteCreate');
+      createButton.textContent = 'Создать и скопировать';
+      createButton.disabled = false;
+      telegramInviteReady = false;
+      setTelegramInviteFormEnabled(true);
+      updateTelegramInviteApproverHelp();
+      if (forNextContact) document.getElementById('cpTgInviteName').focus();
+    }
+
+    function openOwnerTelegramInvite(portal) {
       if (!portal || !portal.email) {
         toast('У этого клиента пока нет личного кабинета.', 'error');
         return;
       }
-      button.disabled = true;
+      telegramInvitePortal = portal;
+      const portalKey = telegramPortalKey(portal);
+      telegramInviteHasApprover = telegramMembers.some(member =>
+        String(member.portal_email || '').toLowerCase() === portalKey
+          && member.is_active !== false
+          && member.is_text_approver
+      ) || plannedApproverPortals.has(portalKey);
+      document.getElementById('cpTgInviteClient').innerHTML = `
+        <strong>${escapeHtml(portal.name || 'Клиент')}</strong><br>
+        <span style="color:var(--text-mute)">${escapeHtml(portal.email)}</span>`;
+      resetTelegramInviteForm(false);
+      Modal.open('cpTelegramInviteModal');
+      setTimeout(() => document.getElementById('cpTgInviteName').focus(), 0);
+    }
+
+    async function copyTelegramInviteUrl() {
+      const input = document.getElementById('cpTgInviteUrl');
+      const url = input.value;
+      if (!url) return false;
+      try {
+        await navigator.clipboard.writeText(url);
+        toast('TG-ссылка скопирована');
+        return true;
+      } catch (_) {
+        input.focus();
+        input.select();
+        input.setSelectionRange(0, input.value.length);
+        toast('Ссылка готова. Скопируй её из поля.', 'error');
+        return false;
+      }
+    }
+
+    async function createOwnerTelegramLink() {
+      if (telegramInviteReady) {
+        resetTelegramInviteForm(true);
+        return;
+      }
+      const portal = telegramInvitePortal;
+      if (!portal || !portal.email) return;
+      const contactName = document.getElementById('cpTgInviteName').value.trim();
+      if (!contactName) {
+        toast('Укажи имя контакта', 'error');
+        document.getElementById('cpTgInviteName').focus();
+        return;
+      }
+      const role = document.querySelector('input[name="cpTgInviteRole"]:checked')?.value || 'owner';
+      const roleLabel = role === 'manager' ? 'менеджер' : 'владелец';
+      const isTextApprover = document.getElementById('cpTgInviteApprover').checked;
+      const createButton = document.getElementById('cpTgInviteCreate');
+      createButton.disabled = true;
+      createButton.textContent = 'Создаю…';
       try {
         const result = await callAuthRpc('create_client_telegram_invite_for_owner', {
           p_portal_email: portal.email,
-          p_contact_label: portal.name || portal.email,
-          p_is_text_approver: false
+          p_contact_label: `${contactName} · ${roleLabel}`,
+          p_is_text_approver: isTextApprover
         });
         if (!result || !result.token) throw new Error('INVITE_TOKEN_MISSING');
         const url = `https://t.me/${encodeURIComponent(result.bot_username || 'MentoriTG_bot')}?start=link_${encodeURIComponent(result.token)}`;
-        try {
-          await navigator.clipboard.writeText(url);
-          toast(`Ссылка для кабинета ${portal.name || portal.email} скопирована. Действует 24 часа и только один раз.`);
-        } catch (_) {
-          window.prompt('Скопируй ссылку для клиента. Она действует 24 часа и только один раз.', url);
+        document.getElementById('cpTgInviteUrl').value = url;
+        document.getElementById('cpTgInviteForm').hidden = true;
+        document.getElementById('cpTgInviteResult').hidden = false;
+        setTelegramInviteFormEnabled(false);
+        telegramInviteReady = true;
+        if (isTextApprover) {
+          plannedApproverPortals.add(telegramPortalKey(portal));
+          telegramInviteHasApprover = true;
         }
+        createButton.textContent = 'Создать ещё контакт';
+        createButton.disabled = false;
+        await copyTelegramInviteUrl();
       } catch (error) {
         const raw = String(error && error.message || error || '');
         if (raw.includes('MEMBER_LIMIT_REACHED')) toast('К кабинету уже подключено максимальное число Telegram-контактов.', 'error');
         else if (raw.includes('PORTAL_NOT_FOUND')) toast('Снимок личного кабинета ещё не создан. Сохрани CRM и повтори.', 'error');
         else if (raw.includes('AUTH_REQUIRED')) toast('Создать ссылку может только владелец CRM.', 'error');
         else toast('Не удалось создать ссылку Telegram. Попробуй ещё раз.', 'error');
-      } finally {
-        button.disabled = false;
+        createButton.textContent = 'Создать и скопировать';
+        createButton.disabled = false;
       }
     }
 
@@ -361,7 +567,7 @@
         }
         const tgCell = `<div class="cp-tg-summary">
           ${tgStatus}
-          <button type="button" class="btn btn--ghost btn--sm" data-act="telegram-link" data-id="${escapeHtml(p.id)}" title="Скопировать одну ссылку для всего кабинета и всех его анкет">TG-ссылка</button>
+          <button type="button" class="btn btn--ghost btn--sm" data-act="telegram-link" data-id="${escapeHtml(p.id)}" title="Создать персональную одноразовую ссылку для этого кабинета">+ Telegram</button>
         </div>`;
         const loginEmail = loginByPortal.get(String(p.email || '').toLowerCase()) || p.email;
         const loginCell = String(loginEmail || '').toLowerCase() === String(p.email || '').toLowerCase()
@@ -389,9 +595,9 @@
         b.addEventListener('click', () => openEdit(b.dataset.id));
       });
       tbody.querySelectorAll('button[data-act="telegram-link"]').forEach(b => {
-        b.addEventListener('click', async () => {
+        b.addEventListener('click', () => {
           const portal = (Store.state.clientPortals || []).find(item => item.id === b.dataset.id);
-          if (portal) await createOwnerTelegramLink(portal, b);
+          if (portal) openOwnerTelegramInvite(portal);
         });
       });
       tbody.querySelectorAll('button[data-act="del"]').forEach(b => {
@@ -445,6 +651,14 @@
     }
 
     document.getElementById('btnAdd').addEventListener('click', openAdd);
+    document.getElementById('cpTgInviteCreate').addEventListener('click', createOwnerTelegramLink);
+    document.getElementById('cpTgInviteCopy').addEventListener('click', copyTelegramInviteUrl);
+    document.getElementById('cpTgInviteName').addEventListener('keydown', event => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        createOwnerTelegramLink();
+      }
+    });
 
     /** Вызов RPC create_client_user / reset_client_password на нашем
      *  self-hosted Supabase. Авторизация: текущий access_token владельца.

@@ -33,6 +33,7 @@ const channelGateSql = read('sql/migrations/2026-08-27_client_telegram_channel_g
 const passwordlessSql = read('sql/migrations/2026-08-27_client_telegram_passwordless_login_and_bot_settings.sql');
 const passwordlessBotPatch = read('ops/telegram/patches/client-passwordless-login-settings.patch');
 const ownerInviteSql = read('sql/migrations/2026-08-26_owner_client_telegram_invites.sql');
+const ownerInviteRolesSql = read('sql/migrations/2026-08-27_owner_client_telegram_invite_roles.sql');
 const clientsHtml = read('pages/clients.html');
 const clientAccessHtml = read('pages/client-access.html');
 
@@ -62,7 +63,23 @@ test('owner can copy a one-time Telegram link without client cabinet login', () 
   assert.match(clientAccessHtml, /p_portal_email: portal\.email/,
     'одна ссылка должна создаваться по ключу кабинета, а не по анкете');
   assert.match(clientAccessHtml, /navigator\.clipboard\.writeText\(url\)/);
-  assert.match(clientAccessHtml, /Действует 24 часа и только один раз/);
+  assert.match(clientAccessHtml, /Действует 24 часа и только для одного Telegram-аккаунта/);
+});
+
+test('owner creates a separate labelled Telegram invite for every contact', () => {
+  assert.match(clientAccessHtml, /id="cpTelegramInviteModal"/);
+  assert.match(clientAccessHtml, /name="cpTgInviteRole" value="owner"/);
+  assert.match(clientAccessHtml, /name="cpTgInviteRole" value="manager"/);
+  assert.match(clientAccessHtml, /id="cpTgInviteName"[^>]*maxlength="80"/);
+  assert.match(clientAccessHtml, /id="cpTgInviteApprover"/);
+  assert.match(clientAccessHtml, /p_contact_label: `\$\{contactName\} · \$\{roleLabel\}`/);
+  assert.match(clientAccessHtml, /p_is_text_approver: isTextApprover/);
+  assert.match(clientAccessHtml, /Создать ещё контакт/);
+  assert.match(clientAccessHtml, /plannedApproverPortals/);
+  assert.match(ownerInviteRolesSql, /v_make_approver boolean := coalesce\(p_is_text_approver, false\)/);
+  assert.doesNotMatch(ownerInviteRolesSql, /p_is_text_approver, false\) or not exists/);
+  assert.match(teamSql, /v_invite\.is_text_approver[\s\S]*or not exists/,
+    'первый реально подключившийся контакт всё равно должен стать согласующим');
 });
 
 test('Telegram linking is short-lived, one-time and bounded', () => {
