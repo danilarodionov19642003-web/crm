@@ -123,11 +123,12 @@ test('a delivered message is removed if recording its identity fails', () => {
   assert.match(botPatch, /approval message sent but could not be recorded or deleted/);
 });
 
-test('cleanup bot patch is explicitly last in the maintained patch chain', () => {
+test('cleanup bot patch stays after notification copy and before onboarding reminder', () => {
   const passwordlessIndex = patchReadme.indexOf('`client-passwordless-login-settings.patch` adds');
   const cleanupIndex = patchReadme.indexOf('`client-text-approval-message-cleanup.patch` records');
-  assert.ok(passwordlessIndex >= 0 && cleanupIndex > passwordlessIndex);
-  assert.match(patchReadme, /Apply it last, after `client-notification-copy\.patch`/);
+  const reminderIndex = patchReadme.indexOf('`client-schedule-onboarding-reminder.patch` sends');
+  assert.ok(passwordlessIndex >= 0 && cleanupIndex > passwordlessIndex && reminderIndex > cleanupIndex);
+  assert.match(patchReadme, /Apply it after `client-notification-copy\.patch`/);
   assert.match(patchReadme, /2026-08-27_client_text_approval_message_cleanup\.sql/);
 });
 

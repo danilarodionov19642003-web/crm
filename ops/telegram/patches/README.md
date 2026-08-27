@@ -77,8 +77,14 @@ the request is approved, rejected, or cancelled in the Mini App, client portal,
 bot, or CRM, the notifier deletes only that tracked message and retries safely.
 If Telegram refuses an old deletion, it replaces that same message with a
 compact result and removes its inline buttons.
-Apply it last, after `client-notification-copy.patch` and the
+Apply it after `client-notification-copy.patch` and the
 `2026-08-27_client_text_approval_message_cleanup.sql` migration.
+
+`client-schedule-onboarding-reminder.patch` sends a one-time onboarding
+reminder immediately after a client redeems a personal Telegram link. It tells
+the client that manager-entered dates are preliminary and asks them to review
+every active anketa in the persistent `Кабинет` Mini App. Apply it last, after
+`client-text-approval-message-cleanup.patch`.
 
 Apply from the bot repository root with zero-context support:
 
