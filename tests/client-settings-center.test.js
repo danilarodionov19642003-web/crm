@@ -39,6 +39,7 @@ test('every cabinet without Telegram gets a reminder and any client can unlink a
   assert.match(indexHtml, /cli-tg-reminder__mobile">Telegram для уведомлений/);
   assert.match(indexHtml, /cli-tg-reminder__mobile">Подключить/);
   assert.doesNotMatch(clientApp, /TELEGRAM_REMINDER_TEST_EMAIL|test@test\.com/);
+  assert.match(clientApp, /const count = memberCount == null \? NaN : Number\(memberCount\)/);
   assert.match(clientApp, /const shouldShow = Number\.isFinite\(count\) && count === 0/);
   assert.match(clientApp, /ClientSettings\.open\('telegram'\)/);
   assert.match(settingsJs, /Отвязать Telegram/);

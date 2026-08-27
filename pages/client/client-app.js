@@ -564,7 +564,7 @@
   function renderTelegramReminder(memberCount) {
     const root = document.querySelector('[data-cli-tg-reminder]');
     if (!root) return;
-    const count = Number(memberCount);
+    const count = memberCount == null ? NaN : Number(memberCount);
     const shouldShow = Number.isFinite(count) && count === 0;
     if (!shouldShow) {
       root.classList.remove('is-visible');
