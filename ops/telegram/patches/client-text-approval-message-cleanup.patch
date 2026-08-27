@@ -1,0 +1,293 @@
+--- a/backend/notifier.py
++++ b/backend/notifier.py
+@@ -78,6 +78,41 @@
+         return await resp.json()
+-
++
+-
++
++async def _fetch_pending_message_deletions(
++    session: aiohttp.ClientSession,
++    limit: int = 20,
++) -> list[dict[str, Any]]:
++    """Exact Telegram messages queued after an approval was resolved."""
++    url = (
++        f"{settings.supabase_url}/rest/v1/client_telegram_message_deliveries"
++        f"?delivery_status=eq.delete_pending"
++        f"&delete_attempts=lt.{settings.notifier_max_attempts}"
++        f"&select=id,approval_request_id,telegram_chat_id,telegram_message_id,delete_attempts,resolution_status"
++        f"&order=delete_queued_at.asc,id.asc"
++        f"&limit={limit}"
++    )
++    async with session.get(url, headers=_supabase_headers()) as resp:
++        if resp.status != 200:
++            text = await resp.text()
++            raise RuntimeError(f"fetch_pending_message_deletions {resp.status}: {text[:300]}")
++        return await resp.json()
++
++
++async def _rpc(
++    session: aiohttp.ClientSession,
++    function_name: str,
++    payload: dict[str, Any],
++) -> dict[str, Any]:
++    url = f"{settings.supabase_url}/rest/v1/rpc/{function_name}"
++    async with session.post(url, headers=_supabase_headers(), json=payload) as resp:
++        body = await resp.json(content_type=None)
++        if resp.status != 200:
++            raise RuntimeError(f"{function_name} {resp.status}: {str(body)[:300]}")
++        if not isinstance(body, dict) or not body.get("ok"):
++            raise RuntimeError(f"{function_name} rejected: {str(body)[:300]}")
++        return body
++
++
+ async def _fetch_text_approval(
+     session: aiohttp.ClientSession,
+     request_id: int,
+@@ -139,6 +174,43 @@
+             log.warning("mark_sent #%s failed %s: %s", row_id, resp.status, text[:200])
+-
++
+-
++
++async def _mark_skipped(session: aiohttp.ClientSession, row_id: int, reason: str) -> None:
++    """Do not send an approval that was already resolved or removed."""
++    url = f"{settings.supabase_url}/rest/v1/notification_outbox?id=eq.{row_id}&status=eq.pending"
++    payload = {"status": "skipped", "last_error": reason[:500]}
++    headers = {**_supabase_headers(), "Prefer": "return=minimal"}
++    async with session.patch(url, headers=headers, json=payload) as resp:
++        if resp.status not in (200, 204):
++            text = await resp.text()
++            log.warning("mark_skipped #%s failed %s: %s", row_id, resp.status, text[:200])
++
++
++async def _record_text_approval_delivery(
++    session: aiohttp.ClientSession,
++    row_id: int,
++    expected_chat_id: int,
++    telegram_message: dict[str, Any],
++) -> None:
++    message_id = int(telegram_message.get("message_id") or 0)
++    result_chat = telegram_message.get("chat") or {}
++    delivered_chat_id = int(result_chat.get("id") or 0)
++    if message_id <= 0 or delivered_chat_id != expected_chat_id:
++        raise RuntimeError("Telegram sendMessage returned an invalid message identity")
++    payload = {
++        "p_outbox_id": int(row_id),
++        "p_telegram_chat_id": delivered_chat_id,
++        "p_telegram_message_id": message_id,
++    }
++    last_error: Exception | None = None
++    for _attempt in range(2):
++        try:
++            await _rpc(session, "record_client_text_approval_telegram_delivery", payload)
++            return
++        except Exception as exc:
++            last_error = exc
++    raise RuntimeError(f"could not record Telegram approval message: {last_error}")
++
++
+ async def _mark_failed(session: aiohttp.ClientSession, row_id: int, attempts: int,
+                        err: str, is_permanent: bool) -> None:
+     """Помечаем строку: либо ещё pending (но с инкрементом attempts), либо failed."""
+@@ -166,9 +238,92 @@
+         "bot was blocked by the user",
+         "forbidden: bot can't initiate conversation",
+         "peer_id_invalid",
++    ))
++
++
++def _is_already_deleted_error(err: str) -> bool:
++    return "message to delete not found" in err.lower()
++
++
++def _is_permanent_delete_error(err: str) -> bool:
++    s = err.lower()
++    return _is_permanent_error(err) or any(needle in s for needle in (
++        "message can't be deleted",
++        "message identifier is not specified",
+     ))
+-
++
+-
++
++async def _complete_message_deletion(
++    session: aiohttp.ClientSession,
++    delivery_id: int,
++    succeeded: bool,
++    error: str | None,
++    final: bool,
++    compacted: bool = False,
++) -> None:
++    await _rpc(session, "complete_client_telegram_message_deletion", {
++        "p_delivery_id": int(delivery_id),
++        "p_succeeded": bool(succeeded),
++        "p_error": error,
++        "p_final": bool(final),
++        "p_compacted": bool(compacted),
++    })
++
++
++def _resolved_approval_label(status: str | None) -> str | None:
++    return {
++        "approved": "✅ <b>Текст согласован</b>",
++        "changes_requested": "✏️ <b>Запрошены правки</b>",
++        "cancelled": "🗑 <b>Согласование отменено</b>",
++    }.get(str(status or ""))
++
++
++async def _process_message_deletion(
++    session: aiohttp.ClientSession,
++    delivery: dict[str, Any],
++) -> None:
++    delivery_id = int(delivery["id"])
++    chat_id = int(delivery["telegram_chat_id"])
++    message_id = int(delivery["telegram_message_id"])
++    attempts = int(delivery.get("delete_attempts") or 0) + 1
++    try:
++        await bot_notify.delete_order_status_message(chat_id, message_id)
++        await _complete_message_deletion(session, delivery_id, True, None, True)
++        log.info("deleted approval message %s in chat %s", message_id, chat_id)
++    except Exception as exc:
++        error = str(exc)
++        if _is_already_deleted_error(error):
++            # deleteMessage is idempotent from our point of view: if the exact
++            # message is already absent, the clean-chat outcome is complete.
++            await _complete_message_deletion(session, delivery_id, True, None, True)
++            return
++        final = (
++            _is_permanent_delete_error(error)
++            or attempts >= settings.notifier_max_attempts
++        )
++        compact_text = _resolved_approval_label(delivery.get("resolution_status"))
++        if final and compact_text:
++            try:
++                await bot_notify.compact_order_status_message(
++                    chat_id, message_id, compact_text
++                )
++                await _complete_message_deletion(
++                    session, delivery_id, False, error, True, compacted=True
++                )
++                log.info(
++                    "compacted approval message %s in chat %s after delete failed",
++                    message_id, chat_id,
++                )
++                return
++            except Exception as compact_exc:
++                error = f"delete failed: {error}; compact fallback failed: {compact_exc}"
++        await _complete_message_deletion(session, delivery_id, False, error, final)
++        log.warning(
++            "delete approval message %s in chat %s failed%s: %s",
++            message_id, chat_id, " permanently" if final else "", error,
++        )
++
++
+ async def _process_one(session: aiohttp.ClientSession, row: dict[str, Any]) -> None:
+     row_id = row["id"]
+     chat_id = row.get("telegram_chat_id")
+@@ -197,14 +352,39 @@
+     elif row.get("kind") == "client_text_approval" and row.get("action_ref"):
+         request_id = int(row["action_ref"])
+         approval = await _fetch_text_approval(session, request_id)
++        if not approval or approval.get("request_status") != "pending":
++            await _mark_skipped(session, row_id, "text approval is already resolved")
++            return
+         message = _format_text_approval_message(approval, message)
+         reply_markup = {"inline_keyboard": [[
+             {"text": "✅ Подтвердить", "callback_data": f"ctxt:a:{request_id}"},
+             {"text": "❌ Отклонить", "callback_data": f"ctxt:c:{request_id}"},
+         ]]}
+     try:
+-        await bot_notify.send_order_status_message(int(chat_id), message, reply_markup=reply_markup)
+-        await _mark_sent(session, row_id)
++        telegram_message = await bot_notify.send_order_status_message(
++            int(chat_id), message, reply_markup=reply_markup
++        )
++        if row.get("kind") == "client_text_approval":
++            try:
++                await _record_text_approval_delivery(
++                    session, row_id, int(chat_id), telegram_message
++                )
++            except Exception:
++                # sendMessage succeeded, so never leave an untracked approval
++                # behind if the delivery-ledger RPC is temporarily unavailable.
++                try:
++                    await bot_notify.delete_order_status_message(
++                        int(telegram_message["chat"]["id"]),
++                        int(telegram_message["message_id"]),
++                    )
++                except Exception:
++                    log.critical(
++                        "approval message sent but could not be recorded or deleted",
++                        exc_info=True,
++                    )
++                raise
++        else:
++            await _mark_sent(session, row_id)
+         log.info("sent #%s -> chat %s", row_id, chat_id)
+     except Exception as e:
+         err = str(e)
+@@ -220,13 +400,14 @@
+     """Одна итерация: возвращает сколько строк обработано."""
+     async with aiohttp.ClientSession(timeout=REST_TIMEOUT) as session:
+         rows = await _fetch_pending(session)
+-        if not rows:
+-            return 0
+         # Обрабатываем последовательно — не хотим спамить Bot API и
+         # перегружать Cloudflare-mirror.
+         for row in rows:
+             await _process_one(session, row)
+-        return len(rows)
++        deletions = await _fetch_pending_message_deletions(session)
++        for delivery in deletions:
++            await _process_message_deletion(session, delivery)
++        return len(rows) + len(deletions)
+-
++
+-
++
+ async def run() -> None:
+--- a/backend/bot_notify.py
++++ b/backend/bot_notify.py
+@@ -46,3 +46,41 @@
+                 desc = data.get("description", "unknown error")
+                 raise RuntimeError(f"Bot API error: {desc}")
+             return data["result"]
++
++
++async def delete_order_status_message(chat_id: int, message_id: int) -> bool:
++    """Delete one exact bot message; callers persist and retry the command."""
++    if not settings.bot_token:
++        raise RuntimeError("BOT_TOKEN не задан в .env")
++    url = _bot_api_url("deleteMessage")
++    payload = {"chat_id": int(chat_id), "message_id": int(message_id)}
++    timeout = aiohttp.ClientTimeout(total=15)
++    async with aiohttp.ClientSession(timeout=timeout) as sess:
++        async with sess.post(url, json=payload) as resp:
++            data = await resp.json()
++            if not data.get("ok"):
++                desc = data.get("description", "unknown error")
++                raise RuntimeError(f"Bot API error: {desc}")
++            return True
++
++
++async def compact_order_status_message(chat_id: int, message_id: int, text: str) -> bool:
++    """Replace one old approval with a short result and remove its buttons."""
++    if not settings.bot_token:
++        raise RuntimeError("BOT_TOKEN не задан в .env")
++    url = _bot_api_url("editMessageText")
++    payload = {
++        "chat_id": int(chat_id),
++        "message_id": int(message_id),
++        "text": text,
++        "parse_mode": "HTML",
++        "reply_markup": {"inline_keyboard": []},
++    }
++    timeout = aiohttp.ClientTimeout(total=15)
++    async with aiohttp.ClientSession(timeout=timeout) as sess:
++        async with sess.post(url, json=payload) as resp:
++            data = await resp.json()
++            if not data.get("ok"):
++                desc = data.get("description", "unknown error")
++                raise RuntimeError(f"Bot API error: {desc}")
++            return True

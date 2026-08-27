@@ -73,6 +73,6 @@ const statuses = fs.readFileSync(path.join(root, 'pages/statuses.html'), 'utf8')
 assert.match(statuses, /\.filter\(m => clientReviewsRemaining\(Store\.state, m\) > 0\)/);
 assert.match(statuses, /\.sort\(\(a, b\) => compareClientCodes\(a\.code, b\.code\)\)/);
 assert.match(statuses, /нет клиентов с остатком отзывов/);
-assert.match(statuses, /app\.js\?v=20260827a/);
+assert.match(statuses, /app\.js\?v=20260827c/);
 
 console.log('account client selector: OK');

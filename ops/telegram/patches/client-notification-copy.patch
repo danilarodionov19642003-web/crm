@@ -1,0 +1,25 @@
+--- a/backend/schedule_reminder.py
++++ b/backend/schedule_reminder.py
+@@ -380,11 +380,17 @@
+     if not chat_id:
+         return False
+-    anketa_name = client.get("name") or client.get("mentorName") or client.get("code") or "анкете"
++    anketa_code = html.escape(str(client.get("code") or "").upper())
++    anketa_name = html.escape(str(
++        client.get("name") or client.get("mentorName") or client.get("code") or "Анкета"
++    ))
++    anketa_label = f"{anketa_code} · {anketa_name}" if anketa_code else anketa_name
+     text = (
+-        "🌅 <b>Доброе утро!</b>\n\n"
+-        f"По анкете «<b>{anketa_name}</b>» сегодня запланирован отклик.\n"
+-        "Проверить или изменить график можно в Mini App через кнопку "
+-        "«Кабинет» рядом с полем ввода."
++        "🌅 <b>ДОБРОЕ УТРО!</b>\n"
++        "━━━━━━━━━━━━━━\n\n"
++        f"📋 <b>Анкета:</b> {anketa_label}\n"
++        "📅 Сегодня запланирован отклик.\n\n"
++        "🕜 Менеджер начнёт работу с откликом <b>не раньше 13:30 по МСК</b>.\n\n"
++        "Если планы изменились, перенесите или отмените дату в Mini App."
+     )
+     try:
+         await bot.send_message(chat_id=chat_id, text=text)

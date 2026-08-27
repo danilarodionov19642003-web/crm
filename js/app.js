@@ -161,6 +161,13 @@
       .replace(/а/g, 'a')
       .replace(/[\s\u2010-\u2015-]+/g, '');
   }
+  function telegramHtml(value) {
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+  const CLIENT_NOTIFICATION_DIVIDER = '━━━━━━━━━━━━━━';
   function compareClientCodes(left, right) {
     const a = normalizeClientCode(left);
     const b = normalizeClientCode(right);
@@ -1998,7 +2005,7 @@
 
       const mentor  = (this.state.mentors  || []).find(m => m.id === mentorId);
       const profile = (this.state.profiles || []).find(p => p.id === profileId);
-      const mentorLabel  = mentor  ? `${mentor.code}${mentor.name ? ' «' + mentor.name + '»' : ''}` : '—';
+      const mentorLabel  = mentor  ? `${mentor.code}${mentor.name ? ' · ' + mentor.name : ''}` : '—';
       // Имя владельца аккаунта берём из accountRegs.ownerName (одна или несколько
       // регистраций на платформах — у каждой свой ownerName). Если имени нет —
       // fallback на profile.code (чтобы клиент хоть как-то понял о чём речь).
@@ -2008,15 +2015,15 @@
         ? ownerNames.join(' / ')
         : (profile ? profile.code : '—');
 
-      let message;
-      if (oldStatus) {
-        message = `📢 Обновление по анкете ${mentorLabel}\n`
-                + `Аккаунт ${accountLabel}: ${oldStatus} → ${newStatus}`;
-      } else {
-        message = `📢 Обновление по анкете ${mentorLabel}\n`
-                + `Аккаунт ${accountLabel}: ${newStatus}`;
+      let message = `🏆 <b>АККАУНТ ВЫБРАН</b>\n`
+        + `${CLIENT_NOTIFICATION_DIVIDER}\n\n`
+        + `📋 <b>Анкета:</b> ${telegramHtml(mentorLabel)}\n`
+        + `👤 <b>Аккаунт:</b> ${telegramHtml(accountLabel)}\n\n`
+        + `🔔 <b>Статус:</b> ${telegramHtml(oldStatus)} → ${telegramHtml(newStatus)}`;
+      if (comment) {
+        message += `\n\n💬 <b>Комментарий менеджера:</b>\n`
+          + `<blockquote>${telegramHtml(comment)}</blockquote>`;
       }
-      if (comment) message += `\n\n💬 ${comment}`;
 
       const queue = window.CloudSync.queueClientTelegramNotification
         || window.CloudSync.queueTelegramNotification;
@@ -2169,14 +2176,13 @@
       if (!review || !window.CloudSync || !window.CloudSync.queueClientProgressNotification) return;
       const client = clientForStatusMentor(this.state, review.mentorId);
       if (!client || Math.max(0, Number(client.ordered) || 0) <= 0) return;
-      const remaining = clientRemainingReviews(client, this.state);
-
       const portal = (this.state.clientPortals || [])
         .find(item => Array.isArray(item.mentorIds) && item.mentorIds.includes(review.mentorId));
       if (!portal || !portal.email) return;
       const mentor = (this.state.mentors || []).find(item => item.id === review.mentorId);
+      const remaining = clientReviewsRemaining(this.state, mentor);
       const mentorLabel = mentor
-        ? `${mentor.code}${mentor.name ? ` «${mentor.name}»` : ''}`
+        ? `${mentor.code}${mentor.name ? ` · ${mentor.name}` : ''}`
         : (client.code || 'анкете');
       const registration = this.getAccountReg(review.profileId);
       const profile = this.getProfileOrArchived(review.profileId);
@@ -2187,11 +2193,23 @@
       const kind = completed
         ? 'order_completed'
         : (remaining === 1 ? 'low_reviews' : 'review_published');
-      const message = completed
-        ? `✅ Последний отзыв опубликован по анкете ${mentorLabel}.\nАккаунт: ${accountLabel}\nРабота по пакету завершена.`
+      const messageHead = completed
+        ? `🎉 <b>ПАКЕТ ВЫПОЛНЕН</b>`
         : (remaining === 1
-            ? `✅ Опубликован отзыв по анкете ${mentorLabel}.\nАккаунт: ${accountLabel}\nВ пакете остался 1 отзыв.`
-            : `✅ Опубликован отзыв по анкете ${mentorLabel}.\nАккаунт: ${accountLabel}\nОсталось отзывов: ${remaining}.`);
+            ? `🔥 <b>ОСТАЛСЯ ПОСЛЕДНИЙ ОТЗЫВ</b>`
+            : `✅ <b>ОТЗЫВ ОПУБЛИКОВАН</b>`);
+      let message = `${messageHead}\n${CLIENT_NOTIFICATION_DIVIDER}\n\n`
+        + `📋 <b>Анкета:</b> ${telegramHtml(mentorLabel)}\n`
+        + `👤 <b>Аккаунт:</b> ${telegramHtml(accountLabel)}\n\n`;
+      if (completed) {
+        message += '✅ Последний отзыв опубликован.\n'
+          + '📦 <b>Работа по пакету завершена.</b>';
+      } else if (remaining === 1) {
+        message += '✅ Новый отзыв опубликован.\n'
+          + '📦 <b>В пакете остался 1 отзыв.</b>';
+      } else {
+        message += `📦 <b>Осталось в пакете:</b> ${remaining}`;
+      }
 
       window.CloudSync.queueClientProgressNotification({
         client_email: portal.email,

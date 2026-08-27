@@ -66,6 +66,20 @@ prefix that `admin/generate_link` can drop behind a path-stripping proxy.
 Apply it after `client-text-approval-actions.patch` and the
 `2026-08-27_client_telegram_passwordless_login_and_bot_settings.sql` migration.
 
+`client-notification-copy.patch` restyles the client morning reminder to match
+the CRM-generated Telegram notifications and states that the manager starts an
+outreach no earlier than 13:30 Moscow time. Apply it after
+`client-passwordless-login-settings.patch`.
+
+`client-text-approval-message-cleanup.patch` records the exact Telegram
+`chat_id` and `message_id` returned for each text-approval notification. When
+the request is approved, rejected, or cancelled in the Mini App, client portal,
+bot, or CRM, the notifier deletes only that tracked message and retries safely.
+If Telegram refuses an old deletion, it replaces that same message with a
+compact result and removes its inline buttons.
+Apply it last, after `client-notification-copy.patch` and the
+`2026-08-27_client_text_approval_message_cleanup.sql` migration.
+
 Apply from the bot repository root with zero-context support:
 
 ```bash

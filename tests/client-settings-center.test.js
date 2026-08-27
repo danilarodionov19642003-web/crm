@@ -15,6 +15,8 @@ const cloudSyncJs = read('js/cloud-sync.js');
 const migration = read('sql/migrations/2026-08-20_client_settings_center.sql');
 const referralMigration = read('sql/migrations/2026-08-20_client_referrals.sql');
 const notificationEventsMigration = read('sql/migrations/2026-08-26_client_notification_events.sql');
+const notificationTemplatesMigration = read('sql/migrations/2026-08-27_client_schedule_notification_templates.sql');
+const notificationCopyPatch = read('ops/telegram/patches/client-notification-copy.patch');
 const paymentDomain = read('payments/app/domain.py');
 const paymentMain = read('payments/app/main.py');
 
@@ -105,9 +107,14 @@ test('every Telegram contact controls concrete notification types', () => {
 test('package progress is queued only after review approval and deduplicated', () => {
   assert.match(appJs, /approveReview[\s\S]*_queueClientProgressNotification\(r\)/);
   assert.doesNotMatch(appJs, /remaining !== 1 && remaining !== 0/);
+  assert.match(appJs, /const remaining = clientReviewsRemaining\(this\.state, mentor\)/);
+  assert.doesNotMatch(appJs, /clientRemainingReviews/);
   assert.match(appJs, /remaining === 1 \? 'low_reviews' : 'review_published'/);
   assert.match(appJs, /Последний отзыв опубликован/);
-  assert.match(appJs, /Опубликован отзыв по анкете/);
+  assert.match(appJs, /ОТЗЫВ ОПУБЛИКОВАН/);
+  assert.match(appJs, /ОСТАЛСЯ ПОСЛЕДНИЙ ОТЗЫВ/);
+  assert.match(appJs, /ПАКЕТ ВЫПОЛНЕН/);
+  assert.match(appJs, /В пакете остался 1 отзыв/);
   assert.match(appJs, /action_ref: `review:\$\{review\.id\}:remaining:\$\{remaining\}`/);
   assert.match(cloudSyncJs, /rpc\/queue_client_progress_notification/);
   assert.match(migration, /notification_outbox_client_progress_unique_idx/);
@@ -115,6 +122,29 @@ test('package progress is queued only after review approval and deduplicated', (
   assert.match(notificationEventsMigration, /review_published/);
   assert.match(notificationEventsMigration, /notify_client_outreach_slot_change/);
   assert.match(notificationEventsMigration, /member\.schedule_notifications/);
+});
+
+test('client Telegram notifications share one visual system and the schedule names the start time', () => {
+  const headings = [
+    'АККАУНТ ВЫБРАН',
+    'ОТЗЫВ ОПУБЛИКОВАН',
+    'ОСТАЛСЯ ПОСЛЕДНИЙ ОТЗЫВ',
+    'ПАКЕТ ВЫПОЛНЕН'
+  ];
+  assert.equal(new Set(headings).size, 4);
+  headings.forEach(heading => assert.match(appJs, new RegExp(heading)));
+  assert.match(appJs, /CLIENT_NOTIFICATION_DIVIDER = '━━━━━━━━━━━━━━'/);
+  assert.match(appJs, /🏆 <b>АККАУНТ ВЫБРАН<\/b>/);
+  assert.match(appJs, /telegramHtml\(mentorLabel\)/);
+  assert.match(appJs, /telegramHtml\(accountLabel\)/);
+  assert.match(notificationTemplatesMigration, /📅 <b>ОТКЛИК ЗАПЛАНИРОВАН<\/b>/);
+  assert.match(notificationTemplatesMigration, /🔄 <b>ДАТА ОТКЛИКА ИЗМЕНЕНА<\/b>/);
+  assert.match(notificationTemplatesMigration, /❌ <b>ОТКЛИК ОТМЕНЁН<\/b>/);
+  assert.match(notificationTemplatesMigration, /не раньше 13:30 по МСК/);
+  assert.match(notificationTemplatesMigration, /Отклик снова доступен для планирования/);
+  assert.match(notificationCopyPatch, /🌅 <b>ДОБРОЕ УТРО!<\/b>/);
+  assert.match(notificationCopyPatch, /не раньше 13:30 по МСК/);
+  assert.match(notificationCopyPatch, /html\.escape/);
 });
 
 test('settings are bounded on desktop and full-screen without overflow on mobile', () => {
