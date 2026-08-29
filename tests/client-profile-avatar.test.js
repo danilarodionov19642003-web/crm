@@ -97,7 +97,15 @@ assert.doesNotMatch(clientApp, /<div class="cli-kpi__label">Остаток<\/div
 assert.match(clientCss, /\.cli-profile-money-kpis \{ grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); \}/,
   'финансовый ряд профиля должен состоять ровно из двух карточек');
 assert.match(clientCss, /\.cli-summary-kpis \{ grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); \}/);
+assert.match(clientCss, /\.cli-summary-kpis \.cli-kpi \{[\s\S]*min-height: 80px/,
+  'карточки сводки должны быть такими же компактными, как платёжные CTA');
 assert.match(clientCss, /@media \(max-width: 560px\) \{[\s\S]*\.cli-cta-row \{ flex-wrap: nowrap; gap: 8px; \}/,
   'кнопки покупки и доплаты должны оставаться рядом на телефоне');
+assert.ok(
+  clientIndex.indexOf('data-cli-calendar') < clientIndex.indexOf('data-cli-anketas'),
+  'общий календарь должен находиться выше списка анкет'
+);
+assert.doesNotMatch(clientIndex, /cli-cols|cli-col--right/,
+  'старый двухколоночный порядок не должен отправлять календарь вниз на телефоне');
 
 console.log('client Profi profile avatars: OK');
