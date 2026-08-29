@@ -251,6 +251,17 @@
     return (state.payload && state.payload.anketas || []).filter(item => !item.closed);
   }
 
+  function activeAnketaTotals(anketas) {
+    return (anketas || []).reduce((totals, anketa) => {
+      totals.ordered += Number(anketa.ordered) || 0;
+      totals.done += Number(anketa.done) || 0;
+      totals.paid += Number(anketa.paid) || 0;
+      totals.remain += Number(anketa.remain) || 0;
+      totals.total += Number(anketa.total) || 0;
+      return totals;
+    }, { ordered: 0, done: 0, paid: 0, remain: 0, total: 0 });
+  }
+
   function localPreviewPayload() {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
@@ -334,7 +345,7 @@
     // Главная Mini App показывает только текущую работу. Завершённые анкеты
     // остаются в серверном снимке и истории, но не занимают место у клиента.
     const anketas = activeAnketas();
-    const totals = payload.totals || {};
+    const totals = activeAnketaTotals(anketas);
     const inWork = anketas.reduce((sum, item) => sum + statusBreakdown(item).active, 0);
     const pendingApprovals = pendingTextApprovals();
     const pendingApprovalCards = pendingApprovals.map(pendingApprovalCard).join('');

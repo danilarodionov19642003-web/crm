@@ -19,11 +19,15 @@ assert.match(app, /closed: client \? client\.closed === true : false/,
 assert.match(clientApp, /function isCompletedAnketa\(anketa\)/);
 assert.match(clientApp, /const activeAnketas = anketas\.filter\(a => !isCompletedAnketa\(a\)\)/);
 assert.match(clientApp, /const completedAnketas = anketas\.filter\(isCompletedAnketa\)/);
+assert.match(clientApp, /function activeAnketaTotals\(anketas\)/);
+assert.match(clientApp, /\.filter\(anketa => !isCompletedAnketa\(anketa\)\)/,
+  'сводка кабинета должна исключать завершённые анкеты');
+assert.match(clientApp, /const totals = activeAnketaTotals\(activeAnketas\)/);
 assert.match(clientApp, /data-anketa-mode="active"/);
 assert.match(clientApp, /data-anketa-mode="completed"/);
 assert.match(clientApp, /Завершённые/);
 assert.match(clientCss, /\.cli-anketa-tabs/);
-assert.match(clientIndex, /client-app\.js\?v=20260829b/);
+assert.match(clientIndex, /client-app\.js\?v=20260830a/);
 assert.match(clientIndex, /client\.css\?v=20260829c/);
 assert.match(clientCss, /\.cli-tg-connect > \.cli-check-row \{ margin: 10px 0 13px; \}/,
   'чекбокс согласования не должен прилипать к кнопке подключения Telegram');

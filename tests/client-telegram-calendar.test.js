@@ -29,7 +29,7 @@ test('Telegram direct menu keeps its bearer credential out of HTTP requests', ()
   assert.match(js, /fragmentParams/);
   assert.match(js, /location\.hash/);
   assert.match(js, /fragmentParams\.get\('token'\)/);
-  assert.match(html, /telegram-calendar\.js\?v=20260830a/);
+  assert.match(html, /telegram-calendar\.js\?v=20260830b/);
   assert.match(html, /telegram-calendar\.css\?v=20260827b/);
 });
 
@@ -60,6 +60,8 @@ test('Mini App mirrors the client cabinet with branded home and anketa details',
   assert.match(js, /Ваши анкеты/);
   assert.match(js, /function renderHome\(\)[\s\S]*const anketas = activeAnketas\(\)/,
     'главная Mini App должна показывать только активные анкеты');
+  assert.match(js, /const totals = activeAnketaTotals\(anketas\)/,
+    'плашки Mini App должны считать только активные анкеты');
   assert.match(js, /Активных анкет сейчас нет/);
   assert.match(js, /Опубликованные отзывы/);
   assert.match(js, /avatar_url/);

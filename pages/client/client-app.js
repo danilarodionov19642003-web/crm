@@ -589,12 +589,27 @@
     });
   }
 
-  function renderTotals(totals, anketas) {
+  function activeAnketaTotals(anketas) {
+    return (anketas || [])
+      .filter(anketa => !isCompletedAnketa(anketa))
+      .reduce((totals, anketa) => {
+        totals.ordered += Number(anketa.ordered) || 0;
+        totals.done += Number(anketa.done) || 0;
+        totals.paid += Number(anketa.paid) || 0;
+        totals.remain += Number(anketa.remain) || 0;
+        totals.total += Number(anketa.total) || 0;
+        return totals;
+      }, { ordered: 0, done: 0, paid: 0, remain: 0, total: 0 });
+  }
+
+  function renderTotals(_snapshotTotals, anketas) {
     const el = document.querySelector('[data-cli-totals]');
-    if (!el || !totals) return;
-    // Сводный счётчик «в работе» по всем анкетам.
+    if (!el) return;
+    const activeAnketas = (anketas || []).filter(anketa => !isCompletedAnketa(anketa));
+    const totals = activeAnketaTotals(activeAnketas);
+    // Сводный счётчик «в работе» только по активным анкетам.
     let inProgress = 0;
-    (anketas || []).forEach(a => {
+    activeAnketas.forEach(a => {
       inProgress += _statusBreakdown(a.statuses).active;
     });
     el.classList.add('cli-summary-kpis');
@@ -2878,6 +2893,7 @@
     loadSnapshot,
     renderHeader,
     renderTelegramReminder,
+    activeAnketaTotals,
     renderTotals,
     renderAnketas,
     renderCalendar,
