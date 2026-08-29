@@ -153,6 +153,18 @@ const statusLabelsMigration = fs.readFileSync(
 );
 assert.match(statusesHtml, /stg__chip__age/, 'в карточке аккаунта должен отображаться возраст статуса');
 assert.match(statusesHtml, /id="chgActionDate"/, 'срок следующего действия должен редактироваться');
+assert.doesNotMatch(statusesHtml, /<label>Дата статуса<\/label>/,
+  'ручное поле даты статуса больше не должно показываться в формах');
+assert.doesNotMatch(statusesHtml, /<label>Комментарий<\/label>/,
+  'неиспользуемое поле комментария больше не должно показываться в формах статуса');
+assert.doesNotMatch(statusesHtml, /id="(?:add|chg)Date"/,
+  'удалённые поля даты не должны оставаться скрытыми элементами формы');
+assert.doesNotMatch(statusesHtml, /id="(?:add|chg)Comment"/,
+  'удалённые поля комментария не должны оставаться скрытыми элементами формы');
+assert.match(statusesHtml, /const statusChanged = !cur \|\| cur\.status !== newStatus/,
+  'сохранение должно определять реальную смену статуса');
+assert.match(statusesHtml, /const newDate = statusChanged[\s\S]{0,100}window\.App\.todayISO\(\)/,
+  'при смене статуса должна автоматически ставиться сегодняшняя дата');
 assert.match(statusesHtml, /deepLink\.get\('accountId'\)/, 'страница статусов должна фильтровать нужный аккаунт из задачи');
 assert.match(statusesHtml, /document\.getElementById\('fSearch'\)\.value = searchValue/,
   'номер аккаунта из задачи должен автоматически попадать в поиск');

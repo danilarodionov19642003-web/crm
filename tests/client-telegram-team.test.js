@@ -163,6 +163,12 @@ test('account status modal displays the latest client approval response', () => 
   assert.match(statusesHtml, /chg-approval-badge/);
   assert.match(statusesHtml, /ClientTextApprovals\.statusMeta\(approval\)/);
   assert.doesNotMatch(statusesHtml, /Точный ответ клиента виден в разделе «Отзывы»/);
+  assert.match(statusesHtml, /data-copy-review-text/);
+  assert.match(statusesHtml, /navigator\.clipboard\.writeText\(value\)/);
+  assert.match(statusesHtml, /function approvePublishedReviewIfClientApproved\(review\)/);
+  assert.match(statusesHtml, /Store\.approveReview\(review\.id, myEmail \|\| 'Клиент согласовал'\)/);
+  assert.match(reviewsHtml, /function autoApproveClientApprovedReviews\(\)/);
+  assert.match(reviewsHtml, /approval\.request_status !== 'approved'/);
 });
 
 test('Reviews embeds client approval status and no longer has a manual compose block', () => {

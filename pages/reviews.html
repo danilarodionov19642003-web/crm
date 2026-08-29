@@ -276,11 +276,28 @@
         const rows = await window.ClientTextApprovals.loadRequests();
         approvalByReview = window.ClientTextApprovals.latestByReview(rows);
         approvalLoadFailed = false;
+        autoApproveClientApprovedReviews();
       } catch (error) {
         approvalLoadFailed = true;
         if (!options.silent) console.warn('[reviews] client approvals load failed', error);
       }
       render();
+    }
+
+    function autoApproveClientApprovedReviews() {
+      if (!isOwner) return 0;
+      let approvedCount = 0;
+      (Store.state.reviews || []).forEach(review => {
+        const approval = approvalByReview.get(String(review.id || ''));
+        if (!approval || approval.request_status !== 'approved') return;
+        if (review.moderation !== 'pending' || !isPublishedReview(review)) return;
+        Store.approveReview(review.id, myEmail || 'Клиент согласовал');
+        approvedCount += 1;
+      });
+      if (approvedCount && window.ReviewsSync && window.ReviewsSync.recompute) {
+        window.ReviewsSync.recompute();
+      }
+      return approvedCount;
     }
 
     function render() {

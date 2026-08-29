@@ -493,10 +493,7 @@
       <div class="modal__body">
         <div class="field"><label>Клиент</label><select id="addMentor" class="select"></select></div>
         <div id="addWarn" style="display:none;margin-top:10px;padding:10px;border-radius:8px;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);color:var(--red);font-size:13px"></div>
-        <div class="field-row" style="margin-top:12px">
-          <div class="field"><label>Статус</label><select id="addStatus" class="select"></select></div>
-          <div class="field"><label>Дата статуса</label><input type="date" id="addDate" class="input"/></div>
-        </div>
+        <div class="field" style="margin-top:12px"><label>Статус</label><select id="addStatus" class="select"></select></div>
         <div class="status-action-field" id="addActionWrap" style="display:none">
           <div class="field"><label id="addActionLabel">Следующее действие до</label><input type="date" id="addActionDate" class="input"/></div>
           <div class="status-action-field__quick" data-action-quick="add">
@@ -504,7 +501,6 @@
           </div>
           <div class="status-action-field__hint" id="addActionHint"></div>
         </div>
-        <div class="field" style="margin-top:12px"><label>Комментарий</label><input type="text" id="addComment" class="input"/></div>
         <div class="field" style="margin-top:12px"><label>Кто делал · для ЗП</label><select id="addPerformer" class="select"></select></div>
         <div class="field" id="addReviewWrap" style="margin-top:12px">
           <label>Текст отзыва для согласования <span style="color:var(--text-mute)">(необязательно)</span></label>
@@ -527,10 +523,6 @@
       </div>
       <div class="modal__body">
         <div class="field"><label>Новый статус</label><select id="chgStatus" class="select"></select></div>
-        <div class="field-row" style="margin-top:12px">
-          <div class="field"><label>Дата статуса</label><input type="date" id="chgDate" class="input"/></div>
-          <div class="field" style="flex:2"><label>Комментарий</label><input type="text" id="chgComment" class="input"/></div>
-        </div>
         <div class="status-action-field" id="chgActionWrap" style="display:none">
           <div class="field"><label id="chgActionLabel">Следующее действие до</label><input type="date" id="chgActionDate" class="input"/></div>
           <div class="status-action-field__quick" data-action-quick="chg">
@@ -654,6 +646,18 @@
     .chg-approval-badge.is-muted {
       background: rgba(148,163,184,.12);
       color: var(--text-mute);
+    }
+    .chg-review-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .chg-review-copy {
+      padding: 6px 10px;
+      min-height: 30px;
+      font-size: 12px;
     }
   </style>
 
@@ -1299,8 +1303,6 @@
       fillStatusSelect(document.getElementById('addStatus'));
       document.getElementById('addStatus').value = PROFILE_STATUSES[0]; // 📋 Запланировано
       fillPerformerSelect(document.getElementById('addPerformer'), '');
-      document.getElementById('addComment').value = '';
-      document.getElementById('addDate').value = window.App.todayISO();
       document.getElementById('addReviewText').value = '';
       addActionTouched = false;
       refreshActionEditor('add', null, true);
@@ -1314,6 +1316,14 @@
 
     function isActionStatus(status) {
       return status === STATUS_SELECT || status === STATUS_CHOSEN;
+    }
+
+    function statusEditorDate(prefix, status) {
+      if (prefix === 'add') return todayISO();
+      const current = chgPid && chgMid ? getStatusFor(chgPid, chgMid) : null;
+      return current && current.status === status
+        ? (current.date || todayISO())
+        : todayISO();
     }
 
     function refreshActionEditor(prefix, existing = null, force = false) {
@@ -1334,7 +1344,7 @@
       const mentorId = prefix === 'add'
         ? document.getElementById('addMentor').value
         : chgMid;
-      const statusDate = document.getElementById(`${prefix}Date`).value || todayISO();
+      const statusDate = statusEditorDate(prefix, status);
       const touched = prefix === 'add' ? addActionTouched : chgActionTouched;
       const action = existing && existing.status === status && !force
         ? Store.getProfileStatusAction(existing)
@@ -1362,14 +1372,10 @@
         if (prefix === 'add') toggleAddReviewField();
         else toggleChgReviewField();
       });
-      document.getElementById(`${prefix}Date`).addEventListener('change', () => {
-        const touched = prefix === 'add' ? addActionTouched : chgActionTouched;
-        if (!touched) refreshActionEditor(prefix, null, true);
-      });
       document.getElementById(`${prefix}ActionDate`).addEventListener('change', () => markActionTouched(prefix));
       document.querySelectorAll(`[data-action-quick="${prefix}"] [data-days]`).forEach(button => {
         button.addEventListener('click', () => {
-          const statusDate = document.getElementById(`${prefix}Date`).value || todayISO();
+          const statusDate = statusEditorDate(prefix, document.getElementById(`${prefix}Status`).value);
           document.getElementById(`${prefix}ActionDate`).value = addDaysISO(statusDate, Number(button.dataset.days));
           markActionTouched(prefix);
         });
@@ -1415,6 +1421,39 @@
       }, 0);
     }
 
+    function clientApprovedReview(review) {
+      const approval = review && approvalByReview.get(String(review.id || ''));
+      return Boolean(approval && approval.request_status === 'approved');
+    }
+
+    function approvePublishedReviewIfClientApproved(review) {
+      if (!review || review.moderation !== 'pending' || !clientApprovedReview(review)) return false;
+      const status = getStatusFor(review.profileId, review.mentorId);
+      if (!status || status.status !== DONE_STATUS) return false;
+      const myEmail = (window.AuthGate && window.AuthGate.email && window.AuthGate.email()) || '';
+      Store.approveReview(review.id, myEmail || 'Клиент согласовал');
+      if (window.ReviewsSync && window.ReviewsSync.recompute) window.ReviewsSync.recompute();
+      return true;
+    }
+
+    async function copyReviewText(text) {
+      const value = String(text || '').trim();
+      if (!value) return;
+      try {
+        await navigator.clipboard.writeText(value);
+      } catch (error) {
+        const input = document.createElement('textarea');
+        input.value = value;
+        input.style.position = 'fixed';
+        input.style.opacity = '0';
+        document.body.appendChild(input);
+        input.select();
+        document.execCommand('copy');
+        input.remove();
+      }
+      toast('Текст отзыва скопирован');
+    }
+
     function checkAddWarn() {
       const mid = document.getElementById('addMentor').value;
       const w = document.getElementById('addWarn');
@@ -1438,8 +1477,8 @@
       const res = Store.canAddMentorToProfile(mid, addProfileId);
       if (!res.ok && !window.confirm(`${res.reason}\n\nВсё равно привязать?`)) return;
       const status = document.getElementById('addStatus').value;
-      const comment = document.getElementById('addComment').value.trim();
-      const date = document.getElementById('addDate').value || window.App.todayISO();
+      const comment = '';
+      const date = window.App.todayISO();
       // Текст можно отправить заранее при любом статусе. «Опубликован» означает,
       // что согласованный отзыв уже опубликован, поэтому напрямую создавать
       // новый аккаунт в этом статусе больше нельзя.
@@ -1532,15 +1571,23 @@
       const approvalComment = !published && approval && approval.resolution_comment
         ? `<div style="font-size:12px;color:var(--text-dim);margin-top:6px"><b>Комментарий клиента:</b> ${escapeHtml(approval.resolution_comment)}</div>`
         : '';
+      const copyButton = clientApprovedReview(existing)
+        ? '<button type="button" class="btn btn--ghost chg-review-copy" data-copy-review-text>Копировать текст</button>'
+        : '';
 
       wrap.style.display = 'none';
       existingBox.style.display = 'block';
       existingBox.innerHTML = `
-        <label style="font-size:12px;color:var(--text-dim);font-weight:500">${published ? 'Опубликованный отзыв' : 'Текст на согласование'} · <span class="chg-approval-badge ${badgeClass}">${escapeHtml(badgeText)}</span></label>
+        <div class="chg-review-head">
+          <label style="font-size:12px;color:var(--text-dim);font-weight:500">${published ? 'Опубликованный отзыв' : 'Текст на согласование'} · <span class="chg-approval-badge ${badgeClass}">${escapeHtml(badgeText)}</span></label>
+          ${copyButton}
+        </div>
         <div class="input" style="min-height:90px;white-space:pre-wrap;font-family:inherit;background:rgba(255,255,255,0.02);margin-top:6px">${escapeHtml(existing.text || '')}</div>
         <div style="font-size:11px;color:var(--text-mute);margin-top:4px">${published ? 'Опубликован' : 'Создан'}: ${escapeHtml(fmtDate(existing.publishedAt || existing.draftCreatedAt || existing.submittedAt))}${existing.moderatedAt ? ' · Проверен: ' + escapeHtml(fmtDate(existing.moderatedAt)) : ''}${approvalDetail}</div>
         ${approvalComment}
       `;
+      const copy = existingBox.querySelector('[data-copy-review-text]');
+      if (copy) copy.addEventListener('click', () => copyReviewText(existing.text));
     }
 
     async function refreshChangeStatusApproval(review) {
@@ -1563,7 +1610,10 @@
       } finally {
         approvalLoadingByReview.delete(key);
         const current = currentChangeStatusReview();
-        if (current && String(current.id) === key) renderChangeStatusReview();
+        if (current && String(current.id) === key) {
+          approvePublishedReviewIfClientApproved(current);
+          renderChangeStatusReview();
+        }
       }
     }
 
@@ -1575,8 +1625,6 @@
       const cur = getStatusFor(pid, mid);
       fillStatusSelect(document.getElementById('chgStatus'));
       document.getElementById('chgStatus').value = cur ? cur.status : PROFILE_STATUSES[0];
-      document.getElementById('chgComment').value = cur ? (cur.comment || '') : '';
-      document.getElementById('chgDate').value = (cur && cur.date) ? cur.date : window.App.todayISO();
       fillPerformerSelect(document.getElementById('chgPerformer'), cur ? cur.performer : '');
       document.getElementById('chgReviewText').value = '';
       chgActionTouched = !!(cur && cur.nextActionMode === 'manual');
@@ -1605,12 +1653,15 @@
     document.getElementById('chgSave').addEventListener('click', async event => {
       if (!chgPid || !chgMid) return;
       const newStatus = document.getElementById('chgStatus').value;
-      const newComment = document.getElementById('chgComment').value.trim();
-      const newDate = document.getElementById('chgDate').value || window.App.todayISO();
+      const newComment = '';
       const newPerformer = document.getElementById('chgPerformer').value;
+      const cur = getStatusFor(chgPid, chgMid);
+      const statusChanged = !cur || cur.status !== newStatus;
+      const newDate = statusChanged
+        ? window.App.todayISO()
+        : ((cur && cur.date) || window.App.todayISO());
       const nextActionDate = isActionStatus(newStatus) ? document.getElementById('chgActionDate').value : undefined;
       const nextActionMode = isActionStatus(newStatus) ? (chgActionTouched ? 'manual' : 'auto') : undefined;
-      const cur = getStatusFor(chgPid, chgMid);
       // Текст создаётся заранее без смены статуса. «Опубликован» разрешён только
       // когда у аккаунта уже есть текст: этот статус означает публикацию.
       const existingReview = (Store.state.reviews || []).find(r => r.mentorId === chgMid && r.profileId === chgPid);
@@ -1632,10 +1683,10 @@
           : 'Снять статус «Опубликован»? Связанный отзыв на модерации удалится.';
         if (!confirmDelete(msg)) return;
       }
-      // Если статус/комментарий не поменялись — обновляем только дату и/или
-      // исполнителя (без новой записи в истории, чтобы её не засорять).
+      // Если статус не поменялся — обновляем только исполнителя и/или срок
+      // следующего действия, без новой записи в истории.
       // Иначе — полноценная смена статуса (запишет историю).
-      if (cur && cur.status === newStatus && (cur.comment || '') === newComment) {
+      if (cur && cur.status === newStatus) {
         Store.setProfileStatusDate(chgMid, chgPid, newDate, newPerformer, nextActionDate, nextActionMode);
       } else {
         Store.setProfileStatus(chgMid, chgPid, newStatus, newComment, newDate, newPerformer, nextActionDate, nextActionMode);
@@ -1656,6 +1707,7 @@
         existingReview.moderatedBy = null;
         existingReview.rejectReason = '';
         Store.save();
+        approvePublishedReviewIfClientApproved(existingReview);
       }
       if (newReviewText) {
         const myEmail = (window.AuthGate && window.AuthGate.email && window.AuthGate.email()) || '';
@@ -1669,7 +1721,9 @@
         });
         sendReviewInBackground(review);
       } else if (becomingDone) {
-        toast('Отзыв отмечен опубликованным и отправлен на внутреннюю проверку');
+        toast(clientApprovedReview(existingReview)
+          ? 'Отзыв опубликован. Согласование клиента уже учтено'
+          : 'Отзыв отмечен опубликованным и отправлен на внутреннюю проверку');
       } else if (goingAway) {
         toast('Статус снят, отзыв удалён');
       } else {
