@@ -16,7 +16,7 @@
   <meta http-equiv="Expires" content="0"/>
   <title>Личный кабинет — Mentori</title>
   <link rel="stylesheet" href="../../css/styles.css?v=20260628a"/>
-  <link rel="stylesheet" href="client.css?v=20260826f"/>
+  <link rel="stylesheet" href="client.css?v=20260829a"/>
 </head>
 <body class="cli-body">
   <div data-cli-header></div>
@@ -43,14 +43,14 @@
     <div class="cli-cta-row">
       <div class="cli-order-cta" data-cli-order-cta hidden>
         <div class="cli-order-cta__text">
-          <div class="cli-order-cta__title">Отзывы для одной или нескольких анкет</div>
+          <div class="cli-order-cta__title"><span class="cli-order-cta__desktop">Отзывы для одной или нескольких анкет</span><span class="cli-order-cta__mobile">Новый пакет</span></div>
           <div class="cli-order-cta__sub">Выбери анкеты и тарифы для заказа.</div>
         </div>
         <button class="cli-order-cta__btn" id="cliOrderBtn" type="button">Купить отзывы</button>
       </div>
       <div class="cli-order-cta cli-remain-cta" data-cli-remain-cta hidden>
         <div class="cli-order-cta__text">
-          <div class="cli-order-cta__title">Остаток к оплате: <span data-cli-remain-total></span></div>
+          <div class="cli-order-cta__title"><span class="cli-order-cta__desktop">Остаток к оплате: <span data-cli-remain-total></span></span><span class="cli-order-cta__mobile">Остаток: <span data-cli-remain-total></span></span></div>
           <div class="cli-order-cta__sub">Можно оплатить остаток по всем анкетам или по выбранным.</div>
         </div>
         <button class="cli-order-cta__btn" id="cliRemainBtn" type="button">Оплатить остаток</button>
@@ -142,7 +142,7 @@
   <script src="./legal-content.js?v=20260713d"></script>
   <script src="./remainder-calculator.js?v=20260713a"></script>
   <script src="./order-cart.js?v=20260820b"></script>
-  <script src="./client-app.js?v=20260829a"></script>
+  <script src="./client-app.js?v=20260829b"></script>
   <script src="./client-settings.js?v=20260826a"></script>
   <script>
   (async () => {
@@ -169,7 +169,7 @@
       window.ClientApp.renderTotals(snap.payload.totals, snap.payload.anketas);
       window.ClientApp.renderAnketas(snap.payload.anketas);
       window.ClientApp.renderCalendar(snap.payload, outreachSlots, publicationRequests);
-      window.ClientApp.renderFeed(snap.payload.feed);
+      window.ClientApp.renderFeed(snap.payload.feed, snap.payload.anketas);
     }
     // Заказ отзывов (тарифы из снимка). Если тарифов нет — CTA скрыт.
     window.ClientApp.renderOrder(snap && snap.payload);

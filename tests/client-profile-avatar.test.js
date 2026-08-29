@@ -75,8 +75,29 @@ assert.match(clientsHtml, /data-act="profile-photo"/);
 assert.match(statusesHtml, /function mentorAvatar\(m\)/);
 assert.match(statusesHtml, /class="stg__chip__avatar"/);
 assert.match(clientApp, /function anketaAvatarHtml\(anketa/);
+assert.match(clientApp, /anketaAvatarHtml\(e\.anketaData, 'is-calendar-event'\)/,
+  'события выбранного дня должны показывать аватар анкеты вместо служебного смайлика');
+assert.match(clientApp, /function renderFeed\(feed, anketas = \[\]\)/);
+assert.match(clientApp, /anketaAvatarHtml\(anketaForFeed\(f\), 'is-feed-event'\)/,
+  'последние действия должны использовать аватары анкет');
+assert.doesNotMatch(clientApp, /<summary>📋 Последние действия/,
+  'у заголовка последних действий не должно быть иконки блокнота');
 assert.match(clientApp, /safeProfiProfileUrl/);
 assert.match(clientCss, /\.cli-anketa-avatar/);
+assert.match(clientCss, /\.cli-anketa-avatar\.is-calendar-event/);
 assert.match(clientCss, /\.cli-detail-head/);
+assert.match(clientApp, /cli-kpis cli-profile-money-kpis/);
+assert.match(clientApp, /Оплачено \/ Остаток/,
+  'оплата и остаток должны занимать одну финансовую карточку');
+assert.match(clientApp, /cli-kpi__money-divider/);
+assert.match(clientApp, /Сделано \/ В работе/,
+  'сводка должна объединять готовые и активные отклики в одной карточке');
+assert.doesNotMatch(clientApp, /<div class="cli-kpi__label">Остаток<\/div>/,
+  'денежный остаток не должен дублироваться в верхней сводке');
+assert.match(clientCss, /\.cli-profile-money-kpis \{ grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); \}/,
+  'финансовый ряд профиля должен состоять ровно из двух карточек');
+assert.match(clientCss, /\.cli-summary-kpis \{ grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); \}/);
+assert.match(clientCss, /@media \(max-width: 560px\) \{[\s\S]*\.cli-cta-row \{ flex-wrap: nowrap; gap: 8px; \}/,
+  'кнопки покупки и доплаты должны оставаться рядом на телефоне');
 
 console.log('client Profi profile avatars: OK');

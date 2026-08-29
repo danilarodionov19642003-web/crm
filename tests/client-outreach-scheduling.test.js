@@ -244,6 +244,11 @@ assert.match(clientApp, /eventLabels\.join\('<br>'\)/,
 assert.match(clientApp, /load\.available > 0 && meta\.availableToAdd > 0/);
 assert.match(clientApp, /function outreachMinimumDate\(\)[\s\S]*addDaysISO\(todayISO\(\), 1\)/);
 assert.match(clientApp, /const isPreparationDate = !isPastDate && date < minimumDate/);
+assert.match(clientApp, /const showAvailability = meta\.availableToAdd > 0/);
+assert.match(clientApp, /!showAvailability\s*\? ''/,
+  'если у анкеты нет свободных откликов, календарь не должен показывать глобальную подготовку и занятость');
+assert.match(clientApp, /showAvailability && isPreparationDate && !hasClientEvent/,
+  'подготовка должна отображаться только для анкеты, у которой ещё можно планировать');
 assert.match(clientApp, /const canAdd = date >= minimumDate/,
   'сегодня нельзя использовать для нового отклика даже при наличии мест');
 assert.match(clientApp, /const disabled = date < minimumDate/,
@@ -266,6 +271,10 @@ assert.doesNotMatch(clientApp, /\$\{load\.available\} из 7/,
   'в окне переноса нельзя раскрывать загрузку дня');
 assert.match(clientApp, /Доступно для планирования: <b>\$\{availableToAdd\}<\/b>/,
   'клиент должен видеть остаток планов именно по своей анкете');
+assert.doesNotMatch(clientApp, /просроченный план снимается автоматически/,
+  'служебное пояснение не должно перегружать шапку плана');
+assert.match(clientCss, /\.cli-outreach__available \{/,
+  'доступный остаток должен быть визуально выделен');
 assert.doesNotMatch(clientApp, /до 7 в день|запланировано 7 откликов/,
   'дневную ёмкость CRM клиенту показывать нельзя');
 assert.match(appSource, /scheduleLimit: client \? manualScheduleLimit/);

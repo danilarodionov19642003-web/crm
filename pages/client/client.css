@@ -237,6 +237,17 @@
 .cli-kpi__value { font-size: 22px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
 .cli-kpi__value.pos { color: var(--cli-green); }
 .cli-kpi__value.neg { color: var(--cli-red); }
+.cli-summary-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.cli-profile-money-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.cli-kpi__value--money-split,
+.cli-kpi__value--summary-split {
+  display: flex; align-items: baseline; gap: 8px; white-space: nowrap;
+}
+.cli-kpi__value--money-split .pos,
+.cli-kpi__value--summary-split .pos { color: var(--cli-green); }
+.cli-kpi__value--money-split .neg { color: var(--cli-red); }
+.cli-kpi__value--summary-split .in-progress { color: #fa8c16; }
+.cli-kpi__money-divider { color: var(--text-mute); font-weight: 500; }
 
 /* ---------- список анкет ---------- */
 .cli-list { display: flex; flex-direction: column; gap: 14px; }
@@ -310,6 +321,11 @@
 .cli-anketa-avatar__fallback { display: inline-flex; width: 100%; height: 100%; align-items: center; justify-content: center; }
 .cli-anketa-avatar img + .cli-anketa-avatar__fallback { display: none; }
 .cli-anketa-avatar img[hidden] + .cli-anketa-avatar__fallback { display: inline-flex; }
+.cli-anketa-avatar.is-calendar-event,
+.cli-anketa-avatar.is-feed-event {
+  width: 32px; height: 32px; flex-basis: 32px;
+  font-size: 9px;
+}
 .cli-card__code {
   background: linear-gradient(135deg, rgba(255,122,0,0.12), rgba(255,154,60,0.05));
   color: var(--cli-accent);
@@ -504,6 +520,12 @@
   .cli-anketa-avatar { width: 42px; height: 42px; flex-basis: 42px; }
   .cli-anketa-avatar.is-detail { width: 54px; height: 54px; flex-basis: 54px; }
   .cli-detail-title { font-size: 20px; overflow-wrap: anywhere; }
+  .cli-kpi__value--money-split,
+  .cli-kpi__value--summary-split { gap: 6px; font-size: 19px; }
+}
+@media (max-width: 360px) {
+  .cli-profile-money-kpis .cli-kpi { padding-left: 12px; padding-right: 12px; }
+  .cli-kpi__value--money-split { gap: 4px; font-size: 15px; }
 }
 
 /* ---------- пакеты по анкете ---------- */
@@ -567,6 +589,10 @@
 }
 .cli-outreach__head h3 { margin: 0; color: var(--text); font-size: 15px; }
 .cli-outreach__head span { display: block; margin-top: 3px; color: var(--text-mute); font-size: 10px; }
+.cli-outreach__available {
+  margin-top: 6px; color: var(--text); font-size: 13px; font-weight: 700;
+}
+.cli-outreach__available b { color: var(--cli-accent); font-size: 15px; }
 .cli-outreach__body {
   display: grid; grid-template-columns: minmax(260px, .85fr) minmax(380px, 1.15fr);
   align-items: start; gap: 16px; margin-top: 12px;
@@ -1038,6 +1064,7 @@
 .cli-order-cta__text { flex: 1; min-width: 180px; }
 .cli-order-cta__title { font-weight: 700; font-size: 15px; }
 .cli-order-cta__sub { font-size: 12.5px; color: var(--text-mute, #888); margin-top: 2px; }
+.cli-order-cta__mobile { display: none; }
 .cli-order-cta__btn {
   border: none; cursor: pointer; white-space: nowrap;
   background: var(--cli-accent); color: #fff; font-weight: 700; font-size: 14px;
@@ -1046,6 +1073,19 @@
 }
 .cli-order-cta__btn:hover { transform: translateY(-1px); }
 .cli-order-cta__btn:active { transform: translateY(0); }
+
+@media (max-width: 560px) {
+  .cli-cta-row { flex-wrap: nowrap; gap: 8px; }
+  .cli-cta-row > .cli-order-cta {
+    flex: 1 1 0; min-width: 0; padding: 12px; gap: 9px; align-items: stretch;
+  }
+  .cli-order-cta__text { min-width: 0; }
+  .cli-order-cta__title { font-size: 12px; line-height: 1.3; }
+  .cli-order-cta__sub,
+  .cli-order-cta__desktop { display: none; }
+  .cli-order-cta__mobile { display: inline; }
+  .cli-order-cta__btn { width: 100%; padding: 10px 6px; font-size: 12px; }
+}
 
 .cli-modal { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; padding: 16px; }
 .cli-modal[hidden] { display: none; }

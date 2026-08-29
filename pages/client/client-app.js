@@ -597,22 +597,19 @@
     (anketas || []).forEach(a => {
       inProgress += _statusBreakdown(a.statuses).active;
     });
+    el.classList.add('cli-summary-kpis');
     el.innerHTML = `
       <div class="cli-kpi">
         <div class="cli-kpi__label">Заказано</div>
         <div class="cli-kpi__value">${totals.ordered || 0}</div>
       </div>
       <div class="cli-kpi">
-        <div class="cli-kpi__label">Сделано</div>
-        <div class="cli-kpi__value pos">${totals.done || 0}</div>
-      </div>
-      <div class="cli-kpi">
-        <div class="cli-kpi__label">В работе</div>
-        <div class="cli-kpi__value" style="color:#fa8c16">${inProgress}</div>
-      </div>
-      <div class="cli-kpi">
-        <div class="cli-kpi__label">Остаток</div>
-        <div class="cli-kpi__value ${(totals.remain||0) > 0 ? 'neg' : ''}">${fmtMoney(totals.remain || 0)}</div>
+        <div class="cli-kpi__label">Сделано / В работе</div>
+        <div class="cli-kpi__value cli-kpi__value--summary-split">
+          <span class="pos">${totals.done || 0}</span>
+          <span class="cli-kpi__money-divider" aria-hidden="true">/</span>
+          <span class="in-progress">${inProgress}</span>
+        </div>
       </div>
     `;
   }
@@ -742,7 +739,7 @@
     bindAvatarFallbacks(el);
   }
 
-  function renderFeed(feed) {
+  function renderFeed(feed, anketas = []) {
     const el = document.querySelector('[data-cli-feed]');
     if (!el) return;
     // Корневой элемент превращается в свёрнутый <details> со счётчиком.
@@ -752,20 +749,29 @@
     if (!list.length) {
       el.innerHTML = `
         <details class="cli-feed-wrap">
-          <summary>📋 Последние действия <span class="cli-feed-count">0</span></summary>
+          <summary>Последние действия <span class="cli-feed-count">0</span></summary>
           <div class="cli-feed"><div class="cli-empty" style="margin:6px 0 12px">Активности пока нет.</div></div>
         </details>`;
       return;
     }
+    const anketaForFeed = item => (anketas || []).find(anketa =>
+      String(anketa.mentorId || '') === String(item.mentorId || '')
+      || String(anketa.code || '').toLowerCase() === String(item.anketa || '').toLowerCase()
+      || String(anketa.name || '').trim() === String(item.anketaName || '').trim()
+    ) || {
+      code: item.anketa || '',
+      name: item.anketaName || item.anketa || '',
+      avatarUrl: item.avatarUrl || ''
+    };
     el.innerHTML = `
       <details class="cli-feed-wrap">
-        <summary>📋 Последние действия <span class="cli-feed-count">${list.length}</span></summary>
+        <summary>Последние действия <span class="cli-feed-count">${list.length}</span></summary>
         <div class="cli-feed">
           ${list.map(f => {
             const anketaLabel = f.anketaName || f.anketa || '';
             return `
               <div class="cli-feed__item">
-                <div class="cli-feed__icon ${f.kind === 'review' ? 'review' : ''}">${f.kind === 'review' ? '✍️' : '📋'}</div>
+                ${anketaAvatarHtml(anketaForFeed(f), 'is-feed-event')}
                 <div class="cli-feed__text">
                   <div><strong>${escapeHtml(anketaLabel)}</strong> · ${escapeHtml(f.text || '')}</div>
                   <div class="cli-feed__date">${fmtDate(f.date)}</div>
@@ -774,6 +780,7 @@
           }).join('')}
         </div>
       </details>`;
+    bindAvatarFallbacks(el);
   }
 
   /* --- Calendar widget ---
@@ -799,7 +806,7 @@
         if (s.status === STATUS_DONE || s.status === '📋 Запланировано') return;
         events.push({
           date: String(s.date).slice(0, 10),
-          color, anketa: a.name || a.code,
+          color, anketa: a.name || a.code, anketaData: a,
           kind: 'status', icon: '📋',
           title: s.status || '',
           sub: s.profileName || '',
@@ -810,7 +817,7 @@
         if (!r.date) return;
         events.push({
           date: String(r.date).slice(0, 10),
-          color, anketa: a.name || a.code,
+          color, anketa: a.name || a.code, anketaData: a,
           kind: 'review', icon: '✍️',
           title: 'Опубликован отзыв',
           sub: r.profileName || '',
@@ -841,7 +848,7 @@
         if (left <= 0) return;
         events.push({
           date: d,
-          color, anketa: a.name || a.code,
+          color, anketa: a.name || a.code, anketaData: a,
           kind: 'planned', icon: '📅',
           title: `Запланировано отклик${left > 1 ? 'ов' : ''} · ${left}`,
           sub: '', comment: '',
@@ -858,7 +865,7 @@
           if (!status || status.status !== '🏆 Выбран') return;
           events.push({
             date: String(request.requested_date).slice(0, 10),
-            color, anketa: a.name || a.code,
+            color, anketa: a.name || a.code, anketaData: a,
             kind: 'publication', icon: '📌',
             title: 'Запланирована публикация',
             sub: status.profileName || '',
@@ -954,7 +961,7 @@
     const selEventsHtml = selEvents.length
       ? selEvents.map(e => `
           <div class="cli-cal__event">
-            <span class="cli-cal__event-icon" style="background:${e.color}22;color:${e.color}">${e.icon}</span>
+            ${anketaAvatarHtml(e.anketaData, 'is-calendar-event')}
             <div class="cli-cal__event-body">
               <div class="cli-cal__event-title">${escapeHtml(e.title)}</div>
               <div class="cli-cal__event-meta">
@@ -1008,6 +1015,7 @@
         renderCalendar(snap, outreachSlots, publicationRequests);
       });
     });
+    bindAvatarFallbacks(el);
   }
 
   /* --- Profile detail rendering --- */
@@ -1202,6 +1210,7 @@
     maxDateObject.setDate(maxDateObject.getDate() + 180);
     const maxDate = localISO(maxDateObject);
     const firstDow = (first.getDay() + 6) % 7;
+    const showAvailability = meta.availableToAdd > 0;
     const cells = [];
     for (let index = 0; index < firstDow; index++) cells.push('<span class="cli-outreach-cal__empty"></span>');
     for (let day = 1; day <= last.getDate(); day++) {
@@ -1210,6 +1219,7 @@
       const ownSlots = ownByDate.get(date) || [];
       const ownCount = ownSlots.length;
       const publicationCount = publicationByDate.get(date) || 0;
+      const hasClientEvent = ownCount > 0 || publicationCount > 0;
       const isPastDate = date < today;
       const isPreparationDate = !isPastDate && date < minimumDate;
       const isDayOff = isOutreachDayOff(date);
@@ -1219,10 +1229,10 @@
         'cli-outreach-cal__day',
         ownCount && !isPastDate ? 'is-owned' : '',
         publicationCount && !isPastDate ? 'has-publication' : '',
-        load.available <= 0 && !ownCount && !isPastDate ? 'is-full' : '',
+        showAvailability && load.available <= 0 && !hasClientEvent && !isPastDate ? 'is-full' : '',
         isPastDate ? 'is-past' : '',
-        isPreparationDate ? 'is-preparation' : '',
-        isDayOff ? 'is-day-off' : '',
+        showAvailability && isPreparationDate && !hasClientEvent ? 'is-preparation' : '',
+        showAvailability && isDayOff && !hasClientEvent ? 'is-day-off' : '',
         !canToggle ? 'is-disabled' : '',
         date === today ? 'is-today' : ''
       ].filter(Boolean).join(' ');
@@ -1231,22 +1241,28 @@
       if (publicationCount) eventLabels.push('публикация');
       const label = isPastDate
         ? ''
-        : (isPreparationDate && !ownCount
-          ? 'подготовка'
-        : (isDayOff && !ownCount
-          ? 'выходной'
         : (eventLabels.length
-            ? eventLabels.join('<br>')
-            : (canAdd ? 'есть места' : (load.available > 0 ? 'недоступно' : 'занято')))));
+          ? eventLabels.join('<br>')
+        : (!showAvailability
+          ? ''
+        : (isPreparationDate
+          ? 'подготовка'
+        : (isDayOff
+          ? 'выходной'
+        : (canAdd ? 'есть места' : (load.available > 0 ? 'недоступно' : 'занято'))))));
       const publicationHint = publicationCount ? ', запланирована публикация' : '';
       const actionLabel = isPastDate
         ? `Прошедшая дата ${fmtDate(date)}`
-        : (isPreparationDate && !ownCount)
-        ? `${fmtDate(date)} — день закупки и подготовки, планирование недоступно`
-        : (isDayOff && !ownCount)
-        ? `${fmtDate(date)} — воскресенье, выходной день`
         : ownCount
         ? `Снять отклик на ${fmtDate(date)}${publicationHint}`
+        : publicationCount
+        ? `${fmtDate(date)} — запланирована публикация`
+        : !showAvailability
+        ? `${fmtDate(date)} — нет доступных откликов для планирования`
+        : (isPreparationDate)
+        ? `${fmtDate(date)} — день закупки и подготовки, планирование недоступно`
+        : (isDayOff)
+        ? `${fmtDate(date)} — воскресенье, выходной день`
         : canAdd
         ? `Запланировать отклик на ${fmtDate(date)}, есть места${publicationHint}`
         : `${fmtDate(date)}${publicationHint}, планирование недоступно`;
@@ -1273,7 +1289,7 @@
       </div>
       <div class="cli-outreach-cal__weekdays"><span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span></div>
       <div class="cli-outreach-cal__grid">${cells.join('')}</div>
-      <div class="cli-outreach-cal__legend"><span class="is-free">Есть места</span><span class="is-owned">Ваш отклик</span><span class="is-publication">Публикация</span><span class="is-full">Занято</span></div>
+      <div class="cli-outreach-cal__legend">${showAvailability ? '<span class="is-free">Есть места</span>' : ''}<span class="is-owned">Ваш отклик</span><span class="is-publication">Публикация</span>${showAvailability ? '<span class="is-full">Занято</span>' : ''}</div>
       <div class="cli-outreach-cal__result" data-outreach-inline-result></div>`;
 
     host.querySelector('[data-outreach-inline-prev]').addEventListener('click', () => {
@@ -1488,7 +1504,7 @@
         <div class="cli-outreach__head">
           <div>
             <h3>План откликов</h3>
-            <span>Доступно для планирования: <b>${availableToAdd}</b> · просроченный план снимается автоматически</span>
+            <div class="cli-outreach__available">Доступно для планирования: <b>${availableToAdd}</b></div>
           </div>
           <button type="button" class="cli-outreach-primary" data-outreach-add${canonicalAvailable && availableToAdd > 0 ? '' : ' disabled'}>+ Запланировать</button>
         </div>
@@ -1579,18 +1595,18 @@
       </div>
     `;
     const moneyHtml = `
-      <div class="cli-kpis" style="margin-bottom:16px">
+      <div class="cli-kpis cli-profile-money-kpis" style="margin-bottom:16px">
         <div class="cli-kpi">
           <div class="cli-kpi__label">Итого</div>
           <div class="cli-kpi__value">${fmtMoney(a.total || 0)}</div>
         </div>
         <div class="cli-kpi">
-          <div class="cli-kpi__label">Оплачено</div>
-          <div class="cli-kpi__value pos">${fmtMoney(a.paid || 0)}</div>
-        </div>
-        <div class="cli-kpi">
-          <div class="cli-kpi__label">Остаток</div>
-          <div class="cli-kpi__value ${(a.remain||0)>0?'neg':''}">${fmtMoney(a.remain || 0)}</div>
+          <div class="cli-kpi__label">Оплачено / Остаток</div>
+          <div class="cli-kpi__value cli-kpi__value--money-split">
+            <span class="pos">${fmtMoney(a.paid || 0)}</span>
+            <span class="cli-kpi__money-divider" aria-hidden="true">/</span>
+            <span class="${(a.remain||0)>0?'neg':''}">${fmtMoney(a.remain || 0)}</span>
+          </div>
         </div>
       </div>
     `;
@@ -2788,8 +2804,9 @@
     const total = payable.reduce((s, item) => s + item.amount, 0);
     if (!payable.length || total <= 0) { cta.hidden = true; return; }
     cta.hidden = false;
-    const totalEl = cta.querySelector('[data-cli-remain-total]');
-    if (totalEl) totalEl.textContent = fmtMoney(total);
+    cta.querySelectorAll('[data-cli-remain-total]').forEach(totalEl => {
+      totalEl.textContent = fmtMoney(total);
+    });
     const btn = document.getElementById('cliRemainBtn');
     if (btn && !btn._bound) { btn._bound = true; btn.addEventListener('click', openRemainModal); }
   }
