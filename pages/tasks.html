@@ -502,7 +502,7 @@
   </div>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260827c"></script>
+  <script src="../js/app.js?v=20260829b"></script>
   <script src="../js/supabase-client.js?v=20260820d"></script>
   <script src="../js/auth-gate.js?v=20260726a"></script>
   <script src="../js/cloud-sync.js?v=20260820d"></script>
@@ -1243,7 +1243,7 @@
         .filter(r => mentorIds.has(r.mentorId) && r.moderation === 'approved');
       const statuses = Store.state.profileStatuses||[];
       return approved.filter(r => statuses.some(
-        s => s.mentorId === r.mentorId && s.profileId === r.profileId && s.status === '🎯 Готов'
+        s => s.mentorId === r.mentorId && s.profileId === r.profileId && s.status === '🎯 Опубликован'
       )).length;
     }
 

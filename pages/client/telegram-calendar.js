@@ -147,7 +147,7 @@
     let done = 0;
     (anketa && anketa.statuses || []).forEach(item => {
       if (item.status === '📋 Запланировано') planned += 1;
-      else if (item.status === '🎯 Готов') done += 1;
+      else if (item.status === '🎯 Опубликован') done += 1;
       else active += 1;
     });
     return { planned, active, done };
@@ -273,7 +273,7 @@
       statuses: [
         { id: 's1', profile_id: 'p1', profile_name: 'Тестовый аккаунт 3', status: '🏆 Выбран', date: isoDate(new Date()), publication_wait_days: 5, publication_minimum_date: calendar[4].date },
         { id: 's2', profile_id: 'p2', profile_name: 'Тестовый аккаунт 2', status: '⭐ Выбрать', date: isoDate(new Date()), publication_wait_days: 5, publication_minimum_date: calendar[4].date },
-        { id: 's3', profile_id: 'p3', profile_name: 'Тестовый аккаунт 1', status: '🎯 Готов', date: isoDate(new Date()), publication_wait_days: 5, publication_minimum_date: calendar[4].date }
+        { id: 's3', profile_id: 'p3', profile_name: 'Тестовый аккаунт 1', status: '🎯 Опубликован', date: isoDate(new Date()), publication_wait_days: 5, publication_minimum_date: calendar[4].date }
       ],
       reviews: [{ id: 'r1', profile_name: 'Тестовый аккаунт 1', text: 'Спасибо за отличную работу и внимательное отношение к деталям.', date: isoDate(new Date()) }]
     };
@@ -282,7 +282,7 @@
       avatar_url: '', platform: 'Profi.ru', tariff: 'Поддержка профиля',
       ordered: 6, done: 6, paid: 5400, remain: 0, total: 5400, closed: true,
       schedule_limit: 0, active_count: 0, available_to_add: 0, slots: [],
-      statuses: [{ id: 's4', profile_name: 'Аккаунт 8-2', status: '🎯 Готов', date: isoDate(new Date()) }],
+      statuses: [{ id: 's4', profile_name: 'Аккаунт 8-2', status: '🎯 Опубликован', date: isoDate(new Date()) }],
       reviews: []
     };
     return {
@@ -352,7 +352,7 @@
         <span class="tgapp-progress"><i style="width:${pct}%"></i></span>
         <span class="tgapp-anketa-card__foot">
           <span><small>Прогресс</small><b>${pct}%</b></span>
-          <span><small>Готово</small><b class="is-green">${Math.max(Number(anketa.done) || 0, breakdown.done)}</b></span>
+          <span><small>Опубликовано</small><b class="is-green">${Math.max(Number(anketa.done) || 0, breakdown.done)}</b></span>
           <span><small>В работе</small><b class="is-orange">${breakdown.active}</b></span>
           <span><small>Остаток</small><b>${fmtMoney(anketa.remain)}</b></span>
         </span>
@@ -401,7 +401,7 @@
   }
 
   function statusTone(status) {
-    if (status === '🎯 Готов') return 'is-green';
+    if (status === '🎯 Опубликован') return 'is-green';
     if (status === '🏆 Выбран') return 'is-orange';
     if (status === '⭐ Выбрать') return 'is-purple';
     return '';
@@ -442,7 +442,7 @@
       </section>
       <section class="tgapp-kpis is-profile">
         <article><span>Заказано</span><strong>${Number(anketa.ordered) || 0}</strong></article>
-        <article><span>Готово</span><strong class="is-green">${done}</strong></article>
+        <article><span>Опубликовано</span><strong class="is-green">${done}</strong></article>
         <article><span>В работе</span><strong class="is-orange">${breakdown.active}</strong></article>
         <article><span>Остаток</span><strong>${fmtMoney(anketa.remain)}</strong></article>
       </section>
@@ -536,8 +536,8 @@
         ${waitDays ? `<small>Не раньше ${escapeHtml(fmtDate(minimum))}, минимум ${waitDays} дн. в статусе «Выбран».</small>` : ''}
         <div class="tgapp-account-result" data-publication-result></div>
       </section>`;
-    } else if (status.status === '🎯 Готов') {
-      publicationHtml = `<section class="tgapp-account-card tgapp-publication is-complete"><header><span>Публикация</span><b>Готово ✓</b></header><p>Отзыв опубликован ${status.date ? escapeHtml(fmtDate(status.date)) : ''}.</p></section>`;
+    } else if (status.status === '🎯 Опубликован') {
+      publicationHtml = `<section class="tgapp-account-card tgapp-publication is-complete"><header><span>Публикация</span><b>Опубликовано ✓</b></header><p>Отзыв опубликован ${status.date ? escapeHtml(fmtDate(status.date)) : ''}.</p></section>`;
     } else {
       publicationHtml = `<section class="tgapp-account-card tgapp-publication is-locked"><header><span>Дата публикации</span><b>Пока недоступно</b></header><p>Выбрать дату можно, когда аккаунт перейдёт в статус «Выбран».</p></section>`;
     }

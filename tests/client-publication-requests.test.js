@@ -70,7 +70,7 @@ Store.state = {
     },
     {
       id: 'status-2', mentorId: 'mentor-a21', profileId: 'profile-2',
-      status: '🎯 Готов', date: '2026-07-30', history: []
+      status: '🎯 Опубликован', date: '2026-07-30', history: []
     }
   ],
   reviews: [{
@@ -120,7 +120,7 @@ assert.match(minimumMigration, /before insert or update of requested_date, reque
 assert.match(clientApp, /status\.status !== '🏆 Выбран'/);
 assert.match(clientApp, /request_client_publication_date/);
 assert.match(clientApp, /Ожидает подтверждения/);
-assert.match(clientApp, /const isReadyStatus = status => status\.status === '🎯 Готов'/);
+assert.match(clientApp, /const isReadyStatus = status => status\.status === STATUS_DONE/);
 assert.match(clientApp, /Опубликовано/);
 assert.match(clientApp, /statusAge\(s\)/);
 assert.match(clientApp, /publicationMinimumDate\(a, status\)/);

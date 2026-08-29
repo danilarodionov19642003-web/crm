@@ -620,9 +620,9 @@
   /** Разбивка статусов на 3 группы для визуализации в карточке анкеты:
    *  «Запланировано» (📋) — серый, ничего ещё не происходит;
    *  «В работе» — оранжевый, активные диалоги/выбор/выбран;
-   *  «Готово» (🎯) — зелёный, опубликованный отзыв. */
+   *  «Опубликован» (🎯) — зелёный, опубликованный отзыв. */
   const STATUS_PLANNED = '📋 Запланировано';
-  const STATUS_DONE    = '🎯 Готов';
+  const STATUS_DONE    = '🎯 Опубликован';
   function _statusBreakdown(statuses) {
     let planned = 0, active = 0, done = 0;
     (statuses || []).forEach(s => {
@@ -703,7 +703,7 @@
                 <div class="cli-card__stat-value">${a.ordered || 0}</div>
               </div>
               <div class="cli-card__stat">
-                <div class="cli-card__stat-label">Готово</div>
+                <div class="cli-card__stat-label">Опубликовано</div>
                 <div class="cli-card__stat-value" style="color:var(--cli-green,#22c55e)">${a.done || 0}</div>
               </div>
               <div class="cli-card__stat">
@@ -794,9 +794,9 @@
       const color = CAL_COLORS[idx % CAL_COLORS.length];
       (a.statuses || []).forEach(s => {
         if (!s.date) return;
-        // Не дублируем события: «🎯 Готов» уже показан как «Опубликован отзыв»,
+        // Не дублируем события: «🎯 Опубликован» уже показан как «Опубликован отзыв»,
         // а «📋 Запланировано» — как «Запланировано отклик». Сырые эти статусы скрываем.
-        if (s.status === '🎯 Готов' || s.status === '📋 Запланировано') return;
+        if (s.status === STATUS_DONE || s.status === '📋 Запланировано') return;
         events.push({
           date: String(s.date).slice(0, 10),
           color, anketa: a.name || a.code,
@@ -1575,7 +1575,7 @@
       <div class="cli-stackbar__legend" style="margin-bottom:18px">
         <span><span class="cli-dot planned"></span>Запланировано · <b>${br.planned}</b></span>
         <span><span class="cli-dot active"></span>В работе · <b>${br.active}</b></span>
-        <span><span class="cli-dot done"></span>Готово · <b>${br.done}</b></span>
+        <span><span class="cli-dot done"></span>Опубликовано · <b>${br.done}</b></span>
       </div>
     `;
     const moneyHtml = `
@@ -1600,7 +1600,7 @@
         ? stored
         : null;
     };
-    const isReadyStatus = status => status.status === '🎯 Готов';
+    const isReadyStatus = status => status.status === STATUS_DONE;
     const approvedTextsForStatus = status =>
       approvedTextsByProfile.get(String(status.profileId || '')) || [];
     const isPublishedStatus = status =>

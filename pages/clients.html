@@ -222,7 +222,7 @@
         <div class="page-title">
           <div>
             <h1>Клиентская база</h1>
-            <p>«Заказано» — редактируется в строке (клик по ячейке). «Сделано» подтягивается автоматически по статусу «🎯 Готов» на вкладке «Аккаунты».</p>
+            <p>«Заказано» — редактируется в строке (клик по ячейке). «Сделано» подтягивается автоматически по статусу «🎯 Опубликован» на вкладке «Аккаунты».</p>
           </div>
           <div class="cl-page-actions">
             <button class="btn btn--ghost" id="btnOrders" title="Заявки клиентов на оплату" style="position:relative">
@@ -331,7 +331,7 @@
           <div class="field">
             <label>Сделано</label>
             <div class="input" style="display:flex;align-items:center;color:var(--text-mute);font-size:12px;line-height:1.3">
-              Считается автоматически из вкладки «Статусы» (статус «🎯 Готов»)
+              Считается автоматически из вкладки «Статусы» (статус «🎯 Опубликован»)
             </div>
           </div>
         </div>
@@ -545,7 +545,7 @@
   </div>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260827c"></script>
+  <script src="../js/app.js?v=20260829b"></script>
   <script src="../js/supabase-client.js?v=20260820d"></script>
   <script src="../js/auth-gate.js?v=20260726a"></script>
   <script src="../js/cloud-sync.js?v=20260820d"></script>
@@ -595,13 +595,13 @@
       });
     });
 
-    /* ---- Авто-подсчёт «Сделано» из ОДОБРЕННЫХ отзывов + действующего статуса «Готов» ----
+    /* ---- Авто-подсчёт «Сделано» из ОДОБРЕННЫХ отзывов + действующего статуса «Опубликован» ----
        Правило: отзыв считается, если а) владелец одобрил его на модерации и
        б) в аккаунтах для пары (mentorId, profileId) ВСЁ ЕЩЁ стоит статус
-       «🎯 Готов». Как только менеджер меняет статус на любой другой (например,
-       «Диалог Закончен») — отзыв перестаёт считаться у клиента. Так число
+       «🎯 Опубликован». Как только менеджер меняет статус на любой другой (например,
+       «Обменяться») — отзыв перестаёт считаться у клиента. Так число
        «Сделано» всегда отражает реальную картину в Аккаунтах, без рассинхрона. */
-    const DONE_STATUS = '🎯 Готов';
+    const DONE_STATUS = '🎯 Опубликован';
     function deriveDone(client) {
       const code = String(client.code || '').toLowerCase().trim();
       if (!code) return 0;
@@ -614,7 +614,7 @@
       );
       const statuses = Store.state.profileStatuses || [];
       // Считаем только те отзывы, у которых пара (mentorId, profileId)
-      // имеет статус «Готов» в текущем списке аккаунтов.
+      // имеет статус «Опубликован» в текущем списке аккаунтов.
       const realDone = reviews.filter(r => statuses.some(
         s => s.mentorId === r.mentorId && s.profileId === r.profileId && s.status === DONE_STATUS
       )).length;
@@ -924,7 +924,7 @@
 
           <div class="cl-card__progress">
             <div class="cl-card__bar"><div style="width:${pct}%"></div></div>
-            <span style="font-size:12px;color:var(--text-dim);font-variant-numeric:tabular-nums;white-space:nowrap" title="Сделано (статус Готов) / Заказано">
+            <span style="font-size:12px;color:var(--text-dim);font-variant-numeric:tabular-nums;white-space:nowrap" title="Сделано (статус Опубликован) / Заказано">
               <b style="color:var(--text)">${done}</b>/<span class="cl-editable" data-field="ordered" data-type="number" title="Заказано (клик — изменить)">${ordered}</span> · ${pct}%
             </span>
           </div>
@@ -1014,7 +1014,7 @@
     }
 
     /** Сколько одобренных отзывов опубликовано по этому клиенту.
-     *  Считается через mentor.code → reviews.mentorId, но только статус Готов. */
+     *  Считается через mentor.code → reviews.mentorId, но только статус Опубликован. */
     function countReviewsForClient(c) {
       return collectReviewsForClient(c).length;
     }
@@ -1093,12 +1093,12 @@
     }
 
     /* Порядок статусов аккаунтов (для сводки/списка). Последний — «готово». */
-    const ACC_STATUS_ORDER = ['🎯 Готов','🏆 Выбран','⭐ Выбрать','✅ Диалог Закончен','💬 Диалог Начать','📋 Запланировано'];
-    const ACC_DONE_STATUS = '🎯 Готов';
+    const ACC_STATUS_ORDER = ['🎯 Опубликован','🏆 Выбран','⭐ Выбрать','✅ Обменяться','💬 Начать диалог','📋 Запланировано'];
+    const ACC_DONE_STATUS = '🎯 Опубликован';
 
     /** Реальная картина по анкете(ам) клиента из раздела «Аккаунты» (profileStatuses).
      *  Возвращает: items [{code,status,date,mentorId,profileId}], byStatus {статус:N},
-     *  done (статус Готов), inWork (промежуточные), total. Связь — по client.code → mentors. */
+     *  done (статус Опубликован), inWork (промежуточные), total. Связь — по client.code → mentors. */
     function accountsForClient(c) {
       const out = { items: [], byStatus: {}, done: 0, inWork: 0, total: 0 };
       const code = String(c.code || '').toLowerCase().trim();
@@ -1275,7 +1275,7 @@
       if (!list.length) {
         wrap.innerHTML = `<div class="empty" style="padding:24px;text-align:center;color:var(--text-mute)">
           Опубликованных отзывов ещё нет.<br/>
-          <span style="font-size:11px">Когда сотрудник нажимает «🎯 Готов» и владелец одобряет отзыв в разделе «Отзывы» — он попадает сюда.</span>
+          <span style="font-size:11px">Когда сотрудник ставит «🎯 Опубликован» и владелец одобряет отзыв в разделе «Отзывы», он попадает сюда.</span>
         </div>`;
       } else {
         wrap.innerHTML = list.map(r => `
@@ -1383,7 +1383,7 @@
       // Стата вверху — по реальным аккаунтам из раздела «Аккаунты»
       const ordered = +c.ordered || 0;
       const acc = accountsForClient(c);
-      const done = acc.done;          // статус 🎯 Готов
+      const done = acc.done;          // статус 🎯 Опубликован
       const inWork = acc.inWork;      // промежуточные статусы (диалог/выбрать/выбран...)
       const plannedManual = totalPlanned(c);
       const manualLimit = manualScheduleLimit(Store.state, c);
@@ -1397,7 +1397,7 @@
 
       document.getElementById('schSummary').innerHTML = `
         <span class="sch-stat"><strong>Заказано:</strong> ${ordered}</span>
-        <span class="sch-stat ok"><strong>🎯 Готово:</strong> ${done}</span>
+        <span class="sch-stat ok"><strong>🎯 Опубликовано:</strong> ${done}</span>
         <span class="sch-stat warn"><strong>🛠 В работе:</strong> ${inWork}</span>
         <span class="sch-stat ${placeCls}">${placeText}</span>
         <span class="sch-stat ${plannedManual > manualLimit ? 'bad' : ''}"><strong>🗓 План вручную:</strong> ${plannedManual}${plannedManual > manualLimit ? ` · лишних ${plannedManual - manualLimit}` : ''}</span>
@@ -1489,7 +1489,7 @@
         const chips = ACC_STATUS_ORDER.filter(st => acc.byStatus[st]).map(st =>
           `<span style="font-size:12px;padding:3px 8px;border:1px solid var(--border);border-radius:999px;background:var(--bg-elev-2)">${st}: <b>${acc.byStatus[st]}</b></span>`
         ).join('');
-        // Порядок воронки: Запланировано → Диалог Начать → … → Готов (сделанные внизу)
+        // Порядок воронки: Запланировано → Начать диалог → … → Опубликован (сделанные внизу)
         const pipeIdx = st => { const i = PROFILE_STATUSES.indexOf(st); return i < 0 ? 99 : i; };
         const rows = acc.items.slice()
           .sort((a, b) => (pipeIdx(a.status) - pipeIdx(b.status))

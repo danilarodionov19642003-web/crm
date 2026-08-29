@@ -35,7 +35,7 @@ const state = {
   archivedProfiles: [],
   profileStatuses: [
     {
-      id: 's1', mentorId: 'm1', profileId: 'p1', status: '🎯 Готов',
+      id: 's1', mentorId: 'm1', profileId: 'p1', status: '🎯 Опубликован',
       date: '2026-01-10', performer: 'Данил',
       history: [{ date: '2026-01-01', status: '📋 Запланировано' }]
     },
@@ -163,7 +163,7 @@ const archivedResult = Economics.analyze({
   }],
   profileStatuses: [{
     id: 'legacy-status', mentorId: 'legacy-mentor', profileId: 'legacy-profile',
-    status: '🎯 Готов', date: '2026-03-01', performer: 'Данил'
+    status: '🎯 Опубликован', date: '2026-03-01', performer: 'Данил'
   }],
   reviews: [{
     id: 'legacy-review', mentorId: 'legacy-mentor', profileId: 'legacy-profile', moderation: 'approved'
@@ -200,8 +200,8 @@ const reusedProfileResult = Economics.analyze({
     deletedAt: '2026-05-31', archived: true
   }],
   profileStatuses: [
-    { id: 'first-status', mentorId: 'first-mentor', profileId: 'reused-profile', status: '🎯 Готов', date: '2026-03-01' },
-    { id: 'second-status', mentorId: 'second-mentor', profileId: 'reused-profile', status: '🎯 Готов', date: '2026-05-01' }
+    { id: 'first-status', mentorId: 'first-mentor', profileId: 'reused-profile', status: '🎯 Опубликован', date: '2026-03-01' },
+    { id: 'second-status', mentorId: 'second-mentor', profileId: 'reused-profile', status: '🎯 Опубликован', date: '2026-05-01' }
   ],
   reviews: [],
   employees: [],

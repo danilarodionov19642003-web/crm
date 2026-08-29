@@ -31,6 +31,32 @@ vm.runInContext(source, context);
 
 const { Store, STATUS_SELECT, STATUS_CHOSEN, STATUS_READY } = context.window.App;
 Store.save = noop;
+assert.deepEqual(
+  Array.from(context.window.App.PROFILE_STATUSES),
+  ['📋 Запланировано', '💬 Начать диалог', '✅ Обменяться', '⭐ Выбрать', '🏆 Выбран', '🎯 Опубликован'],
+  'воронка должна использовать новые названия статусов'
+);
+
+Store.state = {
+  profileStatuses: [{
+    status: '💬 Диалог Начать',
+    nextActionStatus: '🎯 Готов',
+    history: [
+      { status: '💬 Диалог Начат' },
+      { status: '✅ Диалог Закончен' },
+      { status: '🎯 Готов' }
+    ]
+  }]
+};
+Store._migrateProfileStatusNames();
+assert.equal(Store.state.profileStatuses[0].status, '💬 Начать диалог');
+assert.equal(Store.state.profileStatuses[0].nextActionStatus, '🎯 Опубликован');
+assert.deepEqual(
+  Array.from(Store.state.profileStatuses[0].history, item => item.status),
+  ['💬 Начать диалог', '✅ Обменяться', '🎯 Опубликован'],
+  'старые текущие и исторические статусы должны мигрировать без потери записей'
+);
+
 Store.state = {
   mentors: [
     { id: 'mentor-a10', code: 'a10', name: 'Анастасия' },
@@ -121,6 +147,10 @@ assert.equal(Store.listProfileStatusActionTasks('2026-07-22').some(item => item.
 
 const statusesHtml = fs.readFileSync(path.join(root, 'pages/statuses.html'), 'utf8');
 const tasksHtml = fs.readFileSync(path.join(root, 'pages/tasks.html'), 'utf8');
+const statusLabelsMigration = fs.readFileSync(
+  path.join(root, 'sql/migrations/2026-08-29_profile_status_labels.sql'),
+  'utf8'
+);
 assert.match(statusesHtml, /stg__chip__age/, 'в карточке аккаунта должен отображаться возраст статуса');
 assert.match(statusesHtml, /id="chgActionDate"/, 'срок следующего действия должен редактироваться');
 assert.match(statusesHtml, /deepLink\.get\('accountId'\)/, 'страница статусов должна фильтровать нужный аккаунт из задачи');
@@ -140,5 +170,11 @@ assert.match(tasksHtml, /sched-cell__task-count/, 'день календаря �
 assert.match(tasksHtml, /План отзывов и задач/, 'календарь должен явно показывать оба вида работы');
 assert.match(tasksHtml, /Сегодня и просроченные/,
   'просроченные действия не должны скрываться из основного списка');
+assert.match(statusLabelsMigration, /insert into public\.crm_state_history/,
+  'перед переименованием живых статусов должен сохраняться снимок CRM');
+assert.match(statusLabelsMigration, /update public\.client_snapshots/,
+  'названия должны обновляться и в личных кабинетах');
+assert.match(statusLabelsMigration, /not in \(''📋 Запланировано'', ''🎯 Готов'', ''🎯 Опубликован''\)/,
+  'серверный лимит планирования должен понимать старое и новое конечное состояние');
 
 console.log('status next actions: OK');

@@ -55,9 +55,9 @@ const state = {
     { id: 'r3', mentorId: 'm2', profileId: 'p3', moderation: 'approved' }
   ],
   profileStatuses: [
-    { mentorId: 'm1', profileId: 'p1', status: '🎯 Готов' },
+    { mentorId: 'm1', profileId: 'p1', status: '🎯 Опубликован' },
     { mentorId: 'm1', profileId: 'p2', status: '⭐ Выбрать' },
-    { mentorId: 'm2', profileId: 'p3', status: '🎯 Готов' }
+    { mentorId: 'm2', profileId: 'p3', status: '🎯 Опубликован' }
   ]
 };
 
@@ -73,6 +73,6 @@ const statuses = fs.readFileSync(path.join(root, 'pages/statuses.html'), 'utf8')
 assert.match(statuses, /\.filter\(m => clientReviewsRemaining\(Store\.state, m\) > 0\)/);
 assert.match(statuses, /\.sort\(\(a, b\) => compareClientCodes\(a\.code, b\.code\)\)/);
 assert.match(statuses, /нет клиентов с остатком отзывов/);
-assert.match(statuses, /app\.js\?v=20260827c/);
+assert.match(statuses, /app\.js\?v=20260829b/);
 
 console.log('account client selector: OK');

@@ -65,15 +65,21 @@
   /* ------------------------------------------------------------------ */
   const PROFILE_STATUSES = [
     '📋 Запланировано',
-    '💬 Диалог Начать',
-    '✅ Диалог Закончен',
+    '💬 Начать диалог',
+    '✅ Обменяться',
     '⭐ Выбрать',
     '🏆 Выбран',
-    '🎯 Готов'
+    '🎯 Опубликован'
   ];
   const STATUS_SELECT = '⭐ Выбрать';
   const STATUS_CHOSEN = '🏆 Выбран';
-  const STATUS_READY = '🎯 Готов';
+  const STATUS_READY = '🎯 Опубликован';
+  const PROFILE_STATUS_RENAMES = Object.freeze({
+    '💬 Диалог Начат': '💬 Начать диалог',
+    '💬 Диалог Начать': '💬 Начать диалог',
+    '✅ Диалог Закончен': '✅ Обменяться',
+    '🎯 Готов': '🎯 Опубликован'
+  });
   const STATUS_SELECT_WAIT_DAYS = 5;
   const STATUS_CHOSEN_FALLBACK_DAYS = 7;
   // Исполнители откликов/заказов — для расчёта ЗП. Владелец (Данил) и его брат
@@ -619,7 +625,7 @@
       };
       this._migrateSeparatedTaskPlanDate();
       this._migrateNormalizePhones();
-      this._migrateRenameDialogStatus();
+      this._migrateProfileStatusNames();
       // Бэкфилл менторов из клиентов: если клиент был создан на странице
       // «Клиенты» и не имеет пары в state.mentors — создаём её здесь, чтобы
       // клиент был доступен в модалке «Добавить в аккаунт» без перезагрузки.
@@ -697,17 +703,26 @@
       }
     },
 
-    /** Одноразовое переименование статуса «💬 Диалог Начат» → «💬 Диалог Начать»
-     *  (владелец исправил формулировку). Правим и текущий статус, и историю.
+    /** Переименование старых статусов в актуальные названия воронки.
+     *  Правим текущий статус, ожидаемое следующее действие и историю.
      *  Идемпотентно: если старой формы нет — ничего не пишет. Пишем локально
      *  (push отложен до первого действия — как в _migrateNormalizePhones). */
-    _migrateRenameDialogStatus() {
-      const OLD = '💬 Диалог Начат', NEW = '💬 Диалог Начать';
+    _migrateProfileStatusNames() {
+      const rename = value => PROFILE_STATUS_RENAMES[value] || value;
       let changed = false;
       (this.state.profileStatuses || []).forEach(s => {
-        if (s.status === OLD) { s.status = NEW; changed = true; }
+        const nextStatus = rename(s.status);
+        if (nextStatus !== s.status) { s.status = nextStatus; changed = true; }
+        if (s.nextActionStatus) {
+          const nextActionStatus = rename(s.nextActionStatus);
+          if (nextActionStatus !== s.nextActionStatus) {
+            s.nextActionStatus = nextActionStatus;
+            changed = true;
+          }
+        }
         (s.history || []).forEach(h => {
-          if (h.status === OLD) { h.status = NEW; changed = true; }
+          const historyStatus = rename(h.status);
+          if (historyStatus !== h.status) { h.status = historyStatus; changed = true; }
         });
       });
       if (changed) {
@@ -1713,7 +1728,7 @@
      *   2. IP-адресах — ipLogs НЕ удаляются, чтобы нельзя было случайно
      *      переиспользовать IP, который уже засвечен на старом аккаунте.
      *   3. номерах — phones с profileId этого аккаунта остаются как были.
-     *   4. статусах — profileStatuses тоже сохраняем (был «🎯 Готов» —
+     *   4. статусах — profileStatuses тоже сохраняем (был «🎯 Опубликован» —
      *      пусть и остаётся, иначе у клиента счётчик «Сделано» откатится
      *      назад при архивации, и история «на каком аккаунте мы дошли до
      *      готова» потеряется. См. purgeProfile — там чистим окончательно).
@@ -1734,7 +1749,7 @@
       this.state.profiles = this.state.profiles.filter(x => x.id !== id);
       // statuses, ipLogs, phones НЕ трогаем — UI резолвит профиль через
       // getProfileOrArchived(), а клиентский счётчик «Сделано» дальше учитывает
-      // статус «Готов» на архивном аккаунте.
+      // статус «Опубликован» на архивном аккаунте.
       this.save();
     },
 
@@ -2187,7 +2202,7 @@
 
     /* ---------- Reviews (согласование клиента + внутренняя модерация) ----------
        Текст можно создать и отправить клиенту при любом рабочем статусе.
-       После согласования и фактической публикации менеджер ставит «🎯 Готов».
+       После согласования и фактической публикации менеджер ставит «🎯 Опубликован».
        Внутренняя moderation по-прежнему отдельно отвечает за зарплату и
        счётчик «Сделано». */
     addReview(rec) {
@@ -2517,11 +2532,11 @@
         .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
       // «Сделано» считаем из ЖИВЫХ данных, а не из устаревшего client.done.
       // Правило: одобренный отзыв + у этой пары (mentor, profile) до сих
-      // пор стоит статус «🎯 Готов». Если позже статус сменили на другой
+      // пор стоит статус «🎯 Опубликован». Если позже статус сменили на другой
       // или отзыв удалили — счётчик уменьшится (как и в clients.html).
       const doneProfileIds = new Set(
         (this.state.profileStatuses || [])
-          .filter(s => s.mentorId === mentorId && s.status === '🎯 Готов')
+          .filter(s => s.mentorId === mentorId && s.status === STATUS_READY)
           .map(s => s.profileId)
       );
       const realDone = reviewsRaw.filter(r => doneProfileIds.has(r.profileId)).length;

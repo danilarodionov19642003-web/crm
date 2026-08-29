@@ -29,7 +29,7 @@ test('Telegram direct menu keeps its bearer credential out of HTTP requests', ()
   assert.match(js, /fragmentParams/);
   assert.match(js, /location\.hash/);
   assert.match(js, /fragmentParams\.get\('token'\)/);
-  assert.match(html, /telegram-calendar\.js\?v=20260827c/);
+  assert.match(html, /telegram-calendar\.js\?v=20260829a/);
   assert.match(html, /telegram-calendar\.css\?v=20260827b/);
 });
 

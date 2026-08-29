@@ -509,7 +509,7 @@
         <div class="field" id="addReviewWrap" style="margin-top:12px">
           <label>Текст отзыва для согласования <span style="color:var(--text-mute)">(необязательно)</span></label>
           <textarea id="addReviewText" class="input" rows="5" placeholder="Вставьте текст, который нужно согласовать с клиентом" style="resize:vertical;min-height:90px;font-family:inherit"></textarea>
-          <div style="font-size:11px;color:var(--text-mute);margin-top:4px">Можно отправить заранее при любом рабочем статусе. Статус аккаунта от этого не изменится. «Готов» ставится только после согласования и публикации.</div>
+          <div style="font-size:11px;color:var(--text-mute);margin-top:4px">Можно отправить заранее при любом рабочем статусе. Статус аккаунта от этого не изменится. «Опубликован» ставится только после согласования и публикации.</div>
         </div>
       </div>
       <div class="modal__footer">
@@ -545,7 +545,7 @@
         <div class="field" id="chgReviewWrap" style="margin-top:12px">
           <label>Текст отзыва для согласования <span style="color:var(--text-mute)">(необязательно)</span></label>
           <textarea id="chgReviewText" class="input" rows="5" placeholder="Вставьте текст, который нужно согласовать с клиентом" style="resize:vertical;min-height:90px;font-family:inherit"></textarea>
-          <div style="font-size:11px;color:var(--text-mute);margin-top:4px">Сохрани текущий статус, и текст уйдёт клиенту на согласование. После публикации переведи аккаунт в «Готов».</div>
+          <div style="font-size:11px;color:var(--text-mute);margin-top:4px">Сохрани текущий статус, и текст уйдёт клиенту на согласование. После публикации переведи аккаунт в «Опубликован».</div>
         </div>
         <!-- Отдельный контейнер для отображения СУЩЕСТВУЮЩЕГО отзыва
              (одобренного или на модерации) — чтобы не ломать textarea выше. -->
@@ -658,7 +658,7 @@
   </style>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260827c"></script>
+  <script src="../js/app.js?v=20260829b"></script>
   <script src="../js/supabase-client.js?v=20260820d"></script>
   <script src="../js/auth-gate.js?v=20260726a"></script>
   <script src="../js/cloud-sync.js?v=20260820d"></script>
@@ -703,11 +703,11 @@
     // Стили статусов: подключаем эмодзи к коду состояния (для CSS-оформления чипа)
     const STATUS_KIND = {
       '📋 Запланировано':   'planned',
-      '💬 Диалог Начать':   'started',
-      '✅ Диалог Закончен': 'finished',
+      '💬 Начать диалог':   'started',
+      '✅ Обменяться':      'finished',
       '⭐ Выбрать':          'select',
       '🏆 Выбран':           'chosen',
-      '🎯 Готов':            'ready'
+      '🎯 Опубликован':      'ready'
     };
 
     function mentorById(id) { return Store.state.mentors.find(m => m.id === id); }
@@ -784,7 +784,7 @@
         const sts = PROFILE_STATUSES.map(s => {
           const n = mine.filter(r => r.status === s).length;
           if (!n) return '';
-          const isDone = s === '🎯 Готов';
+          const isDone = s === '🎯 Опубликован';
           return `<span class="perf-card__st${isDone ? ' is-done' : ''}">${escapeHtml(s)} <b>${n}</b></span>`;
         }).filter(Boolean).join('');
         return `
@@ -1308,7 +1308,7 @@
       checkAddWarn();
       Modal.open('addToAccModal');
     }
-    const DONE_STATUS = '🎯 Готов';
+    const DONE_STATUS = '🎯 Опубликован';
     let addActionTouched = false;
     let chgActionTouched = false;
 
@@ -1440,12 +1440,12 @@
       const status = document.getElementById('addStatus').value;
       const comment = document.getElementById('addComment').value.trim();
       const date = document.getElementById('addDate').value || window.App.todayISO();
-      // Текст можно отправить заранее при любом статусе. «Готов» означает,
+      // Текст можно отправить заранее при любом статусе. «Опубликован» означает,
       // что согласованный отзыв уже опубликован, поэтому напрямую создавать
       // новый аккаунт в этом статусе больше нельзя.
       const reviewText = document.getElementById('addReviewText').value.trim();
       if (status === DONE_STATUS) {
-        toast('Сначала привяжи аккаунт в рабочем статусе и отправь текст на согласование. «Готов» ставится после публикации.', 'error');
+        toast('Сначала привяжи аккаунт в рабочем статусе и отправь текст на согласование. «Опубликован» ставится после публикации.', 'error');
         return;
       }
       const profile = profileById(addProfileId);
@@ -1611,15 +1611,15 @@
       const nextActionDate = isActionStatus(newStatus) ? document.getElementById('chgActionDate').value : undefined;
       const nextActionMode = isActionStatus(newStatus) ? (chgActionTouched ? 'manual' : 'auto') : undefined;
       const cur = getStatusFor(chgPid, chgMid);
-      // Текст создаётся заранее без смены статуса. «Готов» разрешён только
+      // Текст создаётся заранее без смены статуса. «Опубликован» разрешён только
       // когда у аккаунта уже есть текст: этот статус означает публикацию.
       const existingReview = (Store.state.reviews || []).find(r => r.mentorId === chgMid && r.profileId === chgPid);
       const newReviewText = existingReview ? '' : document.getElementById('chgReviewText').value.trim();
       if (newStatus === DONE_STATUS && !existingReview) {
-        toast('Сначала оставь текущий статус и отправь текст клиенту на согласование. После публикации переведи аккаунт в «Готов».', 'error');
+        toast('Сначала оставь текущий статус и отправь текст клиенту на согласование. После публикации переведи аккаунт в «Опубликован».', 'error');
         return;
       }
-      // Если статус УХОДИТ с «Готов» на любой другой — это значит, что отзыв
+      // Если статус УХОДИТ с «Опубликован» на любой другой — это значит, что отзыв
       // больше не считается опубликованным. Снимаем зачёт у клиента и
       // удаляем запись отзыва (включая одобренные — иначе зарплата зависнет
       // в воздухе). Перед этим — подтверждение, чтобы не потерять случайно.
@@ -1628,8 +1628,8 @@
       if (goingAway) {
         const isApproved = existingReview.moderation === 'approved';
         const msg = isApproved
-          ? 'Снять статус «Готов»? Связанный одобренный отзыв удалится, зарплата за него спишется.'
-          : 'Снять статус «Готов»? Связанный отзыв на модерации удалится.';
+          ? 'Снять статус «Опубликован»? Связанный одобренный отзыв удалится, зарплата за него спишется.'
+          : 'Снять статус «Опубликован»? Связанный отзыв на модерации удалится.';
         if (!confirmDelete(msg)) return;
       }
       // Если статус/комментарий не поменялись — обновляем только дату и/или

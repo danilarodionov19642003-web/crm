@@ -6,7 +6,7 @@
   'use strict';
 
   const DAY_MS = 86400000;
-  const READY_STATUS = '🎯 Готов';
+  const READY_STATUS = '🎯 Опубликован';
   const DEFAULT_PERFORMER = 'Данил';
   const SOFTWARE_SCOPE = 'account_software';
   const PROXY_SCOPE = 'account_proxy';
