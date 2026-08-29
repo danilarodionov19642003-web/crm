@@ -321,8 +321,7 @@
 .cli-anketa-avatar__fallback { display: inline-flex; width: 100%; height: 100%; align-items: center; justify-content: center; }
 .cli-anketa-avatar img + .cli-anketa-avatar__fallback { display: none; }
 .cli-anketa-avatar img[hidden] + .cli-anketa-avatar__fallback { display: inline-flex; }
-.cli-anketa-avatar.is-calendar-event,
-.cli-anketa-avatar.is-feed-event {
+.cli-anketa-avatar.is-calendar-event {
   width: 32px; height: 32px; flex-basis: 32px;
   font-size: 9px;
 }
@@ -446,54 +445,6 @@
   display: flex; align-items: center; justify-content: space-between;
 }
 .cli-card__remain b { color: var(--text); font-weight: 700; font-size: 13px; }
-
-/* ---------- фид активности (свёрнутый <details>) ---------- */
-.cli-feed-wrap {
-  background: var(--bg-2);
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  overflow: hidden;
-  box-shadow: var(--cli-shadow);
-}
-.cli-feed-wrap > summary {
-  list-style: none;
-  cursor: pointer;
-  padding: 16px 20px;
-  display: flex; align-items: center; gap: 10px;
-  font-weight: 600; font-size: 14px;
-  user-select: none;
-}
-.cli-feed-wrap > summary::-webkit-details-marker { display: none; }
-.cli-feed-wrap > summary::after {
-  content: '▼';
-  margin-left: auto;
-  font-size: 10px;
-  color: var(--text-mute);
-  transition: transform .2s;
-}
-.cli-feed-wrap[open] > summary::after { transform: rotate(180deg); }
-.cli-feed-wrap > summary .cli-feed-count {
-  background: rgba(255,122,0,0.12); color: var(--cli-accent);
-  font-size: 11px; font-weight: 700;
-  padding: 2px 9px; border-radius: 999px;
-  margin-left: 4px;
-}
-.cli-feed { display: flex; flex-direction: column; gap: 6px; padding: 6px 16px 18px; }
-.cli-feed__item {
-  display: flex; gap: 12px; align-items: flex-start;
-  padding: 10px 12px;
-  background: var(--bg);
-  border-radius: 14px;
-}
-.cli-feed__icon {
-  width: 32px; height: 32px; border-radius: 10px;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 14px;
-  background: rgba(255,122,0,0.08); color: var(--cli-accent); flex-shrink: 0;
-}
-.cli-feed__icon.review { background: rgba(34,197,94,0.10); color: var(--cli-green); }
-.cli-feed__text { flex: 1; font-size: 13px; line-height: 1.4; }
-.cli-feed__date { font-size: 11px; color: var(--text-mute); margin-top: 3px; }
 
 /* ---------- profile detail ---------- */
 .cli-back {

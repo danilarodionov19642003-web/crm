@@ -739,50 +739,6 @@
     bindAvatarFallbacks(el);
   }
 
-  function renderFeed(feed, anketas = []) {
-    const el = document.querySelector('[data-cli-feed]');
-    if (!el) return;
-    // Корневой элемент превращается в свёрнутый <details> со счётчиком.
-    // Чтобы при перерендере не плодить вложенность — каждый раз заново
-    // строим разметку и заменяем innerHTML контейнера-обёртки.
-    const list = (feed || []).slice(0, 30);
-    if (!list.length) {
-      el.innerHTML = `
-        <details class="cli-feed-wrap">
-          <summary>Последние действия <span class="cli-feed-count">0</span></summary>
-          <div class="cli-feed"><div class="cli-empty" style="margin:6px 0 12px">Активности пока нет.</div></div>
-        </details>`;
-      return;
-    }
-    const anketaForFeed = item => (anketas || []).find(anketa =>
-      String(anketa.mentorId || '') === String(item.mentorId || '')
-      || String(anketa.code || '').toLowerCase() === String(item.anketa || '').toLowerCase()
-      || String(anketa.name || '').trim() === String(item.anketaName || '').trim()
-    ) || {
-      code: item.anketa || '',
-      name: item.anketaName || item.anketa || '',
-      avatarUrl: item.avatarUrl || ''
-    };
-    el.innerHTML = `
-      <details class="cli-feed-wrap">
-        <summary>Последние действия <span class="cli-feed-count">${list.length}</span></summary>
-        <div class="cli-feed">
-          ${list.map(f => {
-            const anketaLabel = f.anketaName || f.anketa || '';
-            return `
-              <div class="cli-feed__item">
-                ${anketaAvatarHtml(anketaForFeed(f), 'is-feed-event')}
-                <div class="cli-feed__text">
-                  <div><strong>${escapeHtml(anketaLabel)}</strong> · ${escapeHtml(f.text || '')}</div>
-                  <div class="cli-feed__date">${fmtDate(f.date)}</div>
-                </div>
-              </div>`;
-          }).join('')}
-        </div>
-      </details>`;
-    bindAvatarFallbacks(el);
-  }
-
   /* --- Calendar widget ---
      Месячная сетка с тремя типами событий:
        1. status — изменение статуса аккаунта (📋)
@@ -2924,7 +2880,6 @@
     renderTelegramReminder,
     renderTotals,
     renderAnketas,
-    renderFeed,
     renderCalendar,
     renderProfileDetail,
     loadMyPublicationRequests,

@@ -72,8 +72,6 @@
       <div class="cli-col cli-col--right">
         <h2 class="cli-section-title">Календарь</h2>
         <div class="cli-cal" data-cli-calendar></div>
-
-        <div data-cli-feed style="margin-top:22px"></div>
       </div>
     </div>
 
@@ -164,12 +162,10 @@
       document.querySelector('[data-cli-anketas]').innerHTML =
         '<div class="cli-empty">Данные ещё не загружены. Зайдите чуть позже или свяжитесь с менеджером.</div>';
       document.querySelector('[data-cli-totals]').innerHTML = '';
-      document.querySelector('[data-cli-feed]').innerHTML = '';
     } else {
       window.ClientApp.renderTotals(snap.payload.totals, snap.payload.anketas);
       window.ClientApp.renderAnketas(snap.payload.anketas);
       window.ClientApp.renderCalendar(snap.payload, outreachSlots, publicationRequests);
-      window.ClientApp.renderFeed(snap.payload.feed, snap.payload.anketas);
     }
     // Заказ отзывов (тарифы из снимка). Если тарифов нет — CTA скрыт.
     window.ClientApp.renderOrder(snap && snap.payload);

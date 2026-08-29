@@ -11,6 +11,7 @@ const clientsHtml = fs.readFileSync(path.join(root, 'pages/clients.html'), 'utf8
 const statusesHtml = fs.readFileSync(path.join(root, 'pages/statuses.html'), 'utf8');
 const clientApp = fs.readFileSync(path.join(root, 'pages/client/client-app.js'), 'utf8');
 const clientCss = fs.readFileSync(path.join(root, 'pages/client/client.css'), 'utf8');
+const clientIndex = fs.readFileSync(path.join(root, 'pages/client/index.html'), 'utf8');
 
 const noop = () => {};
 const context = {
@@ -77,11 +78,10 @@ assert.match(statusesHtml, /class="stg__chip__avatar"/);
 assert.match(clientApp, /function anketaAvatarHtml\(anketa/);
 assert.match(clientApp, /anketaAvatarHtml\(e\.anketaData, 'is-calendar-event'\)/,
   'события выбранного дня должны показывать аватар анкеты вместо служебного смайлика');
-assert.match(clientApp, /function renderFeed\(feed, anketas = \[\]\)/);
-assert.match(clientApp, /anketaAvatarHtml\(anketaForFeed\(f\), 'is-feed-event'\)/,
-  'последние действия должны использовать аватары анкет');
-assert.doesNotMatch(clientApp, /<summary>📋 Последние действия/,
-  'у заголовка последних действий не должно быть иконки блокнота');
+assert.doesNotMatch(clientApp, /function renderFeed\(/,
+  'неиспользуемый раздел последних действий должен быть удалён');
+assert.doesNotMatch(clientIndex, /data-cli-feed|renderFeed/,
+  'главная кабинета не должна загружать раздел последних действий');
 assert.match(clientApp, /safeProfiProfileUrl/);
 assert.match(clientCss, /\.cli-anketa-avatar/);
 assert.match(clientCss, /\.cli-anketa-avatar\.is-calendar-event/);
