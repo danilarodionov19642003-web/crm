@@ -103,9 +103,10 @@ assert.match(clientCss, /@media \(max-width: 560px\) \{[\s\S]*\.cli-cta-row \{ f
   'кнопки покупки и доплаты должны оставаться рядом на телефоне');
 assert.ok(
   clientIndex.indexOf('data-cli-calendar') < clientIndex.indexOf('data-cli-anketas'),
-  'общий календарь должен находиться выше списка анкет'
+  'на телефоне общий календарь должен находиться выше списка анкет'
 );
-assert.doesNotMatch(clientIndex, /cli-cols|cli-col--right/,
-  'старый двухколоночный порядок не должен отправлять календарь вниз на телефоне');
+assert.match(clientIndex, /class="cli-cols"/);
+assert.match(clientCss, /@media \(min-width: 860px\) \{[\s\S]*\.cli-dashboard-anketas \{ grid-column: 1; grid-row: 1; \}[\s\S]*\.cli-dashboard-calendar \{ grid-column: 2; grid-row: 1; \}/,
+  'на компьютере анкеты должны быть слева, а календарь справа');
 
 console.log('client Profi profile avatars: OK');

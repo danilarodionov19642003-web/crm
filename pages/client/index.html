@@ -16,7 +16,7 @@
   <meta http-equiv="Expires" content="0"/>
   <title>Личный кабинет — Mentori</title>
   <link rel="stylesheet" href="../../css/styles.css?v=20260628a"/>
-  <link rel="stylesheet" href="client.css?v=20260829b"/>
+  <link rel="stylesheet" href="client.css?v=20260829c"/>
 </head>
 <body class="cli-body">
   <div data-cli-header></div>
@@ -57,21 +57,23 @@
       </div>
     </div>
 
-    <!-- Общий календарь должен быть виден сразу, до списка анкет. -->
-    <section class="cli-dashboard-calendar">
-      <h2 class="cli-section-title">Календарь</h2>
-      <div class="cli-cal" data-cli-calendar></div>
-    </section>
+    <div class="cli-cols">
+      <!-- В DOM календарь первый для телефона; на ПК CSS ставит его справа. -->
+      <section class="cli-dashboard-calendar">
+        <h2 class="cli-section-title">Календарь</h2>
+        <div class="cli-cal" data-cli-calendar></div>
+      </section>
 
-    <section class="cli-dashboard-anketas">
-      <h2 class="cli-section-title">Анкеты</h2>
-      <div class="cli-list" data-cli-anketas>
-        <div class="cli-empty">Загрузка…</div>
-      </div>
+      <section class="cli-dashboard-anketas">
+        <h2 class="cli-section-title">Анкеты</h2>
+        <div class="cli-list" data-cli-anketas>
+          <div class="cli-empty">Загрузка…</div>
+        </div>
 
-      <!-- Мои заказы: рендерит client-app.renderMyOrders (свёрнуто: последний + «показать все») -->
-      <div class="cli-orders" data-cli-orders hidden></div>
-    </section>
+        <!-- Мои заказы: рендерит client-app.renderMyOrders (свёрнуто: последний + «показать все») -->
+        <div class="cli-orders" data-cli-orders hidden></div>
+      </section>
+    </div>
 
     <footer class="cli-foot">
       <a class="cli-foot__link" href="../../legal/privacy.html" target="_blank" rel="noopener">Политика конфиденциальности</a>

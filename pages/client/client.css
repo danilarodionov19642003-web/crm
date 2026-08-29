@@ -193,9 +193,18 @@
 /* Сводка, оплаты и общий календарь идут до списка анкет. */
 .cli-cta-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px; }
 .cli-cta-row > .cli-order-cta { flex: 1 1 280px; min-height: 80px; margin: 0; box-sizing: border-box; }
+.cli-cols {
+  display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px;
+  margin-top: 22px; align-items: start;
+}
 .cli-dashboard-calendar,
 .cli-dashboard-anketas { min-width: 0; }
-.cli-dashboard-calendar .cli-section-title { margin-top: 22px; }
+.cli-cols .cli-section-title { margin-top: 0; }
+@media (min-width: 860px) {
+  .cli-cols { grid-template-columns: minmax(0, 1.5fr) minmax(320px, 1fr); gap: 28px; }
+  .cli-dashboard-anketas { grid-column: 1; grid-row: 1; }
+  .cli-dashboard-calendar { grid-column: 2; grid-row: 1; }
+}
 .cli-section-title {
   font-size: 11px;
   text-transform: uppercase;
