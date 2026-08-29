@@ -6,6 +6,7 @@
   if (!SB) return;
 
   const RPC_TIMEOUT_MS = 12_000;
+  const REQUEST_SELECT = 'id,portal_email,mentor_id,anketa_code,anketa_name,title,body,request_status,delivered_to_member_id,delivered_to_telegram_user_id,created_at,updated_at,resolved_at,resolved_by_label,resolution_comment,source_review_id,source_profile_id,source_revision';
 
   async function rpc(name, body = {}) {
     const controller = new AbortController();
@@ -153,7 +154,7 @@
 
   async function loadRequests(limit = 300) {
     const params = new URLSearchParams({
-      select: 'id,portal_email,mentor_id,anketa_code,anketa_name,title,body,request_status,delivered_to_member_id,delivered_to_telegram_user_id,created_at,updated_at,resolved_at,resolved_by_label,resolution_comment,source_review_id,source_profile_id,source_revision',
+      select: REQUEST_SELECT,
       order: 'created_at.desc',
       limit: String(Math.max(1, Math.min(1000, Number(limit) || 300)))
     });
@@ -163,6 +164,22 @@
     const payload = await response.json().catch(() => []);
     if (!response.ok) throw new Error(String(payload.message || `HTTP ${response.status}`));
     return Array.isArray(payload) ? payload : [];
+  }
+
+  async function loadLatestForReview(sourceReviewId) {
+    if (!sourceReviewId) return null;
+    const params = new URLSearchParams({
+      select: REQUEST_SELECT,
+      source_review_id: `eq.${sourceReviewId}`,
+      order: 'source_revision.desc,id.desc',
+      limit: '1'
+    });
+    const response = await SB.authFetch(`${SB.URL}/rest/v1/client_text_approval_requests?${params}`, {
+      headers: { apikey: SB.KEY, Accept: 'application/json' }
+    });
+    const payload = await response.json().catch(() => []);
+    if (!response.ok) throw new Error(String(payload.message || `HTTP ${response.status}`));
+    return Array.isArray(payload) ? (payload[0] || null) : null;
   }
 
   function latestByReview(rows) {
@@ -202,6 +219,7 @@
     sendReview,
     cancelReview,
     loadRequests,
+    loadLatestForReview,
     latestByReview,
     statusMeta,
     errorMessage,

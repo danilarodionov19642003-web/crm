@@ -631,6 +631,30 @@
       border-color: rgba(250,204,21,0.3);
       color: #facc15;
     }
+    .chg-approval-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 3px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      line-height: 1.2;
+      vertical-align: middle;
+      background: rgba(249,115,22,.12);
+      color: var(--orange);
+    }
+    .chg-approval-badge.is-approved {
+      background: rgba(34,197,94,.13);
+      color: var(--green);
+    }
+    .chg-approval-badge.is-changes {
+      background: rgba(239,68,68,.13);
+      color: var(--red);
+    }
+    .chg-approval-badge.is-muted {
+      background: rgba(148,163,184,.12);
+      color: var(--text-mute);
+    }
   </style>
 
   <script src="../data/seed.js"></script>
@@ -640,7 +664,7 @@
   <script src="../js/cloud-sync.js?v=20260820d"></script>
   <script src="../js/accounts-sync.js"></script>
   <script src="../js/reviews-sync.js?v=20260717a"></script>
-  <script src="../js/client-text-approvals.js?v=20260826b"></script>
+  <script src="../js/client-text-approvals.js?v=20260829a"></script>
   <script src="../components/sidebar.js?v=20260820b"></script>
   <script src="../components/header.js"></script>
   <script src="../components/table.js"></script>
@@ -665,6 +689,9 @@
     }
     // mode: 'live' — активные аккаунты, 'arch' — архивные (мягко удалённые)
     const filters = { city: '', status: '', performer: '', q: '', mode: 'live' };
+    const approvalByReview = new Map();
+    const approvalLoadingByReview = new Set();
+    const approvalFailedByReview = new Set();
     // Какие карточки имеют развернутую форму «+ IP» — состояние локальное,
     // переживает re-render текущей страницы. Очищается при смене фильтров.
     const openIpForms = new Set();
@@ -799,7 +826,7 @@
         if (filters.q) {
           const q = filters.q;
           const mentorsStr = (p.mentorIds || []).map(id => mentorFull(mentorById(id))).join(' ').toLowerCase();
-          const blob = normalizeSearchText(`${p.code || ''} ${p.city || ''} ${reg ? (reg.ownerName || '') + ' ' + (reg.phone || '') : ''} ${mentorsStr}`);
+          const blob = normalizeSearchText(`${p.id || ''} ${p.code || ''} ${p.city || ''} ${reg ? (reg.ownerName || '') + ' ' + (reg.phone || '') : ''} ${mentorsStr}`);
           if (!blob.includes(q)) return false;
         }
         if (filters.status) {
@@ -1448,6 +1475,98 @@
 
     /* --- Изменить статус --- */
     let chgPid = null, chgMid = null;
+
+    function currentChangeStatusReview() {
+      return (Store.state.reviews || []).find(review =>
+        review.mentorId === chgMid && review.profileId === chgPid
+      ) || null;
+    }
+
+    function renderChangeStatusReview() {
+      const existing = currentChangeStatusReview();
+      const wrap = document.getElementById('chgReviewWrap');
+      const existingBox = document.getElementById('chgExistingReview');
+      if (!existing) {
+        wrap.style.display = 'block';
+        existingBox.style.display = 'none';
+        existingBox.innerHTML = '';
+        return;
+      }
+
+      const cur = getStatusFor(chgPid, chgMid);
+      const published = cur && cur.status === DONE_STATUS;
+      const mod = existing.moderation;
+      const approvalKey = String(existing.id || '');
+      const approval = approvalByReview.get(approvalKey) || null;
+      let badgeText = '';
+      let badgeClass = '';
+
+      if (published) {
+        badgeText = mod === 'approved' ? 'Проверен' : mod === 'rejected' ? 'Отклонён' : 'Ждёт проверки';
+        badgeClass = mod === 'approved' ? 'is-approved' : mod === 'rejected' ? 'is-changes' : '';
+      } else if (approvalLoadingByReview.has(approvalKey) && !approval) {
+        badgeText = 'Проверяем ответ клиента';
+        badgeClass = 'is-muted';
+      } else if (approvalFailedByReview.has(approvalKey) && !approval) {
+        badgeText = 'Статус временно недоступен';
+        badgeClass = 'is-muted';
+      } else if (approval && window.ClientTextApprovals) {
+        const meta = window.ClientTextApprovals.statusMeta(approval);
+        badgeText = meta.label;
+        badgeClass = meta.key === 'approved'
+          ? 'is-approved'
+          : meta.key === 'changes_requested'
+            ? 'is-changes'
+            : (meta.key === 'cancelled' || meta.key === 'missing') ? 'is-muted' : '';
+      } else {
+        badgeText = existing.clientApprovalSentAt ? 'Отправлен клиенту' : 'Сохранён в CRM';
+      }
+
+      const approvalDetail = !published && approval
+        ? approval.resolved_at
+          ? ` · Ответ клиента: ${escapeHtml(fmtDate(approval.resolved_at))}${approval.resolved_by_label ? ' · ' + escapeHtml(approval.resolved_by_label) : ''}`
+          : approval.created_at
+            ? ` · Отправлен: ${escapeHtml(fmtDate(approval.created_at))}`
+            : ''
+        : '';
+      const approvalComment = !published && approval && approval.resolution_comment
+        ? `<div style="font-size:12px;color:var(--text-dim);margin-top:6px"><b>Комментарий клиента:</b> ${escapeHtml(approval.resolution_comment)}</div>`
+        : '';
+
+      wrap.style.display = 'none';
+      existingBox.style.display = 'block';
+      existingBox.innerHTML = `
+        <label style="font-size:12px;color:var(--text-dim);font-weight:500">${published ? 'Опубликованный отзыв' : 'Текст на согласование'} · <span class="chg-approval-badge ${badgeClass}">${escapeHtml(badgeText)}</span></label>
+        <div class="input" style="min-height:90px;white-space:pre-wrap;font-family:inherit;background:rgba(255,255,255,0.02);margin-top:6px">${escapeHtml(existing.text || '')}</div>
+        <div style="font-size:11px;color:var(--text-mute);margin-top:4px">${published ? 'Опубликован' : 'Создан'}: ${escapeHtml(fmtDate(existing.publishedAt || existing.draftCreatedAt || existing.submittedAt))}${existing.moderatedAt ? ' · Проверен: ' + escapeHtml(fmtDate(existing.moderatedAt)) : ''}${approvalDetail}</div>
+        ${approvalComment}
+      `;
+    }
+
+    async function refreshChangeStatusApproval(review) {
+      if (!review || !review.id || !review.clientApprovalRequired
+          || !window.ClientTextApprovals || !window.ClientTextApprovals.loadLatestForReview) return;
+      const key = String(review.id);
+      if (approvalLoadingByReview.has(key)) return;
+      approvalLoadingByReview.add(key);
+      approvalFailedByReview.delete(key);
+      if (currentChangeStatusReview() && String(currentChangeStatusReview().id) === key) {
+        renderChangeStatusReview();
+      }
+      try {
+        const row = await window.ClientTextApprovals.loadLatestForReview(review.id);
+        if (row) approvalByReview.set(key, row);
+        else approvalByReview.delete(key);
+      } catch (error) {
+        approvalFailedByReview.add(key);
+        console.warn('[statuses] client approval load failed', error);
+      } finally {
+        approvalLoadingByReview.delete(key);
+        const current = currentChangeStatusReview();
+        if (current && String(current.id) === key) renderChangeStatusReview();
+      }
+    }
+
     function openChangeStatus(pid, mid) {
       chgPid = pid; chgMid = mid;
       const p = profileById(pid), m = mentorById(mid);
@@ -1469,29 +1588,9 @@
       // удаляло textarea из DOM, и на повторное открытие модалки
       // chgReviewText был null, что роняло весь обработчик и блокировало
       // открытие любых других статусов до перезагрузки страницы.
-      const existing = (Store.state.reviews || []).find(r => r.mentorId === mid && r.profileId === pid);
-      const wrap = document.getElementById('chgReviewWrap');
-      const existingBox = document.getElementById('chgExistingReview');
-      if (existing) {
-        const published = cur && cur.status === DONE_STATUS;
-        const mod = existing.moderation;
-        const badgeColor = published
-          ? (mod === 'approved' ? 'var(--green)' : mod === 'rejected' ? 'var(--red)' : 'var(--orange)')
-          : 'var(--orange)';
-        const badgeText = published
-          ? (mod === 'approved' ? 'Проверен' : mod === 'rejected' ? 'Отклонён' : 'Ждёт проверки')
-          : (existing.clientApprovalSentAt ? 'Отправлен клиенту' : 'Сохранён в CRM');
-        wrap.style.display = 'none';   // прячем форму ввода — отзыв уже есть
-        existingBox.style.display = 'block';
-        existingBox.innerHTML = `
-          <label style="font-size:12px;color:var(--text-dim);font-weight:500">${published ? 'Опубликованный отзыв' : 'Текст на согласование'} · <span style="color:${badgeColor}">${badgeText}</span></label>
-          <div class="input" style="min-height:90px;white-space:pre-wrap;font-family:inherit;background:rgba(255,255,255,0.02);margin-top:6px">${escapeHtml(existing.text || '')}</div>
-          <div style="font-size:11px;color:var(--text-mute);margin-top:4px">${published ? 'Опубликован' : 'Создан'}: ${escapeHtml(fmtDate(existing.publishedAt || existing.draftCreatedAt || existing.submittedAt))}${existing.moderatedAt ? ' · Проверен: ' + escapeHtml(fmtDate(existing.moderatedAt)) : ''}. Точный ответ клиента виден в разделе «Отзывы».</div>
-        `;
-      } else {
-        existingBox.style.display = 'none';
-        existingBox.innerHTML = '';
-      }
+      const existing = currentChangeStatusReview();
+      renderChangeStatusReview();
+      refreshChangeStatusApproval(existing);
       const histDiv = document.getElementById('chgHist');
       if (cur && (cur.history || []).length) {
         const items = cur.history.slice().reverse().map(h => `
@@ -1852,9 +1951,23 @@
 
     renderAll();
     const deepLink = new URLSearchParams(window.location.search);
+    const deepAccountId = deepLink.get('accountId');
     const deepProfileId = deepLink.get('profileId');
     const deepMentorId = deepLink.get('mentorId');
-    if (deepProfileId && deepMentorId) {
+    if (deepAccountId) {
+      const found = Store.getProfileOrArchived(deepAccountId);
+      const searchValue = found && found.profile ? (found.profile.code || deepAccountId) : deepAccountId;
+      filters.mode = found && found.archived ? 'arch' : 'live';
+      filters.q = normalizeSearchText(searchValue);
+      document.getElementById('fSearch').value = searchValue;
+      renderAccounts();
+      window.requestAnimationFrame(() => {
+        const card = Array.from(document.querySelectorAll('.acc-card[data-pid]'))
+          .find(item => item.dataset.pid === deepAccountId);
+        if (card) card.scrollIntoView({ block: 'start' });
+      });
+      window.history.replaceState({}, '', window.location.pathname);
+    } else if (deepProfileId && deepMentorId) {
       openChangeStatus(deepProfileId, deepMentorId);
       window.history.replaceState({}, '', window.location.pathname);
     }

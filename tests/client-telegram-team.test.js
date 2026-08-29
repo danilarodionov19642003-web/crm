@@ -134,7 +134,7 @@ test('review-linked approval is idempotent and survives a missing Telegram conta
 
 test('review text can be sent before Ready and Ready remains the publication marker', () => {
   assert.match(statusesHtml, /client-text-approvals\.js/);
-  assert.match(statusesHtml, /client-text-approvals\.js\?v=20260826b/);
+  assert.match(statusesHtml, /client-text-approvals\.js\?v=20260829a/);
   assert.match(reviewsHtml, /client-text-approvals\.js\?v=20260826b/);
   assert.equal((statusesHtml.match(/ClientTextApprovals\.sendReview\(Store, review\)/g) || []).length, 1,
     'единая фоновая отправка должна обслуживать оба сценария сохранения');
@@ -154,6 +154,15 @@ test('review text can be sent before Ready and Ready remains the publication mar
   assert.match(approvalJs, /RPC_TIMEOUT_MS = 12_000/);
   assert.match(approvalJs, /Promise\.race/);
   assert.match(approvalJs, /REQUEST_TIMEOUT/);
+});
+
+test('account status modal displays the latest client approval response', () => {
+  assert.match(approvalJs, /function loadLatestForReview\(sourceReviewId\)/);
+  assert.match(approvalJs, /source_review_id: `eq\.\$\{sourceReviewId\}`/);
+  assert.match(statusesHtml, /ClientTextApprovals\.loadLatestForReview\(review\.id\)/);
+  assert.match(statusesHtml, /chg-approval-badge/);
+  assert.match(statusesHtml, /ClientTextApprovals\.statusMeta\(approval\)/);
+  assert.doesNotMatch(statusesHtml, /Точный ответ клиента виден в разделе «Отзывы»/);
 });
 
 test('Reviews embeds client approval status and no longer has a manual compose block', () => {

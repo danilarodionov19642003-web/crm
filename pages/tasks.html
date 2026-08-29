@@ -772,7 +772,7 @@
             <div class="publication-request__actions">
               <button class="btn btn--primary" type="button" data-queue-accept="${escapeHtml(request.id)}"${busy ? ' disabled' : ''}>Подтвердить</button>
               <button class="btn btn--ghost" type="button" data-queue-reject="${escapeHtml(request.id)}"${busy ? ' disabled' : ''}>Отклонить</button>
-              <a class="btn btn--ghost task-open" href="statuses.html?profileId=${encodeURIComponent(request.profile_id)}&mentorId=${encodeURIComponent(request.mentor_id)}">Открыть →</a>
+              <a class="btn btn--ghost task-open" href="statuses.html?accountId=${encodeURIComponent(request.profile_id)}">Открыть →</a>
             </div>
           </article>`;
       }).join('');
@@ -923,7 +923,7 @@
       const editBtn = isOwner && !isSystem ? `<button class="btn btn--ghost" data-act="edit" data-id="${t.id}" title="Редактировать">✎</button>` : '';
       const delBtn  = isOwner && !isSystem ? `<button class="btn btn--ghost" data-act="del" data-id="${t.id}" style="color:var(--red)" title="Удалить">🗑</button>` : '';
       const openBtn = isSystem
-        ? `<a class="btn btn--ghost task-open" href="statuses.html?profileId=${encodeURIComponent(t.profileId)}&mentorId=${encodeURIComponent(t.mentorId)}">Открыть →</a>`
+        ? `<a class="btn btn--ghost task-open" href="statuses.html?accountId=${encodeURIComponent(t.profileId)}">Открыть →</a>`
         : '';
       const scheduleBtn = isSystem && !isClientRequest
         ? `<button class="btn btn--ghost task-schedule" data-act="schedule-system" data-status-id="${escapeHtml(t.statusId)}">📅 ${t.plannedDate ? 'Перепланировать' : 'Запланировать'}</button>`
@@ -1445,7 +1445,7 @@
               ? `<button class="sched-row__link" type="button" data-calendar-accept-publication="${escapeHtml(task.requestId)}">Подтвердить</button>
                  <button class="sched-row__link" type="button" data-calendar-reject-publication="${escapeHtml(task.requestId)}">Отклонить</button>`
               : `<button class="sched-row__link" type="button" data-calendar-schedule-status="${escapeHtml(task.statusId)}">Перенести</button>`}
-            <a class="sched-row__link" href="statuses.html?profileId=${encodeURIComponent(task.profileId)}&mentorId=${encodeURIComponent(task.mentorId)}">Открыть →</a>
+            <a class="sched-row__link" href="statuses.html?accountId=${encodeURIComponent(task.profileId)}">Открыть →</a>
           </div>`;
       }).join('');
       const body = reviewBody || actionBody

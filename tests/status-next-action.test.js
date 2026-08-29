@@ -123,10 +123,14 @@ const statusesHtml = fs.readFileSync(path.join(root, 'pages/statuses.html'), 'ut
 const tasksHtml = fs.readFileSync(path.join(root, 'pages/tasks.html'), 'utf8');
 assert.match(statusesHtml, /stg__chip__age/, 'в карточке аккаунта должен отображаться возраст статуса');
 assert.match(statusesHtml, /id="chgActionDate"/, 'срок следующего действия должен редактироваться');
-assert.match(statusesHtml, /deepLink\.get\('profileId'\)/, 'страница статусов должна открывать карточку из задачи');
+assert.match(statusesHtml, /deepLink\.get\('accountId'\)/, 'страница статусов должна фильтровать нужный аккаунт из задачи');
+assert.match(statusesHtml, /document\.getElementById\('fSearch'\)\.value = searchValue/,
+  'номер аккаунта из задачи должен автоматически попадать в поиск');
+assert.match(statusesHtml, /deepLink\.get\('profileId'\)/, 'старые прямые ссылки на окно статуса должны продолжить работать');
 assert.match(tasksHtml, /Store\.listProfileStatusActionTasks\(todayISO\(\)\)/,
   'задачи по статусам должны вычисляться из profileStatuses');
-assert.match(tasksHtml, /statuses\.html\?profileId=/, 'системная задача должна вести к нужной карточке');
+assert.match(tasksHtml, /statuses\.html\?accountId=/, 'системная задача должна вести к отфильтрованной карточке аккаунта');
+assert.doesNotMatch(tasksHtml, /statuses\.html\?profileId=/, 'задачи не должны сразу открывать окно смены статуса');
 assert.match(tasksHtml, /data-act="schedule-system"/, 'системную задачу можно запланировать на другой день');
 assert.match(tasksHtml, /id="statusScheduleModal"/, 'для переноса должна открываться отдельная форма с датой');
 assert.match(tasksHtml, /Store\.setProfileStatusTaskDate/, 'планирование должно менять отдельную рабочую дату');
