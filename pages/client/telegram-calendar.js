@@ -331,7 +331,9 @@
 
   function renderHome() {
     const payload = state.payload;
-    const anketas = payload.anketas || [];
+    // Главная Mini App показывает только текущую работу. Завершённые анкеты
+    // остаются в серверном снимке и истории, но не занимают место у клиента.
+    const anketas = activeAnketas();
     const totals = payload.totals || {};
     const inWork = anketas.reduce((sum, item) => sum + statusBreakdown(item).active, 0);
     const pendingApprovals = pendingTextApprovals();
@@ -375,7 +377,7 @@
         <article><span>Остаток</span><strong>${fmtMoney(totals.remain)}</strong></article>
       </section>
       <div class="tgapp-section-heading"><h2>Ваши анкеты</h2><span>${anketas.length}</span></div>
-      <section class="tgapp-anketas">${cards || '<div class="tgapp-empty">Анкет пока нет.</div>'}</section>
+      <section class="tgapp-anketas">${cards || '<div class="tgapp-empty">Активных анкет сейчас нет.</div>'}</section>
     `, 'home');
     const calendarButton = root.querySelector('[data-go-calendar]');
     if (calendarButton) calendarButton.addEventListener('click', () => {
