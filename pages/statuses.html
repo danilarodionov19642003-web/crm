@@ -43,11 +43,16 @@
     }
     .acc-card--add svg { width: 28px; height: 28px; }
     .acc-card--add strong { font-size: 14px; }
-    .accounts-jump {
+    .accounts-quick-actions {
       position: fixed;
       right: 20px;
       bottom: 24px;
       z-index: 30;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .accounts-jump {
       width: 44px;
       height: 44px;
       display: inline-flex;
@@ -61,6 +66,13 @@
       cursor: pointer;
     }
     .accounts-jump:hover { border-color: var(--accent); color: var(--accent); }
+    .accounts-jump--ip {
+      border-color: var(--accent);
+      background: var(--accent);
+      color: #fff;
+    }
+    .accounts-jump--ip:hover { border-color: #ff963f; background: #ff963f; color: #fff; }
+    .accounts-jump--ip:disabled { cursor: wait; opacity: .66; }
     .accounts-jump[hidden] { display: none; }
     .acc-card__head {
       display: flex; align-items: center; justify-content: space-between; gap: 8px;
@@ -97,7 +109,7 @@
     @media (max-width: 520px) {
       .acc-grid { grid-template-columns: minmax(0, 1fr); }
       .acc-card--add { min-height: 150px; }
-      .accounts-jump { right: 14px; bottom: 16px; }
+      .accounts-quick-actions { right: 14px; bottom: 16px; }
       .acc-cost { grid-template-columns:repeat(2,minmax(0,1fr)); }
       .acc-cost > span:last-child { grid-column:1/-1; }
       .cost-kpis { grid-template-columns:1fr; gap:0; }
@@ -410,13 +422,23 @@
         </div>
 
         <div class="acc-grid" id="accGrid"></div>
-        <button type="button" class="accounts-jump" id="btnScrollAccountsEnd" data-owner-only
-                title="К последнему аккаунту" aria-label="Перейти к последнему аккаунту">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M6 9l6 6 6-6"/>
-            <path d="M6 4l6 6 6-6"/>
-          </svg>
-        </button>
+        <div class="accounts-quick-actions">
+          <button type="button" class="accounts-jump accounts-jump--ip" id="btnRefreshIpQuick"
+                  title="Сменить IP" aria-label="Сменить IP">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <polyline points="23 4 23 10 17 10"/>
+              <polyline points="1 20 1 14 7 14"/>
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+            </svg>
+          </button>
+          <button type="button" class="accounts-jump" id="btnScrollAccountsEnd" data-owner-only
+                  title="К последнему аккаунту" aria-label="Перейти к последнему аккаунту">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M6 9l6 6 6-6"/>
+              <path d="M6 4l6 6 6-6"/>
+            </svg>
+          </button>
+        </div>
 
         <details style="margin-top:32px" id="mnSection" data-owner-only>
           <summary style="cursor:pointer;font-weight:600;color:var(--text-dim);padding:10px 0">Управление клиентами (a-коды)</summary>
@@ -1195,6 +1217,28 @@
     document.getElementById('btnScrollAccountsEnd').addEventListener('click', () => {
       const target = document.getElementById('addAccountCard');
       if (target) target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+    document.getElementById('btnRefreshIpQuick').addEventListener('click', async () => {
+      const links = (Store.state.proxyLinks || []).slice();
+      if (!links.length) {
+        toast('Нет добавленных прокси. Добавь ссылки в разделе «IP-адреса».', 'error');
+        return;
+      }
+      const button = document.getElementById('btnRefreshIpQuick');
+      button.disabled = true;
+      button.setAttribute('aria-label', `Сменяю IP: ${links.length}`);
+      const results = await Promise.allSettled(links.map(proxy =>
+        fetch(proxy.url, { method: 'GET', mode: 'no-cors', cache: 'no-store' })
+      ));
+      const succeeded = results.filter(result => result.status === 'fulfilled').length;
+      const failed = results.length - succeeded;
+      button.disabled = false;
+      button.setAttribute('aria-label', 'Сменить IP');
+      if (failed === 0) toast(`Сменены IP: ${succeeded}/${links.length}`);
+      else toast(`Готово: ${succeeded} ок, ${failed} ошибок`, failed >= succeeded ? 'error' : 'success');
+      results.forEach((result, index) => {
+        if (result.status === 'rejected') console.warn('[proxy]', links[index].label, result.reason);
+      });
     });
     document.getElementById('accCode').addEventListener('input', e => {
       document.getElementById('accCity').value = cityFromCode(e.target.value);
