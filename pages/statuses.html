@@ -503,9 +503,13 @@
         </div>
         <div class="field" style="margin-top:12px"><label>Кто делал · для ЗП</label><select id="addPerformer" class="select"></select></div>
         <div class="field" id="addReviewWrap" style="margin-top:12px">
-          <label>Текст отзыва для согласования <span style="color:var(--text-mute)">(необязательно)</span></label>
-          <textarea id="addReviewText" class="input" rows="5" placeholder="Вставьте текст, который нужно согласовать с клиентом" style="resize:vertical;min-height:90px;font-family:inherit"></textarea>
-          <div style="font-size:11px;color:var(--text-mute);margin-top:4px">Можно отправить заранее при любом рабочем статусе. Статус аккаунта от этого не изменится. «Опубликован» ставится только после согласования и публикации.</div>
+          <label>Текст отзыва <span style="color:var(--text-mute)">(необязательно)</span></label>
+          <textarea id="addReviewText" class="input" rows="5" placeholder="Вставьте текст отзыва" style="resize:vertical;min-height:90px;font-family:inherit"></textarea>
+          <label style="display:flex;align-items:flex-start;gap:9px;margin-top:9px;cursor:pointer;font-size:12px;color:var(--text-dim);font-weight:500">
+            <input type="checkbox" id="addReviewPreapproved" style="margin-top:2px;accent-color:var(--green)">
+            <span><b style="color:var(--text)">Текст уже согласован с клиентом</b><br><span style="font-size:11px;color:var(--text-mute)">Привязать к аккаунту без повторной отправки в личный кабинет и Telegram.</span></span>
+          </label>
+          <div style="font-size:11px;color:var(--text-mute);margin-top:4px">Без отметки выше текст уйдёт клиенту на согласование. Статус аккаунта от этого не изменится. «Опубликован» ставится только после публикации.</div>
         </div>
       </div>
       <div class="modal__footer">
@@ -535,9 +539,13 @@
              через innerHTML, иначе на повторное открытие модалки textarea
              не находится и весь обработчик падает с null. -->
         <div class="field" id="chgReviewWrap" style="margin-top:12px">
-          <label>Текст отзыва для согласования <span style="color:var(--text-mute)">(необязательно)</span></label>
-          <textarea id="chgReviewText" class="input" rows="5" placeholder="Вставьте текст, который нужно согласовать с клиентом" style="resize:vertical;min-height:90px;font-family:inherit"></textarea>
-          <div style="font-size:11px;color:var(--text-mute);margin-top:4px">Сохрани текущий статус, и текст уйдёт клиенту на согласование. После публикации переведи аккаунт в «Опубликован».</div>
+          <label>Текст отзыва <span style="color:var(--text-mute)">(необязательно)</span></label>
+          <textarea id="chgReviewText" class="input" rows="5" placeholder="Вставьте текст отзыва" style="resize:vertical;min-height:90px;font-family:inherit"></textarea>
+          <label style="display:flex;align-items:flex-start;gap:9px;margin-top:9px;cursor:pointer;font-size:12px;color:var(--text-dim);font-weight:500">
+            <input type="checkbox" id="chgReviewPreapproved" style="margin-top:2px;accent-color:var(--green)">
+            <span><b style="color:var(--text)">Текст уже согласован с клиентом</b><br><span style="font-size:11px;color:var(--text-mute)">Привязать к аккаунту без повторной отправки в личный кабинет и Telegram.</span></span>
+          </label>
+          <div style="font-size:11px;color:var(--text-mute);margin-top:4px">Без отметки выше текст уйдёт клиенту на согласование. После публикации переведи аккаунт в «Опубликован».</div>
         </div>
         <!-- Отдельный контейнер для отображения СУЩЕСТВУЮЩЕГО отзыва
              (одобренного или на модерации) — чтобы не ломать textarea выше. -->
@@ -1304,6 +1312,7 @@
       document.getElementById('addStatus').value = PROFILE_STATUSES[0]; // 📋 Запланировано
       fillPerformerSelect(document.getElementById('addPerformer'), '');
       document.getElementById('addReviewText').value = '';
+      document.getElementById('addReviewPreapproved').checked = false;
       addActionTouched = false;
       refreshActionEditor('add', null, true);
       toggleAddReviewField();
@@ -1422,6 +1431,7 @@
     }
 
     function clientApprovedReview(review) {
+      if (review && review.clientApprovalPreconfirmed === true) return true;
       const approval = review && approvalByReview.get(String(review.id || ''));
       return Boolean(approval && approval.request_status === 'approved');
     }
@@ -1483,6 +1493,7 @@
       // что согласованный отзыв уже опубликован, поэтому напрямую создавать
       // новый аккаунт в этом статусе больше нельзя.
       const reviewText = document.getElementById('addReviewText').value.trim();
+      const reviewPreapproved = document.getElementById('addReviewPreapproved').checked;
       if (status === DONE_STATUS) {
         toast('Сначала привяжи аккаунт в рабочем статусе и отправь текст на согласование. «Опубликован» ставится после публикации.', 'error');
         return;
@@ -1499,12 +1510,16 @@
         const review = Store.addReview({
           profileId: addProfileId, mentorId: mid,
           text: reviewText, authorEmail: myEmail,
-          clientApprovalRequired: true,
+          clientApprovalRequired: !reviewPreapproved,
+          clientApprovalPreconfirmed: reviewPreapproved,
+          clientApprovalPreconfirmedAt: reviewPreapproved ? new Date().toISOString() : null,
+          clientApprovalPreconfirmedBy: reviewPreapproved ? myEmail : '',
           draftCreatedAt: new Date().toISOString(),
           publishedAt: null,
           submittedAt: new Date().toISOString(),
         });
-        sendReviewInBackground(review);
+        if (reviewPreapproved) toast('Текст привязан как уже согласованный');
+        else sendReviewInBackground(review);
       } else {
         toast('Привязано');
       }
@@ -1543,6 +1558,9 @@
       if (published) {
         badgeText = mod === 'approved' ? 'Проверен' : mod === 'rejected' ? 'Отклонён' : 'Ждёт проверки';
         badgeClass = mod === 'approved' ? 'is-approved' : mod === 'rejected' ? 'is-changes' : '';
+      } else if (existing.clientApprovalPreconfirmed === true) {
+        badgeText = 'Согласован ранее';
+        badgeClass = 'is-approved';
       } else if (approvalLoadingByReview.has(approvalKey) && !approval) {
         badgeText = 'Проверяем ответ клиента';
         badgeClass = 'is-muted';
@@ -1561,13 +1579,15 @@
         badgeText = existing.clientApprovalSentAt ? 'Отправлен клиенту' : 'Сохранён в CRM';
       }
 
-      const approvalDetail = !published && approval
-        ? approval.resolved_at
+      const approvalDetail = !published && existing.clientApprovalPreconfirmed === true
+        ? ` · Отмечен: ${escapeHtml(fmtDate(existing.clientApprovalPreconfirmedAt || existing.draftCreatedAt || existing.submittedAt))}${existing.clientApprovalPreconfirmedBy ? ' · ' + escapeHtml(existing.clientApprovalPreconfirmedBy) : ''}`
+        : !published && approval
+          ? approval.resolved_at
           ? ` · Ответ клиента: ${escapeHtml(fmtDate(approval.resolved_at))}${approval.resolved_by_label ? ' · ' + escapeHtml(approval.resolved_by_label) : ''}`
           : approval.created_at
             ? ` · Отправлен: ${escapeHtml(fmtDate(approval.created_at))}`
             : ''
-        : '';
+          : '';
       const approvalComment = !published && approval && approval.resolution_comment
         ? `<div style="font-size:12px;color:var(--text-dim);margin-top:6px"><b>Комментарий клиента:</b> ${escapeHtml(approval.resolution_comment)}</div>`
         : '';
@@ -1627,6 +1647,7 @@
       document.getElementById('chgStatus').value = cur ? cur.status : PROFILE_STATUSES[0];
       fillPerformerSelect(document.getElementById('chgPerformer'), cur ? cur.performer : '');
       document.getElementById('chgReviewText').value = '';
+      document.getElementById('chgReviewPreapproved').checked = false;
       chgActionTouched = !!(cur && cur.nextActionMode === 'manual');
       refreshActionEditor('chg', cur, false);
       toggleChgReviewField();
@@ -1666,6 +1687,7 @@
       // когда у аккаунта уже есть текст: этот статус означает публикацию.
       const existingReview = (Store.state.reviews || []).find(r => r.mentorId === chgMid && r.profileId === chgPid);
       const newReviewText = existingReview ? '' : document.getElementById('chgReviewText').value.trim();
+      const reviewPreapproved = !existingReview && document.getElementById('chgReviewPreapproved').checked;
       if (newStatus === DONE_STATUS && !existingReview) {
         toast('Сначала оставь текущий статус и отправь текст клиенту на согласование. После публикации переведи аккаунт в «Опубликован».', 'error');
         return;
@@ -1714,12 +1736,16 @@
         const review = Store.addReview({
           profileId: chgPid, mentorId: chgMid,
           text: newReviewText, authorEmail: myEmail,
-          clientApprovalRequired: true,
+          clientApprovalRequired: !reviewPreapproved,
+          clientApprovalPreconfirmed: reviewPreapproved,
+          clientApprovalPreconfirmedAt: reviewPreapproved ? new Date().toISOString() : null,
+          clientApprovalPreconfirmedBy: reviewPreapproved ? myEmail : '',
           draftCreatedAt: new Date().toISOString(),
           publishedAt: null,
           submittedAt: new Date().toISOString(),
         });
-        sendReviewInBackground(review);
+        if (reviewPreapproved) toast('Текст привязан как уже согласованный');
+        else sendReviewInBackground(review);
       } else if (becomingDone) {
         toast(clientApprovedReview(existingReview)
           ? 'Отзыв опубликован. Согласование клиента уже учтено'

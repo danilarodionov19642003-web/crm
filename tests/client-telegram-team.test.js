@@ -138,12 +138,17 @@ test('review text can be sent before Ready and Ready remains the publication mar
   assert.match(reviewsHtml, /client-text-approvals\.js\?v=20260826b/);
   assert.equal((statusesHtml.match(/ClientTextApprovals\.sendReview\(Store, review\)/g) || []).length, 1,
     'единая фоновая отправка должна обслуживать оба сценария сохранения');
-  assert.match(statusesHtml, /clientApprovalRequired: true/);
+  assert.match(statusesHtml, /id="addReviewPreapproved"/);
+  assert.match(statusesHtml, /id="chgReviewPreapproved"/);
+  assert.match(statusesHtml, /Текст уже согласован с клиентом/);
+  assert.match(statusesHtml, /clientApprovalRequired: !reviewPreapproved/);
+  assert.match(statusesHtml, /clientApprovalPreconfirmed: reviewPreapproved/);
+  assert.match(statusesHtml, /if \(reviewPreapproved\) toast\('Текст привязан как уже согласованный'\);\s*else sendReviewInBackground\(review\);/);
   assert.match(statusesHtml, /cancelReviewInBackground\(existingReview\.id\)/);
   assert.match(statusesHtml, /cancelReviewInBackground\(linkedReview\.id\)/);
   assert.match(statusesHtml, /function sendReviewInBackground\(review\)/);
   assert.match(statusesHtml, /sendReviewInBackground\(review\)/);
-  assert.match(statusesHtml, /Можно отправить заранее при любом рабочем статусе/);
+  assert.match(statusesHtml, /Без отметки выше текст уйдёт клиенту на согласование/);
   assert.match(statusesHtml, /newStatus === DONE_STATUS && !existingReview/);
   assert.match(statusesHtml, /existingReview\.publishedAt = new Date\(\)\.toISOString\(\)/);
   assert.match(statusesHtml, /Статус аккаунта от этого не изменится/);
@@ -166,15 +171,18 @@ test('account status modal displays the latest client approval response', () => 
   assert.match(statusesHtml, /data-copy-review-text/);
   assert.match(statusesHtml, /navigator\.clipboard\.writeText\(value\)/);
   assert.match(statusesHtml, /function approvePublishedReviewIfClientApproved\(review\)/);
+  assert.match(statusesHtml, /review\.clientApprovalPreconfirmed === true/);
   assert.match(statusesHtml, /Store\.approveReview\(review\.id, myEmail \|\| 'Клиент согласовал'\)/);
   assert.match(reviewsHtml, /function autoApproveClientApprovedReviews\(\)/);
-  assert.match(reviewsHtml, /approval\.request_status !== 'approved'/);
+  assert.match(reviewsHtml, /review\.clientApprovalPreconfirmed === true/);
+  assert.match(reviewsHtml, /approval && approval\.request_status === 'approved'/);
 });
 
 test('Reviews embeds client approval status and no longer has a manual compose block', () => {
   assert.doesNotMatch(reviewsHtml, /id="textApprovalsRoot"/);
   assert.doesNotMatch(reviewsHtml, /Отправить текст<\/button>/);
   assert.match(reviewsHtml, /clientApprovalHtml\(r\)/);
+  assert.match(reviewsHtml, /Согласован ранее/);
   assert.match(reviewsHtml, /data-act="send-client"/);
   assert.match(reviewsHtml, /data-act="revise-client"/);
   assert.match(approvalJs, /Клиент согласовал/);

@@ -229,8 +229,12 @@
       `).join('');
     }
 
-    function moderationBadge(m, published) {
+    function moderationBadge(review, published) {
+      if (!published && review.clientApprovalPreconfirmed === true) {
+        return `<span class="badge badge--green"><span class="dot"></span>Согласован ранее</span>`;
+      }
       if (!published) return `<span class="badge badge--orange"><span class="dot"></span>Текст на согласовании</span>`;
+      const m = review.moderation;
       if (m === 'approved') return `<span class="badge badge--green"><span class="dot"></span>Одобрен</span>`;
       if (m === 'rejected') return `<span class="badge badge--red"><span class="dot"></span>Отклонён</span>`;
       return `<span class="badge badge--orange"><span class="dot"></span>На модерации</span>`;
@@ -238,6 +242,18 @@
 
     function clientApprovalHtml(review) {
       const row = approvalByReview.get(String(review.id));
+      if (review.clientApprovalPreconfirmed === true) {
+        const detail = review.clientApprovalPreconfirmedAt
+          ? `Отмечен: ${escapeHtml(fmtDate(review.clientApprovalPreconfirmedAt))}${review.clientApprovalPreconfirmedBy ? ` · ${escapeHtml(review.clientApprovalPreconfirmedBy)}` : ''}`
+          : '';
+        return `<div class="rv-client-approval">
+          <div class="rv-client-approval__head">
+            <span class="rv-client-approval__title">Согласование клиента</span>
+            <span class="rv-client-approval__status is-approved">Согласован ранее</span>
+          </div>
+          ${detail ? `<div class="rv-client-approval__meta">${detail}</div>` : ''}
+        </div>`;
+      }
       if (!review.clientApprovalRequired && !row) return '';
       if (approvalLoadFailed && !row) {
         return `<div class="rv-client-approval">
@@ -289,7 +305,9 @@
       let approvedCount = 0;
       (Store.state.reviews || []).forEach(review => {
         const approval = approvalByReview.get(String(review.id || ''));
-        if (!approval || approval.request_status !== 'approved') return;
+        const clientApproved = review.clientApprovalPreconfirmed === true
+          || Boolean(approval && approval.request_status === 'approved');
+        if (!clientApproved) return;
         if (review.moderation !== 'pending' || !isPublishedReview(review)) return;
         Store.approveReview(review.id, myEmail || 'Клиент согласовал');
         approvedCount += 1;
@@ -364,7 +382,7 @@
               <span style="opacity:.6">×</span>
               ${menLabel}
               <div style="flex:1"></div>
-              ${moderationBadge(r.moderation, published)}
+              ${moderationBadge(r, published)}
             </div>
             <div class="rv-text">${escapeHtml(r.text || '')}</div>
             ${clientApprovalHtml(r)}
