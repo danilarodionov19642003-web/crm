@@ -29,6 +29,40 @@ def normalize_code(value: Any) -> str:
     return str(value or "").strip().lower().replace("-", "").replace(" ", "")
 
 
+PROFILE_STATUS_PLANNED = "📋 Запланировано"
+PROFILE_STATUS_PUBLISHED = "🎯 Опубликован"
+
+
+def _manual_schedule_limit(state: dict[str, Any], client: dict[str, Any]) -> int:
+    """Keep the payment snapshot planner limit in sync with the CRM store."""
+    code = normalize_code(client.get("code"))
+    ordered = max(0, int(client.get("ordered") or 0))
+    if not code or not ordered:
+        return 0
+    mentor_ids = {
+        str(mentor.get("id") or "")
+        for mentor in state.get("mentors", [])
+        if normalize_code(mentor.get("code")) == code
+    }
+    statuses = [
+        status for status in state.get("profileStatuses", [])
+        if str(status.get("mentorId") or "") in mentor_ids
+    ]
+    published = sum(
+        1 for status in statuses
+        if status.get("status") == PROFILE_STATUS_PUBLISHED
+    )
+    done = max(published, max(0, int(client.get("manualDone") or 0)))
+    active = sum(
+        1 for status in statuses
+        if status.get("status") not in (
+            PROFILE_STATUS_PLANNED,
+            PROFILE_STATUS_PUBLISHED,
+        )
+    )
+    return max(0, ordered - done - active)
+
+
 def expected_payment_amount(order: dict[str, Any]) -> Decimal:
     if order.get("order_type") == "remainder":
         amount = money(order.get("amount"))
@@ -374,6 +408,7 @@ def refresh_financial_snapshot(payload: dict[str, Any], state: dict[str, Any]) -
                 "deadline": client.get("deadline") or "",
                 "overdueDays": client.get("overdueDays") or 0,
                 "schedule": client.get("schedule") or [],
+                "scheduleLimit": _manual_schedule_limit(state, client),
                 "weeklyPace": client.get("weeklyPace") or 0,
                 "packageExtras": client.get("packageExtras") or [],
                 "payments": [],
@@ -397,6 +432,7 @@ def refresh_financial_snapshot(payload: dict[str, Any], state: dict[str, Any]) -
         ) or {}
         anketa["profileUrl"] = client.get("profileUrl") or mentor.get("profileUrl") or ""
         anketa["avatarUrl"] = client.get("avatarUrl") or mentor.get("avatarUrl") or ""
+        anketa["scheduleLimit"] = _manual_schedule_limit(state, client)
         payments = []
         for income in incomes:
             for item in income.get("items") or []:

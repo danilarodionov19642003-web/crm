@@ -64,8 +64,14 @@ class PaymentDomainTest(unittest.TestCase):
 
     def test_snapshot_is_rebuilt_from_state(self):
         state = self.base_state()
+        state["profileStatuses"] = [
+            {"mentorId": "a21-mentor", "status": "🎯 Опубликован"},
+            {"mentorId": "a21-mentor", "status": "🏆 Выбран"},
+            {"mentorId": "a21-mentor", "status": "📋 Запланировано"},
+        ]
         payload = {"anketas": [
-            {"code": "a21", "ordered": 0, "done": 2, "paid": 0, "remain": 0, "total": 0},
+            {"code": "a21", "ordered": 0, "done": 2, "paid": 0, "remain": 0, "total": 0,
+             "scheduleLimit": 0},
             {"code": "a22", "ordered": 0, "done": 3, "paid": 0, "remain": 0, "total": 0},
         ], "totals": {}}
         result = domain.refresh_financial_snapshot(payload, state)
@@ -80,7 +86,26 @@ class PaymentDomainTest(unittest.TestCase):
             result["anketas"][0]["avatarUrl"],
             "https://cdn.profi.ru/xfiles/pfiles/flagman.jpg",
         )
+        self.assertEqual(result["anketas"][0]["scheduleLimit"], 8)
+        self.assertEqual(result["anketas"][1]["scheduleLimit"], 12)
         self.assertEqual(payload["totals"], {})
+
+    def test_snapshot_increases_schedule_limit_after_paid_reviews_are_added(self):
+        state = self.base_state()
+        state["clients"][0]["ordered"] = 15
+        state["profileStatuses"] = [
+            {"mentorId": "a21-mentor", "status": "⭐ Выбрать"},
+            {"mentorId": "a21-mentor", "status": "📋 Запланировано"},
+        ]
+        payload = {
+            "email": "client@example.com",
+            "anketas": [{"code": "a21", "ordered": 10, "done": 0, "scheduleLimit": 0}],
+        }
+
+        result = domain.refresh_financial_snapshot(payload, state)
+
+        self.assertEqual(result["anketas"][0]["ordered"], 15)
+        self.assertEqual(result["anketas"][0]["scheduleLimit"], 14)
 
     def test_multi_payment_applies_packages_and_creates_next_card_after_payment(self):
         state = self.base_state()
