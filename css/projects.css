@@ -1,0 +1,121 @@
+.projects-page .cloud-status,
+.projects-page #btnBackup { display: none; }
+
+.projects-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.projects-filters { margin-bottom: 16px; }
+.projects-filters #projectSearch { flex: 1; min-width: 240px; }
+
+.projects-layout {
+  display: grid;
+  grid-template-columns: minmax(300px, 0.82fr) minmax(440px, 1.6fr);
+  gap: 16px;
+  align-items: start;
+}
+.project-list { display: grid; gap: 10px; }
+.project-list-card {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--project-health, #22c55e);
+  border-radius: 14px;
+  background: var(--bg-elev);
+  color: var(--text);
+  padding: 14px;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color .15s, background .15s, transform .15s;
+}
+.project-list-card:hover { background: var(--bg-hover); transform: translateY(-1px); }
+.project-list-card.is-active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.project-list-card__top { display: flex; gap: 10px; justify-content: space-between; align-items: flex-start; }
+.project-list-card__name { display: block; font-size: 15px; line-height: 1.3; font-weight: 750; }
+.project-list-card__client { display: block; color: var(--text-mute); font-size: 12px; margin-top: 4px; }
+.project-list-card__meta { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 12px; }
+.project-list-card__next { margin-top: 12px; font-size: 12px; color: var(--text-mute); line-height: 1.4; }
+
+.project-pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 8px; border-radius: 999px;
+  background: rgba(255,255,255,.06); color: var(--text-mute);
+  font-size: 11px; font-weight: 700;
+}
+.project-pill--active { background: rgba(34,197,94,.13); color: #4ade80; }
+.project-pill--waiting { background: rgba(245,158,11,.14); color: #fbbf24; }
+.project-pill--problem { background: rgba(239,68,68,.14); color: #f87171; }
+
+.project-detail {
+  min-height: 420px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--bg-elev);
+  overflow: hidden;
+  position: sticky;
+  top: 82px;
+}
+.project-empty { padding: 80px 24px; text-align: center; color: var(--text-mute); }
+.project-detail__head { padding: 20px; border-bottom: 1px solid var(--border); }
+.project-detail__title-row { display: flex; gap: 14px; justify-content: space-between; align-items: flex-start; }
+.project-detail__title { margin: 0; font-size: 22px; }
+.project-detail__client { color: var(--text-mute); margin-top: 5px; }
+.project-detail__actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.project-detail__body { padding: 18px 20px 24px; display: grid; gap: 18px; }
+.project-detail__description { margin: 0; color: var(--text-mute); line-height: 1.55; white-space: pre-wrap; }
+
+.project-finance-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.project-finance {
+  padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg);
+}
+.project-finance__label { color: var(--text-mute); font-size: 10px; text-transform: uppercase; letter-spacing: .04em; }
+.project-finance__value { margin-top: 6px; font-size: 17px; font-weight: 800; }
+.project-finance__value.is-positive { color: #4ade80; }
+.project-finance__value.is-negative { color: #f87171; }
+
+.project-info-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.project-info {
+  padding: 12px; border-radius: 12px; background: rgba(255,255,255,.035); min-width: 0;
+}
+.project-info__label { color: var(--text-mute); font-size: 10px; text-transform: uppercase; letter-spacing: .04em; }
+.project-info__value { margin-top: 5px; font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+.project-info--wide { grid-column: 1 / -1; }
+
+.project-section { border-top: 1px solid var(--border); padding-top: 18px; }
+.project-section__head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 10px; }
+.project-section__head h3 { margin: 0; font-size: 15px; }
+.project-activity,
+.project-resources { display: grid; gap: 8px; }
+.project-activity__item,
+.project-resource {
+  padding: 11px 12px; border: 1px solid var(--border); border-radius: 11px; background: var(--bg);
+}
+.project-activity__meta,
+.project-resource__meta { color: var(--text-mute); font-size: 10px; margin-bottom: 5px; }
+.project-activity__body { font-size: 13px; line-height: 1.45; white-space: pre-wrap; }
+.project-resource__top { display: flex; gap: 10px; justify-content: space-between; align-items: flex-start; }
+.project-resource__label { font-size: 13px; font-weight: 750; }
+.project-resource__details { color: var(--text-mute); font-size: 11px; line-height: 1.45; margin-top: 5px; white-space: pre-wrap; }
+.project-resource a { color: var(--accent); overflow-wrap: anywhere; }
+.project-inline-form { display: grid; grid-template-columns: 140px minmax(0, 1fr) auto; gap: 8px; }
+.project-modal { max-width: 760px; }
+.project-modal textarea,
+#resourceModal textarea { resize: vertical; min-height: 76px; }
+.project-empty-inline { padding: 12px; color: var(--text-mute); font-size: 12px; text-align: center; }
+
+@media (max-width: 1050px) {
+  .projects-layout { grid-template-columns: 1fr; }
+  .project-detail { position: static; }
+}
+@media (max-width: 760px) {
+  .projects-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .projects-filters #projectSearch { flex: 1 0 100%; width: 100%; }
+  .project-finance-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .project-info-grid { grid-template-columns: 1fr; }
+  .project-info--wide { grid-column: auto; }
+  .project-detail__title-row { display: grid; }
+  .project-detail__actions { justify-content: flex-start; }
+  .project-inline-form { grid-template-columns: 1fr; }
+}
+@media (max-width: 520px) {
+  .projects-kpis { grid-template-columns: 1fr 1fr; }
+  .projects-layout { margin-inline: -4px; }
+  .project-detail__head,
+  .project-detail__body { padding-left: 14px; padding-right: 14px; }
+}

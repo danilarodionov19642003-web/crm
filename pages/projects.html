@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"/>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://mentori.tech https://*.supabase.co; font-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="theme-color" content="#0b0b0c"/>
+  <link rel="icon" type="image/png" sizes="32x32" href="/assets/icons/favicon-32.png?v=20260820"/>
+  <link rel="apple-touch-icon" sizes="180x180" href="/assets/icons/apple-touch-icon.png?v=20260820"/>
+  <link rel="manifest" href="/manifest.webmanifest?v=20260820"/>
+  <title>Проекты разработки — Mentori CRM</title>
+  <link rel="stylesheet" href="../css/styles.css?v=20260820b"/>
+  <link rel="stylesheet" href="../css/projects.css?v=20260901a"/>
+  <script src="../js/supabase-client.js?v=20260820d"></script>
+  <script src="../js/auth-gate.js?v=20260726a"></script>
+</head>
+<body class="projects-page">
+  <div class="app">
+    <div data-component="sidebar" data-active="projects"></div>
+    <div class="main">
+      <div data-component="header" data-title="Проекты"></div>
+      <main class="content">
+        <div class="page-title">
+          <div>
+            <h1>Проекты разработки</h1>
+            <p>Отдельное пространство разработки. Клиент проекта не попадает в раздел «Клиенты».</p>
+          </div>
+          <button class="btn btn--primary" id="projectCreate">Добавить проект</button>
+        </div>
+
+        <section class="cards projects-kpis" id="projectKpis"></section>
+
+        <div class="filters projects-filters">
+          <select class="select" id="projectStatusFilter">
+            <option value="">Все состояния</option>
+            <option value="active">Активные</option>
+            <option value="waiting_client">Ждём клиента</option>
+            <option value="paused">Приостановлены</option>
+            <option value="completed">Завершённые</option>
+            <option value="archived">Архив</option>
+          </select>
+          <select class="select" id="projectStageFilter"><option value="">Все этапы</option></select>
+          <input class="input" id="projectSearch" type="search" placeholder="Поиск по проекту или заказчику"/>
+        </div>
+
+        <div class="projects-layout">
+          <section class="project-list" id="projectList" aria-live="polite"></section>
+          <aside class="project-detail" id="projectDetail">
+            <div class="project-empty">Выберите проект или создайте новый.</div>
+          </aside>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="projectModal" aria-hidden="true">
+    <div class="modal project-modal" role="dialog" aria-modal="true" aria-labelledby="projectModalTitle">
+      <div class="modal__header">
+        <h3 id="projectModalTitle">Новый проект</h3>
+        <button class="btn--icon" type="button" data-project-close aria-label="Закрыть">×</button>
+      </div>
+      <div class="modal__body">
+        <form id="projectForm">
+          <input type="hidden" id="projectId"/>
+          <div class="field-row">
+            <div class="field"><label for="projectName">Название проекта</label><input class="input" id="projectName" maxlength="160" required/></div>
+            <div class="field"><label for="projectClient">Заказчик</label><input class="input" id="projectClient" maxlength="160" required/></div>
+          </div>
+          <div class="field-row">
+            <div class="field"><label for="projectStage">Этап</label><select class="select" id="projectStage"></select></div>
+            <div class="field"><label for="projectStatus">Состояние</label><select class="select" id="projectStatus"></select></div>
+            <div class="field"><label for="projectHealth">Оценка</label><select class="select" id="projectHealth"></select></div>
+          </div>
+          <div class="field"><label for="projectDescription">О проекте</label><textarea class="input" id="projectDescription" maxlength="5000" rows="3"></textarea></div>
+          <div class="field-row">
+            <div class="field"><label for="projectStart">Дата начала</label><input class="input" id="projectStart" type="date"/></div>
+            <div class="field"><label for="projectDeadline">Плановый срок</label><input class="input" id="projectDeadline" type="date"/></div>
+            <div class="field"><label for="projectNextDate">Дата следующего шага</label><input class="input" id="projectNextDate" type="date"/></div>
+          </div>
+          <div class="field"><label for="projectNextAction">Следующий шаг</label><input class="input" id="projectNextAction" maxlength="1000"/></div>
+          <div class="field"><label for="projectWaiting">Что ждём от заказчика</label><input class="input" id="projectWaiting" maxlength="1000"/></div>
+          <div class="field-row">
+            <div class="field"><label for="projectContract">Стоимость, ₽</label><input class="input" id="projectContract" type="number" min="0" step="100" value="0"/></div>
+            <div class="field"><label for="projectReceived">Получено, ₽</label><input class="input" id="projectReceived" type="number" min="0" step="100" value="0"/></div>
+            <div class="field"><label for="projectExpenses">Расходы, ₽</label><input class="input" id="projectExpenses" type="number" min="0" step="100" value="0"/></div>
+          </div>
+        </form>
+      </div>
+      <div class="modal__footer">
+        <button class="btn btn--ghost" type="button" data-project-close>Отмена</button>
+        <button class="btn btn--primary" type="submit" form="projectForm" id="projectSave">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="resourceModal" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="resourceModalTitle">
+      <div class="modal__header"><h3 id="resourceModalTitle">Добавить материал или доступ</h3><button class="btn--icon" type="button" data-resource-close aria-label="Закрыть">×</button></div>
+      <div class="modal__body">
+        <form id="resourceForm">
+          <div class="field-row">
+            <div class="field"><label for="resourceKind">Тип</label><select class="select" id="resourceKind"></select></div>
+            <div class="field"><label for="resourceLabel">Название</label><input class="input" id="resourceLabel" maxlength="200" required/></div>
+          </div>
+          <div class="field"><label for="resourceUrl">Ссылка</label><input class="input" id="resourceUrl" type="url" maxlength="2000" placeholder="https://"/></div>
+          <div class="field-row">
+            <div class="field"><label for="resourceLogin">Логин</label><input class="input" id="resourceLogin" maxlength="300" autocomplete="off"/></div>
+            <div class="field"><label for="resourceExpires">Действует до</label><input class="input" id="resourceExpires" type="date"/></div>
+          </div>
+          <div class="field"><label for="resourceNotes">Где хранится пароль / заметка</label><textarea class="input" id="resourceNotes" maxlength="2000" rows="3" placeholder="Сам пароль сюда не записывайте"></textarea></div>
+        </form>
+      </div>
+      <div class="modal__footer"><button class="btn btn--ghost" type="button" data-resource-close>Отмена</button><button class="btn btn--primary" type="submit" form="resourceForm">Добавить</button></div>
+    </div>
+  </div>
+
+  <div class="toast-wrap" id="projectToasts"></div>
+  <script src="../components/sidebar.js?v=20260901a"></script>
+  <script src="../components/header.js"></script>
+  <script src="../js/projects.js?v=20260901a"></script>
+</body>
+</html>
