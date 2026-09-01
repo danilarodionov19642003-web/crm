@@ -98,6 +98,18 @@
       '🎯 Опубликован': 'Отзыв опубликован'
     })[String(status || '')] || String(status || '').replace(/^[^А-ЯA-Z0-9]+/i, '').trim();
   }
+  function clientStatusActionLabel(status) {
+    return ({
+      '💬 Начать диалог': 'начать диалог',
+      '✅ Обменяться': 'обменяться контактами',
+      '⭐ Выбрать': 'перейти к выбору специалиста',
+      '🏆 Выбран': 'выбрать специалиста',
+      '🎯 Опубликован': 'опубликовать отзыв'
+    })[String(status || '')] || clientStatusLabel(status).toLocaleLowerCase('ru-RU');
+  }
+  function clientStatusScheduledLabel(status) {
+    return `Запланировано: ${clientStatusActionLabel(status)}`;
+  }
   function clientStatusFlow(status) {
     const current = clientStatusLabel(status);
     const targetStatus = nextStatusTarget(status);
@@ -846,9 +858,7 @@
           date: plannedDate,
           color, anketa: a.name || a.code, anketaData: a,
           kind: 'status-plan', icon: '📌',
-          title: targetStatus === '🎯 Опубликован'
-            ? 'Запланирована публикация'
-            : `Запланирован статус «${targetStatus}»`,
+          title: clientStatusScheduledLabel(targetStatus),
           sub: s.profileName || '',
           comment: source === 'client' ? 'Вы выбрали дату' : 'Назначено менеджером',
           planSource: source,
@@ -912,9 +922,7 @@
             date: String(request.requested_date).slice(0, 10),
             color, anketa: a.name || a.code, anketaData: a,
             kind: 'status-plan', icon: '📌',
-            title: targetStatus === '🎯 Опубликован'
-              ? 'Запланирована публикация'
-              : `Запланирован статус «${targetStatus}»`,
+            title: clientStatusScheduledLabel(targetStatus),
             sub: status.profileName || '',
             comment: 'Вы выбрали дату'
           });
@@ -1827,7 +1835,7 @@
       const question = nextStatusQuestion(targetStatus);
       const request = requestForStatus(status);
       if (request && request.request_status === 'accepted') {
-        return `<div class="cli-pub-question">${escapeHtml(question)}</div><div class="cli-pub-confirmed"><strong>${fmtDate(request.requested_date)}</strong><span>Дата подтверждена · ${escapeHtml(clientStatusLabel(targetStatus))}</span></div>`;
+        return `<div class="cli-pub-question">${escapeHtml(question)}</div><div class="cli-pub-confirmed"><strong>${fmtDate(request.requested_date)}</strong><span>Дата подтверждена · ${escapeHtml(clientStatusScheduledLabel(targetStatus))}</span></div>`;
       }
       const staffPlanDate = status.taskPlanSource !== 'client'
         ? String(status.plannedActionDate || '').slice(0, 10)
@@ -1874,14 +1882,14 @@
         ? String(status.plannedActionDate || '').slice(0, 10)
         : '';
       if (!request && staffPlanDate) {
-        return `<span class="cli-status-mobile__request is-accepted">${fmtDate(staffPlanDate)} · ${escapeHtml(clientStatusLabel(targetStatus))} · назначено менеджером</span>`;
+        return `<span class="cli-status-mobile__request is-accepted">${fmtDate(staffPlanDate)} · Менеджер запланировал: ${escapeHtml(clientStatusActionLabel(targetStatus))}</span>`;
       }
       if (!request) return '<span class="cli-status-mobile__request">Дата следующего этапа не выбрана</span>';
       if (request.request_status === 'accepted') {
-        return `<span class="cli-status-mobile__request is-accepted">${fmtDate(request.requested_date)} · ${escapeHtml(clientStatusLabel(targetStatus))}</span>`;
+        return `<span class="cli-status-mobile__request is-accepted">${fmtDate(request.requested_date)} · ${escapeHtml(clientStatusScheduledLabel(targetStatus))}</span>`;
       }
       if (request.request_status === 'pending') {
-        return `<span class="cli-status-mobile__request is-pending">${fmtDate(request.requested_date)} · ${escapeHtml(clientStatusLabel(targetStatus))} · на проверке</span>`;
+        return `<span class="cli-status-mobile__request is-pending">${fmtDate(request.requested_date)} · На проверке: ${escapeHtml(clientStatusActionLabel(targetStatus))}</span>`;
       }
       if (request.request_status === 'rejected') {
         return '<span class="cli-status-mobile__request is-rejected">Выбрать другую дату</span>';
@@ -3106,6 +3114,8 @@
     gatherCalendarEvents: _gatherEvents,
     outreachCancellationCopy,
     clientStatusLabel,
+    clientStatusActionLabel,
+    clientStatusScheduledLabel,
     nextStatusQuestion,
     renderProfileDetail,
     loadMyPublicationRequests,

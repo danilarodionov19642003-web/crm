@@ -154,6 +154,10 @@ assert.match(clientApp, /function clientStatusFlow\(status\)/);
 assert.match(clientApp, /'⭐ Выбрать': 'Выбрать специалиста'/);
 assert.match(clientApp, /'🏆 Выбран': 'Специалист выбран'/);
 assert.match(clientApp, /'🎯 Опубликован': 'Отзыв опубликован'/);
+assert.match(clientApp, /function clientStatusActionLabel\(status\)/);
+assert.match(clientApp, /'🏆 Выбран': 'выбрать специалиста'/);
+assert.match(clientApp, /Дата подтверждена · \$\{escapeHtml\(clientStatusScheduledLabel\(targetStatus\)\)\}/,
+  'подтверждённая дата не должна выглядеть как уже наступивший целевой статус');
 assert.match(clientApp, /Когда опубликовать отзыв\?/);
 assert.match(clientApp, /Сейчас → дальше/,
   'клиент должен видеть текущий и следующий этап одной цепочкой');
@@ -175,7 +179,9 @@ assert.match(clientApp, /Работа по анкете завершена/,
 assert.match(profileHtml, /loadMyPublicationRequests/);
 assert.match(clientApp, /request\.request_status === 'accepted'/);
 assert.match(clientApp, /kind: 'status-plan'/);
-assert.match(clientApp, /\? 'Запланирована публикация'/);
+assert.match(clientApp, /title: clientStatusScheduledLabel\(targetStatus\)/,
+  'календарь должен описывать будущий шаг действием, а не уже наступившим статусом');
+assert.doesNotMatch(clientApp, /Запланирован статус «\$\{targetStatus\}»/);
 assert.match(clientApp, /Назначено менеджером/,
   'назначенная сотрудником дата должна иметь явную подпись в кабинете');
 assert.match(clientApp, /canonicalPlanStatusIds/,

@@ -31,7 +31,7 @@ test('Telegram direct menu keeps its bearer credential out of HTTP requests', ()
   assert.match(js, /fragmentParams/);
   assert.match(js, /location\.hash/);
   assert.match(js, /fragmentParams\.get\('token'\)/);
-  assert.match(html, /telegram-calendar\.js\?v=20260901c/);
+  assert.match(html, /telegram-calendar\.js\?v=20260901d/);
   assert.match(html, /telegram-calendar\.css\?v=20260901c/);
 });
 
@@ -121,6 +121,11 @@ test('Mini App opens an account with its review text and next-status date contro
   assert.match(js, /'⭐ Выбрать': 'Выбрать специалиста'/);
   assert.match(js, /'🏆 Выбран': 'Специалист выбран'/);
   assert.match(js, /'🎯 Опубликован': 'Отзыв опубликован'/);
+  assert.match(js, /function clientStatusActionLabel\(status\)/);
+  assert.match(js, /'🏆 Выбран': 'выбрать специалиста'/);
+  assert.match(js, /clientStatusActionTitle\(plan\.targetStatus\)/,
+    'будущая дата должна называться действием, а не уже наступившим статусом');
+  assert.doesNotMatch(js, /clientStatusLabel\(plan\.targetStatus\)/);
   assert.match(js, /Когда опубликовать отзыв\?/);
   assert.match(css, /\.tgapp-stage-flow/);
   assert.match(js, /state\.payload\.business_today/);

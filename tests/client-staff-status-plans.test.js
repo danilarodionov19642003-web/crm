@@ -144,4 +144,7 @@ test('client-facing workflow labels explain the current and next action', () => 
   assert.equal(context.window.ClientApp.clientStatusLabel('🎯 Опубликован'), 'Отзыв опубликован');
   assert.equal(context.window.ClientApp.nextStatusQuestion('🏆 Выбран'), 'Когда выбрать специалиста?');
   assert.equal(context.window.ClientApp.nextStatusQuestion('🎯 Опубликован'), 'Когда опубликовать отзыв?');
+  assert.equal(context.window.ClientApp.clientStatusActionLabel('🏆 Выбран'), 'выбрать специалиста');
+  assert.equal(context.window.ClientApp.clientStatusScheduledLabel('🏆 Выбран'), 'Запланировано: выбрать специалиста');
+  assert.equal(context.window.ClientApp.clientStatusScheduledLabel('🎯 Опубликован'), 'Запланировано: опубликовать отзыв');
 });

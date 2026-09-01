@@ -153,6 +153,21 @@
     })[String(status || '')] || String(status || '').replace(/^[^А-ЯA-Z0-9]+/i, '').trim();
   }
 
+  function clientStatusActionLabel(status) {
+    return ({
+      '💬 Начать диалог': 'начать диалог',
+      '✅ Обменяться': 'обменяться контактами',
+      '⭐ Выбрать': 'перейти к выбору специалиста',
+      '🏆 Выбран': 'выбрать специалиста',
+      '🎯 Опубликован': 'опубликовать отзыв'
+    })[String(status || '')] || clientStatusLabel(status).toLocaleLowerCase('ru-RU');
+  }
+
+  function clientStatusActionTitle(status) {
+    const action = clientStatusActionLabel(status);
+    return action ? action.charAt(0).toLocaleUpperCase('ru-RU') + action.slice(1) : '';
+  }
+
   function clientStatusFlow(status, extraClass = '') {
     const current = clientStatusLabel(status);
     const targetStatus = nextStatusTarget(status);
@@ -392,7 +407,7 @@
     const sourceLabel = plan.source === 'client' ? 'Вы выбрали дату' : 'Назначено менеджером';
     return `<button type="button" class="tgapp-status-plan is-${escapeHtml(plan.source)}" data-open-status-plan="${escapeHtml(plan.profileId || '')}" data-plan-mentor="${escapeHtml(plan.mentorId || '')}">
       <time>${escapeHtml(fmtDate(plan.date))}</time>
-      <span><small>${escapeHtml(String(plan.anketaCode || '').toUpperCase())} · ${escapeHtml(plan.accountName)}</small><strong>${escapeHtml(clientStatusLabel(plan.targetStatus))}</strong><em>${escapeHtml(sourceLabel)}</em></span>
+      <span><small>${escapeHtml(String(plan.anketaCode || '').toUpperCase())} · ${escapeHtml(plan.accountName)}</small><strong>${escapeHtml(clientStatusActionTitle(plan.targetStatus))}</strong><em>${escapeHtml(sourceLabel)}</em></span>
       <i>›</i>
     </button>`;
   }
@@ -607,7 +622,7 @@
       const needsApproval = pendingApproval && pendingApproval.request_status === 'pending';
       const plan = statusPlan(item, anketa);
       const planLabel = plan
-        ? `<span class="tgapp-status-row__plan is-${escapeHtml(plan.source)}">${escapeHtml(fmtDate(plan.date))} · ${escapeHtml(clientStatusLabel(plan.targetStatus))} · ${plan.source === 'client' ? 'вы выбрали дату' : 'назначено менеджером'}</span>`
+        ? `<span class="tgapp-status-row__plan is-${escapeHtml(plan.source)}">${escapeHtml(fmtDate(plan.date))} · ${escapeHtml(clientStatusActionLabel(plan.targetStatus))} · ${plan.source === 'client' ? 'вы выбрали дату' : 'назначено менеджером'}</span>`
         : '';
       return `<button type="button" class="tgapp-status-row${needsApproval ? ' is-approval-pending' : ''}" data-open-account="${escapeHtml(item.profile_id || '')}">
       <span class="tgapp-status-row__dot ${statusTone(item.status)}"></span>
