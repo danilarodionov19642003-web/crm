@@ -2522,7 +2522,19 @@
             archived: pr ? !!pr.archived : false,
             status: s.status,
             date: s.date,
-            comment: s.comment || ''
+            comment: s.comment || '',
+            // Дата из CRM-задач должна быть видна клиенту так же, как дата,
+            // которую выбрал сам клиент. Для старых записей источник мог не
+            // сохраняться, но plannedActionDate до появления клиентского
+            // планировщика создавался только сотрудником.
+            plannedActionDate: String(s.plannedActionDate || '').slice(0, 10),
+            nextActionStatus: s.nextActionStatus || statusActionTarget(s.status),
+            taskPlanSource: s.plannedActionDate
+              ? (s.taskPlanSource || 'staff')
+              : '',
+            taskPlanSchema: s.plannedActionDate
+              ? (s.taskPlanSchema || 'separate-v1')
+              : ''
           };
         });
       // Опубликованные отзывы — только approved (модерированные)

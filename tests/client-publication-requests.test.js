@@ -27,6 +27,10 @@ const nextStatusMigration = fs.readFileSync(
   path.join(root, 'sql/migrations/2026-09-01_client_next_status_planning.sql'),
   'utf8'
 );
+const staffPlanVisibilityMigration = fs.readFileSync(
+  path.join(root, 'sql/migrations/2026-09-01_staff_status_plans_client_visibility.sql'),
+  'utf8'
+);
 const telegramPatch = fs.readFileSync(
   path.join(root, 'ops/telegram/patches/client-publication-approval.patch'),
   'utf8'
@@ -165,6 +169,10 @@ assert.match(profileHtml, /loadMyPublicationRequests/);
 assert.match(clientApp, /request\.request_status === 'accepted'/);
 assert.match(clientApp, /kind: 'status-plan'/);
 assert.match(clientApp, /\? 'Запланирована публикация'/);
+assert.match(clientApp, /Назначено менеджером/,
+  'назначенная сотрудником дата должна иметь явную подпись в кабинете');
+assert.match(clientApp, /canonicalPlanStatusIds/,
+  'канонический план статуса должен подавлять устаревший accepted-запрос');
 assert.match(clientIndex, /loadMyPublicationRequests\(\)/,
   'главный календарь клиента должен загружать подтверждённые публикации');
 assert.match(clientIndex, /renderCalendar\(snap\.payload, outreachSlots, publicationRequests\)/,
@@ -181,6 +189,17 @@ assert.match(tasksHtml, /task\.planSource === 'client'/,
   'подтверждённая клиентская дата должна оставаться заметной в календаре');
 assert.match(tasksHtml, /КЛИЕНТ \$\{clientTaskTotal\}/,
   'в ячейке календаря должна быть явная клиентская метка');
+
+assert.match(staffPlanVisibilityMigration, /client_snapshot_with_status_plans/);
+assert.match(staffPlanVisibilityMigration, /client_snapshots_status_plans_trg/,
+  'старый кэшированный клиент CRM не должен снова удалить планы из снимка');
+assert.match(staffPlanVisibilityMigration, /source\.item ->> 'mentorId' = v_snapshot_status ->> 'mentorId'/);
+assert.match(staffPlanVisibilityMigration, /source\.item ->> 'profileId' = v_snapshot_status ->> 'profileId'/);
+assert.match(staffPlanVisibilityMigration, /planned_action_date/);
+assert.match(staffPlanVisibilityMigration, /next_action_status/);
+assert.match(staffPlanVisibilityMigration, /task_plan_source/);
+assert.match(staffPlanVisibilityMigration, /CLIENT_SNAPSHOT_STATUS_COUNT_CHANGED/,
+  'миграция должна прерываться, если изменилось количество клиентских статусов');
 
 assert.match(telegramPatch, /cpub:c:/);
 assert.match(telegramPatch, /cpub:r:/);

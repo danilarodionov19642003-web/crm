@@ -259,6 +259,24 @@ button { -webkit-tap-highlight-color: transparent; }
 .tgapp-publication > small { display: block; margin-top: 7px; color: var(--mute); font-size: 8.5px; line-height: 1.4; }
 .tgapp-account-result { min-height: 0; margin-top: 7px; color: var(--green); font-size: 9.5px; }
 .tgapp-account-result.is-error { color: var(--red); }
+.tgapp-status-plans { display: grid; gap: 7px; }
+.tgapp-status-plan {
+  display: grid; grid-template-columns: 62px minmax(0,1fr) auto; align-items: center; gap: 9px;
+  width: 100%; padding: 9px 10px; border: 1px solid rgba(168,85,247,.24); border-radius: 12px;
+  background: linear-gradient(135deg,rgba(168,85,247,.08),var(--card)); color: var(--text); text-align: left; cursor: pointer;
+}
+.tgapp-status-plan.is-client { border-color: rgba(34,197,94,.25); background: linear-gradient(135deg,rgba(34,197,94,.07),var(--card)); }
+.tgapp-status-plan time { color: #c084fc; font-size: 10px; font-weight: 800; }
+.tgapp-status-plan.is-client time { color: var(--green); }
+.tgapp-status-plan span,.tgapp-status-plan small,.tgapp-status-plan strong,.tgapp-status-plan em { display: block; min-width: 0; }
+.tgapp-status-plan small { overflow: hidden; color: var(--mute); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.tgapp-status-plan strong { margin-top: 2px; font-size: 10px; }
+.tgapp-status-plan em { margin-top: 2px; color: #c084fc; font-size: 8px; font-style: normal; }
+.tgapp-status-plan.is-client em { color: var(--green); }
+.tgapp-status-plan > i { color: var(--mute); font-size: 17px; font-style: normal; }
+.tgapp-status-row__plan { display: block; margin-top: 4px; color: #c084fc; font-size: 8px; line-height: 1.35; }
+.tgapp-status-row__plan.is-client { color: var(--green); }
+.tgapp-publication-state.is-manager { color: #c084fc; }
 
 /* Calendar */
 .tgcal-head { padding: calc(18px + env(safe-area-inset-top)) 2px 13px; }
@@ -272,6 +290,8 @@ button { -webkit-tap-highlight-color: transparent; }
 .tgcal-limit b { display: grid; min-width: 25px; height: 25px; place-items: center; border-radius: 50%; background: rgba(34,197,94,.12); color: var(--green); font-size: 11px; }
 .tgcal-planned { margin-top: 14px; }
 .tgcal-planned h2 { margin: 0 0 7px; font-size: 11px; }
+.tgcal-status-plans { margin-top: 14px; }
+.tgcal-status-plans > h2 { margin: 0 0 7px; font-size: 11px; }
 .tgcal-slots { display: grid; gap: 6px; }
 .tgcal-slot { display: flex; align-items: center; justify-content: space-between; gap: 9px; padding: 9px 10px; border-radius: 10px; background: var(--card-2); }
 .tgcal-slot > span { display: flex; align-items: center; gap: 8px; }
@@ -287,7 +307,7 @@ button { -webkit-tap-highlight-color: transparent; }
 .tgcal-week,.tgcal-grid { display: grid; grid-template-columns: repeat(7,minmax(0,1fr)); gap: 4px; }
 .tgcal-week { margin-bottom: 4px; }
 .tgcal-week span { color: var(--mute); font-size: 8px; text-align: center; }
-.tgcal-day { min-width: 0; min-height: 48px; padding: 5px 1px; border: 1px solid var(--border); border-radius: 9px; background: var(--card-2); color: var(--text); cursor: pointer; }
+.tgcal-day { position: relative; min-width: 0; min-height: 48px; padding: 5px 1px; border: 1px solid var(--border); border-radius: 9px; background: var(--card-2); color: var(--text); cursor: pointer; }
 .tgcal-day strong,.tgcal-day small { display: block; }
 .tgcal-day strong { font-size: 11px; }
 .tgcal-day small { margin-top: 5px; overflow: hidden; color: var(--green); font-size: 6.5px; text-overflow: ellipsis; white-space: nowrap; }
@@ -300,6 +320,9 @@ button { -webkit-tap-highlight-color: transparent; }
 .tgcal-day.is-full small { color: var(--red); }
 .tgcal-day.is-day-off { border-style: dashed; }
 .tgcal-day.is-day-off small { color: var(--mute); }
+.tgcal-day.has-status-plan { border-color: rgba(168,85,247,.65); box-shadow: inset 0 -2px 0 #a855f7; }
+.tgcal-day.has-status-plan:disabled { opacity: 1; }
+.tgcal-day__plan { position: absolute; top: 3px; right: 3px; display: grid; width: 13px; height: 13px; place-items: center; border-radius: 50%; background: #a855f7; color: #fff; font-size: 7px; font-style: normal; }
 .tgcal-submit { width: 100%; min-height: 44px; margin-top: 12px; border: 0; border-radius: 11px; background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #fff; font-weight: 780; cursor: pointer; }
 .tgcal-submit:disabled { opacity: .4; cursor: default; }
 .tgcal-result { min-height: 17px; margin-top: 8px; color: var(--mute); font-size: 10px; text-align: center; }

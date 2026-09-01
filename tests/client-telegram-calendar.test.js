@@ -16,6 +16,7 @@ const currentSundayClosureSql = read('sql/migrations/2026-08-27_client_outreach_
 const accountSql = read('sql/migrations/2026-08-26_client_telegram_z_account_details.sql');
 const moscowExpirySql = read('sql/migrations/2026-08-27_client_outreach_moscow_expiry.sql');
 const nextStatusSql = read('sql/migrations/2026-09-01_client_next_status_planning.sql');
+const staffPlanVisibilitySql = read('sql/migrations/2026-09-01_staff_status_plans_client_visibility.sql');
 
 test('Telegram calendar uses short-lived hashed tokens without portal password', () => {
   assert.match(sql, /token_hash bytea not null unique/);
@@ -30,8 +31,8 @@ test('Telegram direct menu keeps its bearer credential out of HTTP requests', ()
   assert.match(js, /fragmentParams/);
   assert.match(js, /location\.hash/);
   assert.match(js, /fragmentParams\.get\('token'\)/);
-  assert.match(html, /telegram-calendar\.js\?v=20260901a/);
-  assert.match(html, /telegram-calendar\.css\?v=20260827b/);
+  assert.match(html, /telegram-calendar\.js\?v=20260901b/);
+  assert.match(html, /telegram-calendar\.css\?v=20260901b/);
 });
 
 test('Telegram calendar reads capacity and schedules through bounded RPCs', () => {
@@ -104,6 +105,14 @@ test('Mini App opens an account with its review text and next-status date contro
   assert.match(nextStatusSql, /request_client_telegram_publication_date/);
   assert.match(nextStatusSql, /current_status, target_status/);
   assert.match(nextStatusSql, /'\{business_today\}'/);
+  assert.match(staffPlanVisibilitySql, /planned_action_date/);
+  assert.match(staffPlanVisibilitySql, /next_action_status/);
+  assert.match(staffPlanVisibilitySql, /task_plan_source/);
+  assert.match(js, /function statusPlan\(status, anketa\)/);
+  assert.match(js, /Назначено менеджером/);
+  assert.match(js, /Ближайшие действия/);
+  assert.match(js, /Действия по аккаунтам/);
+  assert.match(css, /\.tgcal-day\.has-status-plan/);
 });
 
 test('Mini App highlights every pending text and opens its exact account directly', () => {

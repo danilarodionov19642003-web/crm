@@ -257,6 +257,62 @@
     ) || null;
   }
 
+  function statusPlan(status, anketa) {
+    if (!status || !anketa || anketa.closed) return null;
+    const canonicalDate = String(status.planned_action_date || '').slice(0, 10);
+    const canonicalTarget = status.next_action_status || nextStatusTarget(status.status);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(canonicalDate) && canonicalTarget) {
+      const source = status.task_plan_source === 'client' ? 'client' : 'staff';
+      return {
+        statusId: String(status.id || ''), mentorId: anketa.mentor_id,
+        profileId: status.profile_id, accountName: status.profile_name || 'Аккаунт',
+        anketaCode: anketa.code || '', currentStatus: status.status || '',
+        targetStatus: canonicalTarget, date: canonicalDate, source
+      };
+    }
+    const request = publicationRequest(status);
+    if (!request || request.request_status !== 'accepted' || !request.requested_date) return null;
+    return {
+      statusId: String(status.id || ''), mentorId: anketa.mentor_id,
+      profileId: status.profile_id, accountName: status.profile_name || 'Аккаунт',
+      anketaCode: anketa.code || '', currentStatus: status.status || '',
+      targetStatus: request.target_status || nextStatusTarget(status.status),
+      date: String(request.requested_date).slice(0, 10), source: 'client'
+    };
+  }
+
+  function statusPlans(anketas) {
+    const plans = [];
+    (anketas || []).forEach(anketa => {
+      (anketa.statuses || []).forEach(status => {
+        const plan = statusPlan(status, anketa);
+        if (plan) plans.push(plan);
+      });
+    });
+    return plans.sort((left, right) =>
+      left.date.localeCompare(right.date) || left.anketaCode.localeCompare(right.anketaCode, 'ru')
+    );
+  }
+
+  function statusPlanCard(plan) {
+    const sourceLabel = plan.source === 'client' ? 'Вы выбрали дату' : 'Назначено менеджером';
+    return `<button type="button" class="tgapp-status-plan is-${escapeHtml(plan.source)}" data-open-status-plan="${escapeHtml(plan.profileId || '')}" data-plan-mentor="${escapeHtml(plan.mentorId || '')}">
+      <time>${escapeHtml(fmtDate(plan.date))}</time>
+      <span><small>${escapeHtml(String(plan.anketaCode || '').toUpperCase())} · ${escapeHtml(plan.accountName)}</small><strong>${escapeHtml(plan.targetStatus)}</strong><em>${escapeHtml(sourceLabel)}</em></span>
+      <i>›</i>
+    </button>`;
+  }
+
+  function bindStatusPlanLinks() {
+    root.querySelectorAll('[data-open-status-plan]').forEach(button => button.addEventListener('click', () => {
+      state.detailMentorId = button.dataset.planMentor;
+      state.detailProfileId = button.dataset.openStatusPlan;
+      state.view = 'account';
+      render();
+      if (tg && tg.HapticFeedback) tg.HapticFeedback.selectionChanged();
+    }));
+  }
+
   function activeAnketas() {
     return (state.payload && state.payload.anketas || []).filter(item => !item.closed);
   }
@@ -292,8 +348,8 @@
         { id: 2, scheduled_date: calendar[5].date, slot_status: 'scheduled' }
       ],
       statuses: [
-        { id: 's1', profile_id: 'p1', profile_name: 'Тестовый аккаунт 3', status: '🏆 Выбран', date: isoDate(new Date()), publication_wait_days: 5, publication_minimum_date: calendar[4].date },
-        { id: 's2', profile_id: 'p2', profile_name: 'Тестовый аккаунт 2', status: '⭐ Выбрать', date: isoDate(new Date()), publication_wait_days: 5, publication_minimum_date: calendar[4].date },
+        { id: 's1', profile_id: 'p1', profile_name: 'Тестовый аккаунт 3', status: '🏆 Выбран', date: isoDate(new Date()), planned_action_date: calendar[4].date, next_action_status: '🎯 Опубликован', task_plan_source: 'client', publication_wait_days: 5, publication_minimum_date: calendar[4].date },
+        { id: 's2', profile_id: 'p2', profile_name: 'Тестовый аккаунт 2', status: '⭐ Выбрать', date: isoDate(new Date()), planned_action_date: isoDate(new Date()), next_action_status: '🏆 Выбран', task_plan_source: 'staff', publication_wait_days: 5, publication_minimum_date: calendar[4].date },
         { id: 's5', profile_id: 'p4', profile_name: 'Тестовый аккаунт 4', status: '✅ Обменяться', date: isoDate(new Date()), publication_wait_days: 5, publication_minimum_date: calendar[4].date },
         { id: 's6', profile_id: 'p5', profile_name: 'Тестовый аккаунт 5', status: '💬 Начать диалог', date: isoDate(new Date()), publication_wait_days: 5, publication_minimum_date: calendar[4].date },
         { id: 's3', profile_id: 'p3', profile_name: 'Тестовый аккаунт 1', status: '🎯 Опубликован', date: isoDate(new Date()), publication_wait_days: 5, publication_minimum_date: calendar[4].date }
@@ -325,7 +381,11 @@
         request_status: 'pending', source_revision: 1, created_at: new Date().toISOString(),
         resolution_comment: ''
       }],
-      publication_requests: []
+      publication_requests: [{
+        id: 201, status_id: 's1', mentor_id: 'preview-a34', profile_id: 'p1',
+        status_date: isoDate(new Date()), current_status: '🏆 Выбран', target_status: '🎯 Опубликован',
+        requested_date: calendar[4].date, request_status: 'accepted'
+      }]
     };
   }
 
@@ -362,6 +422,9 @@
     const inWork = anketas.reduce((sum, item) => sum + statusBreakdown(item).active, 0);
     const pendingApprovals = pendingTextApprovals();
     const pendingApprovalCards = pendingApprovals.map(pendingApprovalCard).join('');
+    const upcomingPlans = statusPlans(anketas)
+      .filter(plan => plan.date >= String(payload.business_today || '').slice(0, 10))
+      .slice(0, 8);
     const cards = anketas.map(anketa => {
       const breakdown = statusBreakdown(anketa);
       const pct = progressPercent(anketa);
@@ -390,6 +453,7 @@
         <div><span>Личный кабинет</span><h1>Привет, ${escapeHtml(payload.client_name || 'друг')}!</h1><p>Вся работа по вашим анкетам в одном месте.</p></div>
       </section>
       ${pendingApprovalCards ? `<section class="tgapp-pending-approvals" aria-label="Тексты на согласование">${pendingApprovalCards}</section>` : ''}
+      ${upcomingPlans.length ? `<div class="tgapp-section-heading"><h2>Ближайшие действия</h2><span>${upcomingPlans.length}</span></div><section class="tgapp-status-plans">${upcomingPlans.map(statusPlanCard).join('')}</section>` : ''}
       <section class="tgapp-quick">
         <button type="button" data-go-calendar><span>📅</span><div><b>Запланировать отклик</b><small>Выбрать свободную дату</small></div><i>›</i></button>
       </section>
@@ -424,6 +488,7 @@
       render();
       if (tg && tg.HapticFeedback) tg.HapticFeedback.selectionChanged();
     }));
+    bindStatusPlanLinks();
   }
 
   function statusTone(status) {
@@ -446,9 +511,13 @@
     const statuses = (anketa.statuses || []).map(item => {
       const pendingApproval = latestTextApproval(anketa.mentor_id, item.profile_id);
       const needsApproval = pendingApproval && pendingApproval.request_status === 'pending';
+      const plan = statusPlan(item, anketa);
+      const planLabel = plan
+        ? `<span class="tgapp-status-row__plan is-${escapeHtml(plan.source)}">${escapeHtml(fmtDate(plan.date))} · ${escapeHtml(plan.targetStatus)} · ${plan.source === 'client' ? 'вы выбрали дату' : 'назначено менеджером'}</span>`
+        : '';
       return `<button type="button" class="tgapp-status-row${needsApproval ? ' is-approval-pending' : ''}" data-open-account="${escapeHtml(item.profile_id || '')}">
       <span class="tgapp-status-row__dot ${statusTone(item.status)}"></span>
-      <div><strong>${escapeHtml(item.profile_name || 'Аккаунт')}</strong><span>${escapeHtml(item.status || '—')}</span>${needsApproval ? '<em>📝 Текст ждёт согласования</em>' : ''}</div>
+      <div><strong>${escapeHtml(item.profile_name || 'Аккаунт')}</strong><span>${escapeHtml(item.status || '—')}</span>${planLabel}${needsApproval ? '<em>📝 Текст ждёт согласования</em>' : ''}</div>
       <span class="tgapp-status-row__side"><time>${escapeHtml(fmtDate(item.date))}</time><i>›</i></span>
     </button>`;
     }).join('');
@@ -514,6 +583,7 @@
     const approval = latestTextApproval(anketa.mentor_id, status.profile_id);
     const approvalMeta = textApprovalMeta(approval);
     const request = publicationRequest(status);
+    const plan = statusPlan(status, anketa);
     const canApprove = Boolean(state.payload && state.payload.can_approve_texts);
     const pendingApprovalActions = approval && approval.request_status === 'pending' && canApprove
       ? `<div class="tgapp-approval__actions">
@@ -544,7 +614,8 @@
     if (targetStatus) {
       const accepted = request && request.request_status === 'accepted';
       const value = request && ['pending', 'accepted'].includes(request.request_status)
-        ? String(request.requested_date || '').slice(0, 10) : '';
+        ? String(request.requested_date || '').slice(0, 10)
+        : String(plan && plan.date || '').slice(0, 10);
       const minimum = status.status === '🏆 Выбран'
         ? String(status.publication_minimum_date || state.payload.business_today || '')
         : String(state.payload.business_today || '');
@@ -552,11 +623,13 @@
         ? Math.max(0, Number(status.publication_wait_days) || 0)
         : 0;
       const publicationState = accepted
-        ? `<span class="tgapp-publication-state is-approved">Дата подтверждена</span>`
+        ? `<span class="tgapp-publication-state is-approved">${plan && plan.source === 'client' ? 'Вы выбрали дату' : 'Дата подтверждена'}</span>`
         : request && request.request_status === 'pending'
           ? `<span class="tgapp-publication-state is-pending">Ожидает подтверждения</span>`
           : request && request.request_status === 'rejected'
-            ? `<span class="tgapp-publication-state is-changes">Выберите другую дату</span>` : '';
+            ? `<span class="tgapp-publication-state is-changes">Выберите другую дату</span>`
+            : plan && plan.source === 'staff'
+              ? `<span class="tgapp-publication-state is-manager">Назначено менеджером</span>` : '';
       publicationHtml = `<section class="tgapp-account-card tgapp-publication">
         <header><span>Следующий этап · ${escapeHtml(targetStatus)}</span>${publicationState}</header>
         <p>${targetStatus === '🎯 Опубликован'
@@ -725,6 +798,12 @@
     }
     const anketa = currentAnketa();
     const days = calendarByDate();
+    const plans = statusPlans([anketa]);
+    const plansByDate = new Map();
+    plans.forEach(plan => {
+      if (!plansByDate.has(plan.date)) plansByDate.set(plan.date, []);
+      plansByDate.get(plan.date).push(plan);
+    });
     const ownedDates = new Set((anketa.slots || []).map(slot => String(slot.scheduled_date)));
     const minimum = String(payload.minimum_date || '');
     const maxDate = [...days.keys()].sort().pop() || minimum;
@@ -744,6 +823,7 @@
         </div>
         <div class="tgcal-limit"><span>Можно запланировать ещё</span><b>${Number(anketa.available_to_add) || 0}</b></div>
         ${slots ? `<div class="tgcal-planned"><h2>Запланировано</h2><div class="tgcal-slots">${slots}</div></div>` : ''}
+        ${plans.length ? `<div class="tgcal-status-plans"><h2>Действия по аккаунтам</h2><div class="tgapp-status-plans">${plans.map(statusPlanCard).join('')}</div></div>` : ''}
         <div class="tgcal-calendar">
           <div class="tgcal-nav">
             <button type="button" data-month-prev aria-label="Предыдущий месяц">‹</button>
@@ -761,13 +841,15 @@
               const available = Math.max(0, capacity - used);
               const owned = ownedDates.has(iso);
               const dayOff = isOutreachDayOff(iso);
+              const statusPlanCount = (plansByDate.get(iso) || []).length;
               const disabled = iso < minimum || iso > maxDate || !info || available <= 0 || !canAdd || owned || dayOff;
               const classes = ['tgcal-day'];
               if (owned) classes.push('is-owned');
               if (state.selectedDate === iso) classes.push('is-selected');
               if (info && available <= 0) classes.push('is-full');
               if (dayOff) classes.push('is-day-off');
-              return `<button type="button" class="${classes.join(' ')}" data-date="${iso}"${disabled ? ' disabled' : ''}><strong>${date.getDate()}</strong><small>${owned ? 'ваш' : (dayOff ? 'выходной' : (info ? (available > 0 ? `мест ${available}` : 'занято') : ''))}</small></button>`;
+              if (statusPlanCount) classes.push('has-status-plan');
+              return `<button type="button" class="${classes.join(' ')}" data-date="${iso}"${disabled ? ' disabled' : ''}>${statusPlanCount ? `<i class="tgcal-day__plan">${statusPlanCount}</i>` : ''}<strong>${date.getDate()}</strong><small>${owned ? 'ваш' : (dayOff ? 'выходной' : (info ? (available > 0 ? `мест ${available}` : 'занято') : ''))}</small></button>`;
             }).join('')}
           </div>
         </div>
@@ -776,6 +858,7 @@
       </section>
     `, 'calendar');
     bindCalendar();
+    bindStatusPlanLinks();
   }
 
   function bindCalendar() {
@@ -849,8 +932,8 @@
     if ((location.hostname === '127.0.0.1' || location.hostname === 'localhost') && params.get('preview') === '1') {
       state.payload = localPreviewPayload();
       state.mentorId = activeAnketas()[0] && activeAnketas()[0].mentor_id || '';
-      const minimum = new Date(`${state.payload.minimum_date}T12:00:00`);
-      state.month = state.month || new Date(minimum.getFullYear(), minimum.getMonth(), 1, 12);
+      const businessToday = new Date(`${state.payload.business_today || state.payload.minimum_date}T12:00:00`);
+      state.month = state.month || new Date(businessToday.getFullYear(), businessToday.getMonth(), 1, 12);
       render();
       return;
     }
@@ -872,7 +955,8 @@
       if (!state.mentorId || !anketas.some(item => item.mentor_id === state.mentorId)) {
         state.mentorId = anketas[0] && anketas[0].mentor_id || '';
       }
-      state.month = state.month || new Date(tomorrow.getFullYear(), tomorrow.getMonth(), 1, 12);
+      const businessToday = new Date(`${state.payload.business_today || isoDate(new Date())}T12:00:00`);
+      state.month = state.month || new Date(businessToday.getFullYear(), businessToday.getMonth(), 1, 12);
       render();
     } catch (error) {
       root.innerHTML = `<section class="tgcal-state">${escapeHtml(errorMessage(error))}</section>`;

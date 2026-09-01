@@ -217,7 +217,7 @@ assert.match(employeesHtml, /Дневной план · \$\{stats\.dailyPlan\.ta
   'в подробной статистике нужна разбивка выполнения плана по дням');
 assert.match(employeesHtml, /item\.source === 'daily_plan' \? 'Автопремия' : 'Премия'/,
   'автоматическое начисление должно отличаться от ручной премии');
-assert.match(employeesHtml, /js\/app\.js\?v=20260901a/,
+assert.match(employeesHtml, /js\/app\.js\?v=20260901b/,
   'страница зарплат должна обходить старый кэш расчёта');
 assert.match(employeesHtml, /Math\.min\(debt, gross, requestedOffset\)/,
   'зачёт долга можно увеличить до всей выплаты, но не выше остатка долга');

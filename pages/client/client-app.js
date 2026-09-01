@@ -783,6 +783,14 @@
     if (!snap || !snap.anketas) return events;
     snap.anketas.forEach((a, idx) => {
       const color = CAL_COLORS[idx % CAL_COLORS.length];
+      const canonicalPlanStatusIds = new Set(
+        (a.statuses || [])
+          .filter(status => /^\d{4}-\d{2}-\d{2}$/.test(
+            String(status.plannedActionDate || '').slice(0, 10)
+          ))
+          .map(status => String(status.id || ''))
+          .filter(Boolean)
+      );
       (a.statuses || []).forEach(s => {
         if (!s.date) return;
         // Не дублируем события: «🎯 Опубликован» уже показан как «Опубликован отзыв»,
@@ -795,6 +803,27 @@
           title: s.status || '',
           sub: s.profileName || '',
           comment: s.comment || ''
+        });
+      });
+      // Сотрудник может назначить следующий этап прямо в CRM. Эта дата
+      // хранится отдельно от фактической даты статуса и должна отображаться
+      // в кабинете как план, а не как уже выполненное действие.
+      if (!a.closed) (a.statuses || []).forEach(s => {
+        const plannedDate = String(s.plannedActionDate || '').slice(0, 10);
+        const targetStatus = s.nextActionStatus || nextStatusTarget(s.status);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(plannedDate) || !targetStatus) return;
+        const source = String(s.taskPlanSource || 'staff');
+        events.push({
+          date: plannedDate,
+          color, anketa: a.name || a.code, anketaData: a,
+          kind: 'status-plan', icon: '📌',
+          title: targetStatus === '🎯 Опубликован'
+            ? 'Запланирована публикация'
+            : `Запланирован статус «${targetStatus}»`,
+          sub: s.profileName || '',
+          comment: source === 'client' ? 'Вы выбрали дату' : 'Назначено менеджером',
+          planSource: source,
+          statusId: s.id || ''
         });
       });
       (a.reviews || []).forEach(r => {
@@ -843,7 +872,8 @@
       (Array.isArray(publicationRequests) ? publicationRequests : [])
         .filter(request => request.request_status === 'accepted'
           && request.mentor_id === a.mentorId
-          && request.requested_date)
+          && request.requested_date
+          && !canonicalPlanStatusIds.has(String(request.status_id || '')))
         .forEach(request => {
           const status = (a.statuses || []).find(item => item.id === request.status_id);
           const targetStatus = status && nextStatusTarget(status.status);
@@ -857,7 +887,7 @@
               ? 'Запланирована публикация'
               : `Запланирован статус «${targetStatus}»`,
             sub: status.profileName || '',
-            comment: 'Подтверждено'
+            comment: 'Вы выбрали дату'
           });
         });
     });
@@ -939,8 +969,8 @@
     // События за выбранный день — сортируем «планируемые» вниз, «факт» наверх,
     // потому что факт важнее.
     const selEvents = [...(byDate.get(calState.selected) || [])].sort((a, b) => {
-      const order = { review: 0, status: 1, publication: 2, planned: 3 };
-      return (order[a.kind] || 9) - (order[b.kind] || 9);
+      const order = { review: 0, status: 1, 'status-plan': 2, publication: 2, planned: 3 };
+      return (order[a.kind] ?? 9) - (order[b.kind] ?? 9);
     });
     const selPlannedTotal = selEvents
       .filter(e => e.kind === 'planned')
@@ -1679,9 +1709,12 @@
       if (request && request.request_status === 'accepted') {
         return `<div class="cli-pub-confirmed"><strong>${fmtDate(request.requested_date)}</strong><span>Подтверждено · ${escapeHtml(targetStatus)}</span></div>`;
       }
+      const staffPlanDate = status.taskPlanSource !== 'client'
+        ? String(status.plannedActionDate || '').slice(0, 10)
+        : '';
       const value = request && request.request_status === 'pending'
         ? String(request.requested_date || '').slice(0, 10)
-        : '';
+        : staffPlanDate;
       const minimumDate = nextStatusMinimumDate(a, status);
       const waitDays = status.status === '🏆 Выбран'
         ? Math.max(0, Number(a.publicationWaitDays) || 0)
@@ -1690,7 +1723,9 @@
         ? '<span class="cli-pub-state is-pending">Ожидает подтверждения</span>'
         : (request && request.request_status === 'rejected'
             ? '<span class="cli-pub-state is-rejected">Выберите другую дату</span>'
-            : '<span class="cli-pub-state" data-publication-result></span>');
+            : (staffPlanDate
+                ? '<span class="cli-pub-state is-accepted">Назначено менеджером</span>'
+                : '<span class="cli-pub-state" data-publication-result></span>'));
       return `
         <div class="cli-pub-control" data-publication-status="${escapeAttr(status.id)}" data-publication-min="${escapeAttr(minimumDate)}" data-publication-wait="${waitDays}">
           <div class="cli-pub-actions">
@@ -1714,6 +1749,12 @@
       const targetStatus = nextStatusTarget(status.status);
       if (!targetStatus || !status.id) return '';
       const request = requestForStatus(status);
+      const staffPlanDate = status.taskPlanSource !== 'client'
+        ? String(status.plannedActionDate || '').slice(0, 10)
+        : '';
+      if (!request && staffPlanDate) {
+        return `<span class="cli-status-mobile__request is-accepted">${fmtDate(staffPlanDate)} · ${escapeHtml(targetStatus)} · назначено менеджером</span>`;
+      }
       if (!request) return `<span class="cli-status-mobile__request">Следующий: ${escapeHtml(targetStatus)} · дата не выбрана</span>`;
       if (request.request_status === 'accepted') {
         return `<span class="cli-status-mobile__request is-accepted">${fmtDate(request.requested_date)} · ${escapeHtml(targetStatus)}</span>`;
@@ -2941,6 +2982,7 @@
     renderTotals,
     renderAnketas,
     renderCalendar,
+    gatherCalendarEvents: _gatherEvents,
     renderProfileDetail,
     loadMyPublicationRequests,
     submitPublicationRequest: submitNextStatusRequest,
