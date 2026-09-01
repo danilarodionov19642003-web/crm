@@ -15,6 +15,34 @@
   <link rel="stylesheet" href="../css/styles.css?v=20260820b"/>
   <style>
     .task-list { display:flex; flex-direction:column; gap:8px; }
+    .task-workflow-grid {
+      display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px; align-items: start;
+    }
+    .task-workflow-section {
+      min-width: 0; padding: 14px;
+      background: var(--bg-elev); border: 1px solid var(--border); border-radius: 16px;
+    }
+    .task-workflow-section--select { border-top: 3px solid #f59e0b; }
+    .task-workflow-section--publish { border-top: 3px solid #22c55e; }
+    .task-workflow-section--other { grid-column: 1 / -1; border-top: 3px solid #6366f1; }
+    .task-workflow-head {
+      display: flex; align-items: flex-start; gap: 10px; margin-bottom: 12px;
+    }
+    .task-workflow-head__copy { min-width: 0; flex: 1; }
+    .task-workflow-head h2 { margin: 0; font-size: 16px; }
+    .task-workflow-head p { margin: 4px 0 0; color: var(--text-mute); font-size: 12px; line-height: 1.35; }
+    .task-workflow-count {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-width: 28px; height: 28px; padding: 0 8px; border-radius: 999px;
+      background: rgba(255,255,255,.06); font-size: 12px; font-weight: 800;
+    }
+    .task-workflow-section--select .task-workflow-count { background: rgba(245,158,11,.14); color: #fbbf24; }
+    .task-workflow-section--publish .task-workflow-count { background: rgba(34,197,94,.14); color: #4ade80; }
+    .task-workflow-empty {
+      padding: 24px 12px; border: 1px dashed var(--border); border-radius: 12px;
+      color: var(--text-mute); font-size: 13px; text-align: center;
+    }
     .task-card {
       background: var(--surface);
       border: 1px solid var(--border);
@@ -324,6 +352,8 @@
       background: var(--bg); border-radius: 14px;
     }
     @media (max-width: 600px) {
+      .task-workflow-grid { grid-template-columns: 1fr; }
+      .task-workflow-section--other { grid-column: auto; }
       .sched-summary { grid-template-columns: repeat(2, 1fr); }
       .sched-cell { min-height: 54px; }
       .sched-cell__avatars { left: 4px; right: 4px; min-height: 12px; }
@@ -393,6 +423,7 @@
 
         <div class="filters">
           <select id="fScope" class="select">
+            <option value="active">Все актуальные</option>
             <option value="today">Сегодня и просроченные</option>
             <option value="upcoming">Предстоящие</option>
             <option value="overdue">Просрочены</option>
@@ -412,7 +443,7 @@
           <button class="btn btn--ghost" id="btnReset">Сбросить</button>
         </div>
 
-        <div class="task-list" id="taskList"></div>
+        <div class="task-workflow-grid" id="taskList"></div>
       </main>
     </div>
   </div>
@@ -515,14 +546,14 @@
 
   <script>
   document.addEventListener('DOMContentLoaded', () => {
-    const { Store, Modal, toast, todayISO, fmtDate, clientScheduleBreakdown, STATUS_CHOSEN } = window.App;
+    const { Store, Modal, toast, todayISO, fmtDate, clientScheduleBreakdown, STATUS_SELECT, STATUS_CHOSEN } = window.App;
     const { confirmDelete } = window.TableUtils;
 
     Store.load();
     const isOwner = (window.AuthGate && window.AuthGate.isOwner && window.AuthGate.isOwner()) || false;
     if (isOwner) document.querySelectorAll('[data-owner-only]').forEach(el => el.style.display = '');
 
-    const filters = { scope: 'today', manager: '', mentorId: '', q: '' };
+    const filters = { scope: 'active', manager: '', mentorId: '', q: '' };
     let editingId = null;
     let schedulingStatusId = null;
     let publicationRequests = [];
@@ -806,6 +837,11 @@
     function isToday(iso) { return iso === todayISO(); }
     function isPast(iso) { return iso && iso < todayISO(); }
     function isFuture(iso) { return iso && iso > todayISO(); }
+    function taskWorkDate(task) {
+      return task && task.source === 'profile_status_action' && task.plannedDate
+        ? task.plannedDate
+        : (task && task.date || '');
+    }
 
     function applyFilters(tasks) {
       return tasks.filter(t => {
@@ -818,9 +854,11 @@
           if (!hay.includes(filters.q)) return false;
         }
         if (t.source === 'client_publication_request') return filters.scope !== 'done';
+        const workDate = taskWorkDate(t);
         switch (filters.scope) {
-          case 'today':    return !t.done && (isToday(t.date) || isPast(t.date));
-          case 'upcoming': return !t.done && isFuture(t.date);
+          case 'active':   return !t.done;
+          case 'today':    return !t.done && (isToday(workDate) || isPast(workDate));
+          case 'upcoming': return !t.done && isFuture(workDate);
           case 'overdue':  return !t.done && isPast(t.date);
           case 'done':     return t.done;
           case 'all':      return true;
@@ -841,42 +879,71 @@
 
       // KPI
       const today = todayISO();
-      const todayTasks = managerScoped.filter(t => t.date === today);
-      const todayDone = todayTasks.filter(t => t.done).length;
       const overdue = managerScoped.filter(t => !t.done && isPast(t.date)).length;
-      const upcoming = managerScoped.filter(t => !t.done && isFuture(t.date)).length;
+      const selectCount = managerScoped.filter(t => !t.done && t.currentStatus === STATUS_SELECT).length;
+      const publishCount = managerScoped.filter(t => !t.done && t.currentStatus === STATUS_CHOSEN).length;
+      const planned = managerScoped.filter(t => !t.done && t.plannedDate && !isPast(t.plannedDate)).length;
       document.getElementById('taskKpis').innerHTML = `
-        <div class="card"><div class="card__label">На сегодня</div><div class="card__value">${todayDone}/${todayTasks.length}</div></div>
+        <div class="card"><div class="card__label">Нужно выбрать</div><div class="card__value" style="color:#f59e0b">${selectCount}</div></div>
+        <div class="card"><div class="card__label">Нужно опубликовать</div><div class="card__value" style="color:#22c55e">${publishCount}</div></div>
         <div class="card"><div class="card__label">Просрочено</div><div class="card__value" style="color:var(--red)">${overdue}</div></div>
-        <div class="card"><div class="card__label">Предстоит</div><div class="card__value">${upcoming}</div></div>
-        <div class="card"><div class="card__label">Всего задач</div><div class="card__value">${managerScoped.length}</div></div>
+        <div class="card"><div class="card__label">В рабочем плане</div><div class="card__value">${planned}</div></div>
       `;
 
       const list = document.getElementById('taskList');
-      if (!filtered.length) {
-        list.innerHTML = `<div class="task-empty">Задач нет. ${isOwner ? 'Нажми «Новая задача».' : 'Жди, когда владелец поставит задачу.'}</div>`;
-        return;
+      const workflowSelect = filtered.filter(t => t.source === 'profile_status_action' && t.currentStatus === STATUS_SELECT);
+      const workflowPublish = filtered.filter(t => t.source === 'profile_status_action' && t.currentStatus === STATUS_CHOSEN);
+      const otherTasks = filtered.filter(t => t.source !== 'profile_status_action');
+
+      function dateGroupsHtml(tasks) {
+        if (!tasks.length) return '<div class="task-workflow-empty">Сейчас здесь задач нет.</div>';
+        const groups = new Map();
+        tasks.forEach(t => {
+          const k = taskWorkDate(t) || '—';
+          if (!groups.has(k)) groups.set(k, []);
+          groups.get(k).push(t);
+        });
+        const html = [];
+        [...groups.keys()].sort().forEach(date => {
+          let title = fmtDate(date) || date;
+          if (date === today) title += ' · СЕГОДНЯ';
+          else if (isPast(date)) title += ' · ПРОСРОЧЕНО';
+          else if (isFuture(date)) {
+            const days = Math.round((new Date(date) - new Date(today)) / 86400000);
+            title = `ЗАПЛАНИРОВАНО · ${title} · через ${days} дн.`;
+          }
+          html.push(`<div class="task-group-title">${escapeHtml(title)}</div>`);
+          groups.get(date).forEach(t => html.push(taskHtml(t)));
+        });
+        return html.join('');
       }
-      // Группировка по дате
-      const groups = new Map();
-      filtered.forEach(t => {
-        const k = t.date || '—';
-        if (!groups.has(k)) groups.set(k, []);
-        groups.get(k).push(t);
-      });
-      const html = [];
-      [...groups.keys()].sort().forEach(date => {
-        let title = fmtDate(date) || date;
-        if (date === today) title += ' · СЕГОДНЯ';
-        else if (isPast(date)) title += ' · ПРОСРОЧЕНО';
-        else if (isFuture(date)) {
-          const days = Math.round((new Date(date) - new Date(today)) / 86400000);
-          title += ` · через ${days} дн.`;
-        }
-        html.push(`<div class="task-group-title">${escapeHtml(title)}</div>`);
-        groups.get(date).forEach(t => html.push(taskHtml(t)));
-      });
-      list.innerHTML = html.join('');
+
+      const sections = [
+        `<section class="task-workflow-section task-workflow-section--select" data-workflow-section="select">
+          <div class="task-workflow-head">
+            <div class="task-workflow-head__copy"><h2>Нужно выбрать</h2><p>Аккаунты в статусе «Выбрать»: перевести в статус «Выбран».</p></div>
+            <span class="task-workflow-count">${workflowSelect.length}</span>
+          </div>
+          <div class="task-list">${dateGroupsHtml(workflowSelect)}</div>
+        </section>`,
+        `<section class="task-workflow-section task-workflow-section--publish" data-workflow-section="publish">
+          <div class="task-workflow-head">
+            <div class="task-workflow-head__copy"><h2>Нужно опубликовать</h2><p>Аккаунты в статусе «Выбран»: опубликовать отзыв.</p></div>
+            <span class="task-workflow-count">${workflowPublish.length}</span>
+          </div>
+          <div class="task-list">${dateGroupsHtml(workflowPublish)}</div>
+        </section>`
+      ];
+      if (otherTasks.length) {
+        sections.push(`<section class="task-workflow-section task-workflow-section--other" data-workflow-section="other">
+          <div class="task-workflow-head">
+            <div class="task-workflow-head__copy"><h2>Другие задачи</h2><p>Ручные задачи, которые не относятся к смене статуса аккаунта.</p></div>
+            <span class="task-workflow-count">${otherTasks.length}</span>
+          </div>
+          <div class="task-list">${dateGroupsHtml(otherTasks)}</div>
+        </section>`);
+      }
+      list.innerHTML = sections.join('');
 
       // bind
       list.querySelectorAll('.task-check[data-id]').forEach(el => {
@@ -1084,8 +1151,8 @@
     document.getElementById('fMentor').addEventListener('change', e => { filters.mentorId = e.target.value; render(); });
     document.getElementById('fSearch').addEventListener('input', e => { filters.q = e.target.value.trim().toLowerCase(); render(); });
     document.getElementById('btnReset').addEventListener('click', () => {
-      filters.scope = 'today'; filters.manager = ''; filters.mentorId = ''; filters.q = '';
-      document.getElementById('fScope').value = 'today';
+      filters.scope = 'active'; filters.manager = ''; filters.mentorId = ''; filters.q = '';
+      document.getElementById('fScope').value = 'active';
       document.getElementById('fManager').value = '';
       document.getElementById('fMentor').value = '';
       document.getElementById('fSearch').value = '';

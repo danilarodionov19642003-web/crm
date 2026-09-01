@@ -182,6 +182,20 @@ assert.match(tasksHtml, /sched-cell__task-count/, 'день календаря �
 assert.match(tasksHtml, /План отзывов и задач/, 'календарь должен явно показывать оба вида работы');
 assert.match(tasksHtml, /Сегодня и просроченные/,
   'просроченные действия не должны скрываться из основного списка');
+assert.match(tasksHtml, /<option value="active">Все актуальные<\/option>/,
+  'по умолчанию должны быть доступны и просроченные, и будущие задачи');
+assert.match(tasksHtml, /data-workflow-section="select"/,
+  'аккаунты в статусе «Выбрать» должны выводиться отдельным рабочим разделом');
+assert.match(tasksHtml, /data-workflow-section="publish"/,
+  'аккаунты в статусе «Выбран» должны выводиться отдельным разделом публикации');
+assert.match(tasksHtml, /t\.currentStatus === STATUS_SELECT/,
+  'раздел выбора должен фильтроваться по текущему статусу аккаунта');
+assert.match(tasksHtml, /t\.currentStatus === STATUS_CHOSEN/,
+  'раздел публикации должен фильтроваться по текущему статусу аккаунта');
+assert.match(tasksHtml, /function taskWorkDate\(task\)[\s\S]{0,180}task\.plannedDate/,
+  'перенесённая задача должна группироваться по рабочей дате, а не по старой просрочке');
+assert.match(tasksHtml, /task-workflow-grid[\s\S]{0,180}repeat\(2, minmax\(0, 1fr\)\)/,
+  'два этапа работы должны быть визуально разделены на рабочем столе');
 assert.match(statusLabelsMigration, /insert into public\.crm_state_history/,
   'перед переименованием живых статусов должен сохраняться снимок CRM');
 assert.match(statusLabelsMigration, /update public\.client_snapshots/,
