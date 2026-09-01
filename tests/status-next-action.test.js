@@ -68,11 +68,15 @@ Store.state = {
   ],
   profiles: [
     { id: 'profile-8-2', code: '8-2' },
-    { id: 'profile-8-8', code: '8-8' }
+    { id: 'profile-8-8', code: '8-8' },
+    { id: 'profile-8-3', code: '8-3' },
+    { id: 'profile-8-4', code: '8-4' }
   ],
   accountRegs: [
     { id: 'reg-8-2', profileId: 'profile-8-2', ownerName: 'Вячеслав Ермолин' },
-    { id: 'reg-8-8', profileId: 'profile-8-8', ownerName: 'Владимир' }
+    { id: 'reg-8-8', profileId: 'profile-8-8', ownerName: 'Владимир' },
+    { id: 'reg-8-3', profileId: 'profile-8-3', ownerName: 'Анна' },
+    { id: 'reg-8-4', profileId: 'profile-8-4', ownerName: 'Мария' }
   ],
   nicheConfig: {
     'Ремонт квартир': { daysToPublish: 30 }
@@ -85,6 +89,14 @@ Store.state = {
     {
       id: 'status-a21', mentorId: 'mentor-a21', profileId: 'profile-8-8',
       status: STATUS_CHOSEN, date: '2026-06-16', history: []
+    },
+    {
+      id: 'status-dialog', mentorId: 'mentor-a10', profileId: 'profile-8-3',
+      status: '💬 Начать диалог', date: '2026-07-20', history: []
+    },
+    {
+      id: 'status-exchange', mentorId: 'mentor-a10', profileId: 'profile-8-4',
+      status: '✅ Обменяться', date: '2026-07-20', history: []
     }
   ]
 };
@@ -92,6 +104,8 @@ Store.state = {
 const tasks = Store.listProfileStatusActionTasks('2026-07-22');
 const selectTask = tasks.find(item => item.statusId === 'status-a10');
 const chosenTask = tasks.find(item => item.statusId === 'status-a21');
+const dialogTask = tasks.find(item => item.statusId === 'status-dialog');
+const exchangeTask = tasks.find(item => item.statusId === 'status-exchange');
 
 assert.equal(selectTask.date, '2026-05-27', 'старый статус «Выбрать» получает срок +5 дней без миграции данных');
 assert.equal(selectTask.daysInStatus, 61);
@@ -104,6 +118,8 @@ assert.equal(chosenTask.date, '2026-07-16', 'срок «Выбран» берё�
 assert.equal(chosenTask.daysInStatus, 36);
 assert.equal(chosenTask.daysOverdue, 6);
 assert.equal(chosenTask.targetStatus, STATUS_READY);
+assert.equal(dialogTask.targetStatus, '✅ Обменяться');
+assert.equal(exchangeTask.targetStatus, STATUS_SELECT);
 
 const legacyScheduled = Store.getProfileStatus('mentor-a10', 'profile-8-2');
 legacyScheduled.nextActionDate = '2026-08-01';
@@ -127,12 +143,14 @@ Store.setProfileStatusTaskDate('status-a21', '2026-07-28');
 let changed = Store.getProfileStatus('mentor-a21', 'profile-8-8');
 assert.equal(changed.nextActionDate, undefined, 'планирование не должно менять исходный срок статуса');
 assert.equal(changed.plannedActionDate, '2026-07-28');
+assert.equal(changed.taskPlanSource, 'staff', 'дата из CRM должна помечаться как план сотрудника');
 assert.equal(Store.getProfileStatusAction(changed, '2026-07-22').date, '2026-07-16');
 assert.equal(Store.getProfileStatusAction(changed, '2026-07-22').dueState, 'overdue');
 const rescheduledTask = Store.listProfileStatusActionTasks('2026-07-22')
   .find(item => item.statusId === 'status-a21');
 assert.equal(rescheduledTask.date, '2026-07-16', 'просрочка остаётся на исходной дате');
 assert.equal(rescheduledTask.plannedDate, '2026-07-28', 'рабочий план хранится отдельно');
+assert.equal(rescheduledTask.planSource, 'staff');
 
 Store.setProfileStatus(
   'mentor-a21', 'profile-8-8', STATUS_READY, '', '2026-07-22', 'Данил'
@@ -141,9 +159,20 @@ changed = Store.getProfileStatus('mentor-a21', 'profile-8-8');
 assert.equal(changed.nextActionDate, undefined, 'при выполнении срок удаляется из текущего статуса');
 assert.equal(changed.plannedActionDate, undefined, 'при смене статуса задача удаляется из рабочего плана');
 assert.equal(changed.history[0].plannedActionDate, '2026-07-28', 'прошлый план сохраняется в истории статуса');
+assert.equal(changed.history[0].taskPlanSource, 'staff', 'источник прошлого плана сохраняется в истории');
+assert.equal(changed.taskPlanSource, undefined, 'после смены статуса источник старого плана удаляется');
 assert.equal(Store.getProfileStatusAction(changed, '2026-07-22'), null);
 assert.equal(Store.listProfileStatusActionTasks('2026-07-22').some(item => item.statusId === 'status-a21'), false,
   'системная задача закрывается реальной сменой статуса');
+
+const a10Client = Store.state.clients.find(item => item.id === 'client-a10');
+a10Client.closed = true;
+const statusesBeforeCloseCheck = Store.state.profileStatuses.length;
+assert.equal(Store.listProfileStatusActionTasks('2026-07-22')
+  .some(item => item.mentorId === 'mentor-a10'), false,
+  'закрытый клиент не должен создавать задачи по сохранённым статусам');
+assert.equal(Store.state.profileStatuses.length, statusesBeforeCloseCheck,
+  'закрытие клиента не должно удалять статусы и связи аккаунтов');
 
 const statusesHtml = fs.readFileSync(path.join(root, 'pages/statuses.html'), 'utf8');
 const tasksHtml = fs.readFileSync(path.join(root, 'pages/tasks.html'), 'utf8');
@@ -179,6 +208,7 @@ assert.match(tasksHtml, /Store\.setProfileStatusTaskDate/, 'планирован
 assert.match(tasksHtml, /task\.plannedDate/, 'календарь должен использовать рабочую дату, а не срок статуса');
 assert.match(tasksHtml, /collectStatusActionsByDate/, 'задачи по статусам должны попадать в календарь');
 assert.match(tasksHtml, /sched-cell__task-count/, 'день календаря должен показывать число задач');
+assert.match(tasksHtml, /has-client-task/, 'клиентская дата должна отдельно выделяться в календаре');
 assert.match(tasksHtml, /План отзывов и задач/, 'календарь должен явно показывать оба вида работы');
 assert.match(tasksHtml, /Сегодня и просроченные/,
   'просроченные действия не должны скрываться из основного списка');

@@ -62,6 +62,19 @@
     const byStatus = addDaysISO(status && status.date, Number(anketa && anketa.publicationWaitDays) || 0);
     return byStatus && byStatus > todayISO() ? byStatus : todayISO();
   }
+  function nextStatusTarget(status) {
+    return ({
+      '💬 Начать диалог': '✅ Обменяться',
+      '✅ Обменяться': '⭐ Выбрать',
+      '⭐ Выбрать': '🏆 Выбран',
+      '🏆 Выбран': '🎯 Опубликован'
+    })[String(status || '')] || '';
+  }
+  function nextStatusMinimumDate(anketa, status) {
+    return status && status.status === '🏆 Выбран'
+      ? publicationMinimumDate(anketa, status)
+      : todayISO();
+  }
   function daysSince(iso) {
     const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ''));
     if (!match) return 0;
@@ -176,7 +189,7 @@
     try {
       const url = `${_url()}/rest/v1/client_publication_requests`
         + `?client_email=eq.${encodeURIComponent(email)}`
-        + '&select=id,status_id,mentor_id,profile_id,status_date,requested_date,request_status,updated_at,resolved_at'
+        + '&select=id,status_id,mentor_id,profile_id,status_date,current_status,target_status,requested_date,request_status,updated_at,resolved_at'
         + '&order=updated_at.desc';
       const res = await authFetch(url, {
         headers: { 'apikey': _key(), 'Accept': 'application/json' }
@@ -421,7 +434,7 @@
     });
   }
 
-  async function submitPublicationRequest(statusId, requestedDate) {
+  async function submitNextStatusRequest(statusId, requestedDate) {
     try {
       const res = await authFetch(`${_url()}/rest/v1/rpc/request_client_publication_date`, {
         method: 'POST',
@@ -444,12 +457,12 @@
             : 'Для этого аккаунта ещё не прошла минимальная пауза до публикации.';
         }
         else if (raw.includes('STATUS_NOT_AVAILABLE')) message = 'Статус аккаунта уже изменился. Обновите страницу.';
-        else if (raw.includes('DATE_ALREADY_ACCEPTED')) message = 'Эта дата уже подтверждена менеджером.';
+        else if (raw.includes('DATE_ALREADY_ACCEPTED')) message = 'Дата следующего этапа уже подтверждена менеджером.';
         return { ok: false, message };
       }
       return { ok: true, row: body };
     } catch (error) {
-      console.warn('[client-app] publication request submit error', error);
+      console.warn('[client-app] next status request submit error', error);
       return { ok: false, message: 'Нет связи с сервером. Попробуйте ещё раз.' };
     }
   }
@@ -833,12 +846,16 @@
           && request.requested_date)
         .forEach(request => {
           const status = (a.statuses || []).find(item => item.id === request.status_id);
-          if (!status || status.status !== '🏆 Выбран') return;
+          const targetStatus = status && nextStatusTarget(status.status);
+          if (!status || !targetStatus) return;
+          if (request.current_status && request.current_status !== status.status) return;
           events.push({
             date: String(request.requested_date).slice(0, 10),
             color, anketa: a.name || a.code, anketaData: a,
-            kind: 'publication', icon: '📌',
-            title: 'Запланирована публикация',
+            kind: 'status-plan', icon: '📌',
+            title: targetStatus === '🎯 Опубликован'
+              ? 'Запланирована публикация'
+              : `Запланирован статус «${targetStatus}»`,
             sub: status.profileName || '',
             comment: 'Подтверждено'
           });
@@ -1121,6 +1138,7 @@
       .forEach(request => {
         const status = (anketa.statuses || []).find(item => item.id === request.status_id);
         if (!status || status.status !== '🏆 Выбран') return;
+        if (request.current_status && request.current_status !== status.status) return;
         const date = String(request.requested_date).slice(0, 10);
         if (date) dates.set(date, (dates.get(date) || 0) + 1);
       });
@@ -1455,6 +1473,20 @@
         }
       });
     }
+    if (isCompletedAnketa(anketa)) {
+      const closedRows = activeSlots.length
+        ? activeSlots.map(slot => `<div class="cli-outreach-row">
+            <span class="cli-outreach-row__date">${fmtDate(slot.scheduled_date)}</span>
+            <span class="cli-outreach-row__state">Сохранено в истории</span>
+          </div>`).join('')
+        : '<div class="cli-empty cli-outreach-empty">Новых действий не запланировано.</div>';
+      return `<section class="cli-outreach">
+        <div class="cli-outreach__head">
+          <div><h3>План откликов</h3><div class="cli-outreach__available"><b>Работа по анкете завершена</b></div></div>
+        </div>
+        <div class="cli-outreach__list">${closedRows}</div>
+      </section>`;
+    }
     const limit = Number.isFinite(Number(anketa.scheduleLimit))
       ? Math.max(0, Number(anketa.scheduleLimit))
       : Math.max(0, Number(fallbackLimit) || 0);
@@ -1583,7 +1615,9 @@
     `;
     const requestForStatus = status => {
       const stored = requestsByStatus.get(status.id);
-      return stored && String(stored.status_date || '').slice(0, 10) === String(status.date || '').slice(0, 10)
+      return stored
+        && String(stored.status_date || '').slice(0, 10) === String(status.date || '').slice(0, 10)
+        && (!stored.current_status || stored.current_status === status.status)
         ? stored
         : null;
     };
@@ -1629,23 +1663,29 @@
     const statusAge = status => isReadyStatus(status)
       ? '<span class="cli-status-days is-complete">Завершён</span>'
       : `<span class="cli-status-days"><strong>${daysSince(status.date)}</strong> дн.</span>`;
-    const publicationControl = status => {
+    const nextStatusControl = status => {
+      if (isCompletedAnketa(a) && !isReadyStatus(status)) {
+        return '<span class="cli-pub-empty">Работа завершена</span>';
+      }
       if (isReadyStatus(status)) {
         const publishedDate = String(status.date || '').slice(0, 10);
         return publishedDate
           ? `<div class="cli-pub-confirmed"><strong>${fmtDate(publishedDate)}</strong><span>Опубликовано</span></div>`
           : '<span class="cli-pub-empty">—</span>';
       }
-      if (status.status !== '🏆 Выбран' || !status.id) return '<span class="cli-pub-empty">—</span>';
+      const targetStatus = nextStatusTarget(status.status);
+      if (!targetStatus || !status.id) return '<span class="cli-pub-empty">—</span>';
       const request = requestForStatus(status);
       if (request && request.request_status === 'accepted') {
-        return `<div class="cli-pub-confirmed"><strong>${fmtDate(request.requested_date)}</strong><span>Подтверждено</span></div>`;
+        return `<div class="cli-pub-confirmed"><strong>${fmtDate(request.requested_date)}</strong><span>Подтверждено · ${escapeHtml(targetStatus)}</span></div>`;
       }
       const value = request && request.request_status === 'pending'
         ? String(request.requested_date || '').slice(0, 10)
         : '';
-      const minimumDate = publicationMinimumDate(a, status);
-      const waitDays = Math.max(0, Number(a.publicationWaitDays) || 0);
+      const minimumDate = nextStatusMinimumDate(a, status);
+      const waitDays = status.status === '🏆 Выбран'
+        ? Math.max(0, Number(a.publicationWaitDays) || 0)
+        : 0;
       const state = request && request.request_status === 'pending'
         ? '<span class="cli-pub-state is-pending">Ожидает подтверждения</span>'
         : (request && request.request_status === 'rejected'
@@ -1654,28 +1694,32 @@
       return `
         <div class="cli-pub-control" data-publication-status="${escapeAttr(status.id)}" data-publication-min="${escapeAttr(minimumDate)}" data-publication-wait="${waitDays}">
           <div class="cli-pub-actions">
-            <input type="date" class="cli-pub-date" min="${todayISO()}" value="${escapeAttr(value)}" aria-label="Дата публикации"/>
+            <input type="date" class="cli-pub-date" min="${escapeAttr(minimumDate)}" value="${escapeAttr(value)}" aria-label="Дата перехода в статус ${escapeAttr(targetStatus)}"/>
             <button type="button" class="cli-pub-submit" data-publication-submit>${value ? 'Изменить' : 'Запланировать'}</button>
           </div>
           ${waitDays ? `<span class="cli-pub-min">Не раньше ${fmtDate(minimumDate)} · минимум ${waitDays} дн. в статусе</span>` : ''}
           ${state}
         </div>`;
     };
-    const publicationSummary = status => {
+    const nextStatusSummary = status => {
+      if (isCompletedAnketa(a) && !isReadyStatus(status)) {
+        return '<span class="cli-status-mobile__request">Работа завершена</span>';
+      }
       if (isReadyStatus(status)) {
         const publishedDate = String(status.date || '').slice(0, 10);
         return publishedDate
           ? `<span class="cli-status-mobile__request is-accepted">${fmtDate(publishedDate)} · опубликовано</span>`
           : '';
       }
-      if (status.status !== '🏆 Выбран' || !status.id) return '';
+      const targetStatus = nextStatusTarget(status.status);
+      if (!targetStatus || !status.id) return '';
       const request = requestForStatus(status);
-      if (!request) return '<span class="cli-status-mobile__request">Дата не выбрана</span>';
+      if (!request) return `<span class="cli-status-mobile__request">Следующий: ${escapeHtml(targetStatus)} · дата не выбрана</span>`;
       if (request.request_status === 'accepted') {
-        return `<span class="cli-status-mobile__request is-accepted">${fmtDate(request.requested_date)}</span>`;
+        return `<span class="cli-status-mobile__request is-accepted">${fmtDate(request.requested_date)} · ${escapeHtml(targetStatus)}</span>`;
       }
       if (request.request_status === 'pending') {
-        return `<span class="cli-status-mobile__request is-pending">${fmtDate(request.requested_date)} · на проверке</span>`;
+        return `<span class="cli-status-mobile__request is-pending">${fmtDate(request.requested_date)} · ${escapeHtml(targetStatus)} · на проверке</span>`;
       }
       if (request.request_status === 'rejected') {
         return '<span class="cli-status-mobile__request is-rejected">Выбрать другую дату</span>';
@@ -1686,14 +1730,14 @@
       <h3 class="cli-section-title">Аккаунты в работе</h3>
       <div class="cli-table-wrap">
       <table class="cli-table cli-status-table">
-        <thead><tr><th>Аккаунт</th><th>Статус</th><th>Обновлён</th><th>В статусе</th><th>Публикация</th></tr></thead>
+        <thead><tr><th>Аккаунт</th><th>Статус</th><th>Обновлён</th><th>В статусе</th><th>Следующий этап</th></tr></thead>
         <tbody>${a.statuses.map(s => `
           <tr>
             <td data-label="Аккаунт"><strong>${escapeHtml(s.profileName || '—')}</strong></td>
             <td data-label="Статус"><span class="cli-status-pill">${escapeHtml(s.status || '')}</span></td>
             <td data-label="Обновлён">${fmtDate(s.date)}</td>
             <td data-label="В статусе"><div class="cli-status-age-proof">${statusAge(s)}${accountProofs(s, true)}</div></td>
-            <td data-label="Публикация">${publicationControl(s)}</td>
+            <td data-label="Следующий этап">${nextStatusControl(s)}</td>
           </tr>
           ${approvedTextDesktopRow(s)}
         `).join('')}</tbody>
@@ -1710,7 +1754,7 @@
               <span class="cli-status-mobile__meta">
                 ${statusAge(s)}
                 ${accountProofs(s)}
-                ${publicationSummary(s)}
+                ${nextStatusSummary(s)}
               </span>
             </summary>
             <div class="cli-status-mobile__body">
@@ -1719,8 +1763,8 @@
                 <strong>${fmtDate(s.date)}</strong>
               </div>
               <div class="cli-status-mobile__publication">
-                <span>Дата публикации</span>
-                ${publicationControl(s)}
+                <span>Следующий этап</span>
+                ${nextStatusControl(s)}
               </div>
               ${approvedTextPanel(s)}
             </div>
@@ -1816,7 +1860,7 @@
         if (!date) {
           if (result) {
             result.className = 'cli-pub-state is-rejected';
-            result.textContent = 'Выберите дату публикации';
+            result.textContent = 'Выберите дату следующего этапа';
           }
           return;
         }
@@ -1831,7 +1875,7 @@
         }
         button.disabled = true;
         button.textContent = 'Сохраняю…';
-        const response = await submitPublicationRequest(control.dataset.publicationStatus, date);
+        const response = await submitNextStatusRequest(control.dataset.publicationStatus, date);
         if (!response.ok) {
           button.disabled = false;
           button.textContent = 'Запланировать';
@@ -2899,7 +2943,8 @@
     renderCalendar,
     renderProfileDetail,
     loadMyPublicationRequests,
-    submitPublicationRequest,
+    submitPublicationRequest: submitNextStatusRequest,
+    submitNextStatusRequest,
     loadMyTextApprovals,
     resolveMyTextApproval,
     renderTextApprovals,

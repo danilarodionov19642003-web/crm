@@ -71,6 +71,15 @@
     return Number.isNaN(date.getTime()) ? '—' : dateFmt.format(date);
   }
 
+  function nextStatusTarget(status) {
+    return ({
+      '💬 Начать диалог': '✅ Обменяться',
+      '✅ Обменяться': '⭐ Выбрать',
+      '⭐ Выбрать': '🏆 Выбран',
+      '🏆 Выбран': '🎯 Опубликован'
+    })[String(status || '')] || '';
+  }
+
   function safeImageUrl(value) {
     const url = String(value || '').trim();
     if (/^https:\/\//i.test(url)) return url;
@@ -133,8 +142,8 @@
       const match = raw.match(/PUBLICATION_TOO_EARLY:(\d{4}-\d{2}-\d{2})/);
       return match ? `Эту дату выбрать нельзя. Доступно не раньше ${fmtDate(match[1])}.` : 'Эту дату выбрать пока нельзя.';
     }
-    if (raw.includes('DATE_ALREADY_ACCEPTED')) return 'Эта дата уже подтверждена.';
-    if (raw.includes('STATUS_NOT_AVAILABLE')) return 'Дата доступна только для аккаунта в статусе «Выбран».';
+    if (raw.includes('DATE_ALREADY_ACCEPTED')) return 'Дата следующего этапа уже подтверждена.';
+    if (raw.includes('STATUS_NOT_AVAILABLE')) return 'Статус аккаунта уже изменился. Обновите Mini App.';
     if (raw.includes('COMMENT_REQUIRED')) return 'Напишите, что нужно исправить в тексте.';
     if (raw.includes('TEXT_APPROVER_REQUIRED')) return 'Согласовать текст может только ответственный контакт.';
     if (raw.includes('ALREADY_RESOLVED')) return 'На этот текст уже ответили.';
@@ -244,6 +253,7 @@
     return (state.payload && state.payload.publication_requests || []).find(item =>
       String(item.status_id || '') === String(status && status.id || '')
       && String(item.status_date || '').slice(0, 10) === String(status && status.date || '').slice(0, 10)
+      && (!item.current_status || item.current_status === status.status)
     ) || null;
   }
 
@@ -284,6 +294,8 @@
       statuses: [
         { id: 's1', profile_id: 'p1', profile_name: 'Тестовый аккаунт 3', status: '🏆 Выбран', date: isoDate(new Date()), publication_wait_days: 5, publication_minimum_date: calendar[4].date },
         { id: 's2', profile_id: 'p2', profile_name: 'Тестовый аккаунт 2', status: '⭐ Выбрать', date: isoDate(new Date()), publication_wait_days: 5, publication_minimum_date: calendar[4].date },
+        { id: 's5', profile_id: 'p4', profile_name: 'Тестовый аккаунт 4', status: '✅ Обменяться', date: isoDate(new Date()), publication_wait_days: 5, publication_minimum_date: calendar[4].date },
+        { id: 's6', profile_id: 'p5', profile_name: 'Тестовый аккаунт 5', status: '💬 Начать диалог', date: isoDate(new Date()), publication_wait_days: 5, publication_minimum_date: calendar[4].date },
         { id: 's3', profile_id: 'p3', profile_name: 'Тестовый аккаунт 1', status: '🎯 Опубликован', date: isoDate(new Date()), publication_wait_days: 5, publication_minimum_date: calendar[4].date }
       ],
       reviews: [{ id: 'r1', profile_name: 'Тестовый аккаунт 1', text: 'Спасибо за отличную работу и внимательное отношение к деталям.', date: isoDate(new Date()) }]
@@ -300,6 +312,7 @@
       ok: true,
       client_name: 'Александр',
       generated_at: new Date().toISOString(),
+      business_today: isoDate(new Date()),
       minimum_date: isoDate(tomorrow),
       totals: { ordered: 18, done: 10, paid: 10200, remain: 4800, total: 15000 },
       anketas: [active, completed],
@@ -527,12 +540,17 @@
           <p>Когда менеджер подготовит текст, он появится здесь. Вы сможете сразу его согласовать или попросить правки.</p>
         </section>`;
     let publicationHtml = '';
-    if (status.status === '🏆 Выбран') {
+    const targetStatus = nextStatusTarget(status.status);
+    if (targetStatus) {
       const accepted = request && request.request_status === 'accepted';
       const value = request && ['pending', 'accepted'].includes(request.request_status)
         ? String(request.requested_date || '').slice(0, 10) : '';
-      const minimum = String(status.publication_minimum_date || state.payload.minimum_date || '');
-      const waitDays = Math.max(0, Number(status.publication_wait_days) || 0);
+      const minimum = status.status === '🏆 Выбран'
+        ? String(status.publication_minimum_date || state.payload.business_today || '')
+        : String(state.payload.business_today || '');
+      const waitDays = status.status === '🏆 Выбран'
+        ? Math.max(0, Number(status.publication_wait_days) || 0)
+        : 0;
       const publicationState = accepted
         ? `<span class="tgapp-publication-state is-approved">Дата подтверждена</span>`
         : request && request.request_status === 'pending'
@@ -540,8 +558,10 @@
           : request && request.request_status === 'rejected'
             ? `<span class="tgapp-publication-state is-changes">Выберите другую дату</span>` : '';
       publicationHtml = `<section class="tgapp-account-card tgapp-publication">
-        <header><span>Дата публикации</span>${publicationState}</header>
-        <p>Выберите удобный день, когда будете готовы опубликовать согласованный отзыв.</p>
+        <header><span>Следующий этап · ${escapeHtml(targetStatus)}</span>${publicationState}</header>
+        <p>${targetStatus === '🎯 Опубликован'
+          ? 'Выберите удобный день, когда будете готовы опубликовать согласованный отзыв.'
+          : `Выберите день, когда аккаунт должен перейти в статус «${escapeHtml(targetStatus)}».`}</p>
         <div class="tgapp-publication__control">
           <input type="date" min="${escapeHtml(minimum)}" value="${escapeHtml(value)}" data-publication-date${accepted ? ' disabled' : ''}/>
           <button type="button" data-save-publication${accepted ? ' disabled' : ''}>${value ? 'Изменить' : 'Запланировать'}</button>
@@ -552,7 +572,7 @@
     } else if (status.status === '🎯 Опубликован') {
       publicationHtml = `<section class="tgapp-account-card tgapp-publication is-complete"><header><span>Публикация</span><b>Опубликовано ✓</b></header><p>Отзыв опубликован ${status.date ? escapeHtml(fmtDate(status.date)) : ''}.</p></section>`;
     } else {
-      publicationHtml = `<section class="tgapp-account-card tgapp-publication is-locked"><header><span>Дата публикации</span><b>Пока недоступно</b></header><p>Выбрать дату можно, когда аккаунт перейдёт в статус «Выбран».</p></section>`;
+      publicationHtml = `<section class="tgapp-account-card tgapp-publication is-locked"><header><span>Следующий этап</span><b>Пока недоступно</b></header><p>Для этого статуса дальнейшее планирование не требуется.</p></section>`;
     }
     renderShell(`
       <button type="button" class="tgapp-back" data-back-anketa>‹ <span>К анкете ${escapeHtml(String(anketa.code || '').toUpperCase())}</span></button>
@@ -650,7 +670,13 @@
       if ((location.hostname === '127.0.0.1' || location.hostname === 'localhost') && params.get('preview') === '1') {
         const current = publicationRequest(status);
         const row = current || { id: Date.now(), status_id: status.id, status_date: status.date };
-        Object.assign(row, { requested_date: targetDate, request_status: 'pending', updated_at: new Date().toISOString() });
+        Object.assign(row, {
+          current_status: status.status,
+          target_status: nextStatusTarget(status.status),
+          requested_date: targetDate,
+          request_status: 'pending',
+          updated_at: new Date().toISOString()
+        });
         if (!current) state.payload.publication_requests.push(row);
       } else {
         await rpc('request_client_telegram_publication_date', {

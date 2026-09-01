@@ -15,6 +15,7 @@ const capacitySql = read('sql/migrations/2026-08-26_client_outreach_daily_capaci
 const currentSundayClosureSql = read('sql/migrations/2026-08-27_client_outreach_close_current_sunday.sql');
 const accountSql = read('sql/migrations/2026-08-26_client_telegram_z_account_details.sql');
 const moscowExpirySql = read('sql/migrations/2026-08-27_client_outreach_moscow_expiry.sql');
+const nextStatusSql = read('sql/migrations/2026-09-01_client_next_status_planning.sql');
 
 test('Telegram calendar uses short-lived hashed tokens without portal password', () => {
   assert.match(sql, /token_hash bytea not null unique/);
@@ -29,7 +30,7 @@ test('Telegram direct menu keeps its bearer credential out of HTTP requests', ()
   assert.match(js, /fragmentParams/);
   assert.match(js, /location\.hash/);
   assert.match(js, /fragmentParams\.get\('token'\)/);
-  assert.match(html, /telegram-calendar\.js\?v=20260830b/);
+  assert.match(html, /telegram-calendar\.js\?v=20260901a/);
   assert.match(html, /telegram-calendar\.css\?v=20260827b/);
 });
 
@@ -75,7 +76,7 @@ test('Mini App mirrors the client cabinet with branded home and anketa details',
   assert.doesNotMatch(cabinetSql, /crm_state/);
 });
 
-test('Mini App opens an account with its review text and publication date control', () => {
+test('Mini App opens an account with its review text and next-status date control', () => {
   assert.match(js, /data-open-account/);
   assert.match(js, /function renderAccountDetail/);
   assert.match(js, /Текст отзыва/);
@@ -94,6 +95,15 @@ test('Mini App opens an account with its review text and publication date contro
   assert.match(accountSql, /TEXT_APPROVER_REQUIRED/);
   assert.match(accountSql, /Europe\/Moscow/);
   assert.doesNotMatch(accountSql, /update\s+public\.crm_state/i);
+  assert.match(js, /function nextStatusTarget\(status\)/);
+  assert.match(js, /'💬 Начать диалог': '✅ Обменяться'/);
+  assert.match(js, /'✅ Обменяться': '⭐ Выбрать'/);
+  assert.match(js, /'⭐ Выбрать': '🏆 Выбран'/);
+  assert.match(js, /'🏆 Выбран': '🎯 Опубликован'/);
+  assert.match(js, /state\.payload\.business_today/);
+  assert.match(nextStatusSql, /request_client_telegram_publication_date/);
+  assert.match(nextStatusSql, /current_status, target_status/);
+  assert.match(nextStatusSql, /'\{business_today\}'/);
 });
 
 test('Mini App highlights every pending text and opens its exact account directly', () => {

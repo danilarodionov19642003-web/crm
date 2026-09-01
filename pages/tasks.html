@@ -225,6 +225,10 @@
     }
     .sched-cell.has-plan { background: rgba(255,122,0,0.06); border-color: rgba(255,122,0,0.22); }
     .sched-cell.has-task { border-color: rgba(168,85,247,0.38); box-shadow: inset 0 0 0 1px rgba(168,85,247,0.08); }
+    .sched-cell.has-client-task {
+      border-color: rgba(34,197,94,0.72);
+      box-shadow: inset 0 0 0 1px rgba(34,197,94,0.2), 0 0 0 2px rgba(34,197,94,0.06);
+    }
     .sched-cell__day { font-size: 12px; font-variant-numeric: tabular-nums; line-height: 1.1; }
     .sched-cell__count {
       position: absolute; top: 4px; right: 5px;
@@ -240,6 +244,10 @@
     }
     .sched-cell__task-count[data-tone="done"] {
       background: rgba(34,197,94,0.14); color: #22c55e;
+    }
+    .sched-cell__task-count[data-tone="client"] {
+      background: #dcfce7; color: #15803d;
+      box-shadow: 0 0 0 1px rgba(34,197,94,0.22);
     }
     .sched-cell__avatars {
       position: absolute; bottom: 4px; left: 6px; right: 6px;
@@ -393,7 +401,7 @@
 
         <section class="publication-queue" id="publicationQueue" data-owner-only style="display:none" hidden>
           <div class="publication-queue__head">
-            <h2>Запросы клиентов на публикацию</h2>
+            <h2>Запросы клиентов на следующий этап</h2>
             <span class="publication-queue__count" id="publicationQueueCount">0</span>
           </div>
           <div class="publication-queue__list" id="publicationQueueList"></div>
@@ -533,7 +541,7 @@
   </div>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260829b"></script>
+  <script src="../js/app.js?v=20260901a"></script>
   <script src="../js/supabase-client.js?v=20260820d"></script>
   <script src="../js/auth-gate.js?v=20260726a"></script>
   <script src="../js/cloud-sync.js?v=20260820d"></script>
@@ -690,9 +698,13 @@
         profileId: request.profile_id,
         date: request.requested_date,
         requestedDate: request.requested_date,
+        currentStatus: request.current_status || '',
+        targetStatus: request.target_status || '',
         clientEmail: request.client_email || '',
         accountOwner: request.account_name || '',
-        note: 'Клиент выбрал дату публикации отзыва',
+        note: request.target_status === '🎯 Опубликован'
+          ? 'Клиент выбрал дату публикации отзыва'
+          : `Клиент выбрал дату перехода: ${request.current_status || 'текущий статус'} → ${request.target_status || 'следующий статус'}`,
         manager: managerForMentor(request.mentor_id),
         done: false,
         createdAt: request.created_at || request.updated_at || ''
@@ -705,7 +717,7 @@
         if (!S || !S.authFetch) return [];
         const url = `${S.URL}/rest/v1/client_publication_requests`
           + '?request_status=eq.pending'
-          + '&select=id,client_email,status_id,mentor_id,profile_id,anketa_code,anketa_name,account_name,requested_date,request_status,created_at,updated_at'
+          + '&select=id,client_email,status_id,mentor_id,profile_id,anketa_code,anketa_name,account_name,current_status,target_status,requested_date,request_status,created_at,updated_at'
           + '&order=created_at.asc';
         const res = await S.authFetch(url, {
           headers: { 'apikey': S.KEY, 'Accept': 'application/json' }
@@ -757,7 +769,7 @@
         const message = raw.includes('STATUS_NOT_AVAILABLE')
           ? 'Статус аккаунта уже изменился. Запрос нельзя подтвердить.'
           : raw.includes('PUBLICATION_TOO_EARLY')
-            ? 'Клиент выбрал слишком раннюю дату: минимальная пауза после статуса «Выбран» ещё не прошла.'
+            ? 'Клиент выбрал слишком раннюю дату публикации: минимальная пауза после статуса «Выбран» ещё не прошла.'
           : raw.includes('REQUEST_ALREADY_RESOLVED')
             ? 'Этот запрос уже обработан. Обновляю список.'
             : 'Не удалось обработать запрос. Проверь связь и попробуй ещё раз.';
@@ -797,7 +809,8 @@
               ${clientPhotoTriggerHtml(request.mentor_id, escapeHtml(clientLabel), 'publication-request__title')}
               <div class="publication-request__meta">
                 <span>Аккаунт: ${escapeHtml(accountLabel)}</span>
-                <span class="publication-request__date">Публикация: ${escapeHtml(fmtDate(request.requested_date))}</span>
+                <span>${escapeHtml(request.current_status || 'Текущий статус')} → ${escapeHtml(request.target_status || 'Следующий статус')}</span>
+                <span class="publication-request__date">Дата: ${escapeHtml(fmtDate(request.requested_date))}</span>
               </div>
             </div>
             <div class="publication-request__actions">
@@ -893,7 +906,8 @@
       const list = document.getElementById('taskList');
       const workflowSelect = filtered.filter(t => t.source === 'profile_status_action' && t.currentStatus === STATUS_SELECT);
       const workflowPublish = filtered.filter(t => t.source === 'profile_status_action' && t.currentStatus === STATUS_CHOSEN);
-      const otherTasks = filtered.filter(t => t.source !== 'profile_status_action');
+      const otherTasks = filtered.filter(t => t.source !== 'profile_status_action'
+        || ![STATUS_SELECT, STATUS_CHOSEN].includes(t.currentStatus));
 
       function dateGroupsHtml(tasks) {
         if (!tasks.length) return '<div class="task-workflow-empty">Сейчас здесь задач нет.</div>';
@@ -937,7 +951,7 @@
       if (otherTasks.length) {
         sections.push(`<section class="task-workflow-section task-workflow-section--other" data-workflow-section="other">
           <div class="task-workflow-head">
-            <div class="task-workflow-head__copy"><h2>Другие задачи</h2><p>Ручные задачи, которые не относятся к смене статуса аккаунта.</p></div>
+            <div class="task-workflow-head__copy"><h2>Подготовка и другие задачи</h2><p>Переходы «Начать диалог» и «Обменяться», а также ручные задачи.</p></div>
             <span class="task-workflow-count">${otherTasks.length}</span>
           </div>
           <div class="task-list">${dateGroupsHtml(otherTasks)}</div>
@@ -981,6 +995,8 @@
       const p = profileById(t.profileId);
       const manager = t.manager || managerForMentor(t.mentorId);
       const isClientRequest = t.source === 'client_publication_request';
+      const isClientPlan = isClientRequest
+        || (t.source === 'profile_status_action' && t.planSource === 'client');
       const isSystem = t.source === 'profile_status_action' || isClientRequest;
       const datePill = t.date === todayISO() ? 'task-pill--today'
         : (isPast(t.date) && !t.done) ? 'task-pill--overdue'
@@ -1005,12 +1021,12 @@
       const planMeta = isSystem && !isClientRequest && t.plannedDate
         ? `<span class="task-pill task-pill--planned">план: ${escapeHtml(fmtDate(t.plannedDate))}</span>`
         : '';
-      const requestMeta = isClientRequest
-        ? `<span class="task-pill task-pill--request">дата от клиента</span>`
+      const requestMeta = isClientPlan
+        ? `<span class="task-pill task-pill--request">${isClientRequest ? 'клиент выбрал дату' : 'запланировал клиент'}</span>`
         : '';
       return `
-        <div class="task-card${t.done ? ' done' : ''}${isSystem ? ' task-card--system' : ''}${isClientRequest ? ' task-card--client-request' : ''}">
-          ${isSystem ? `<div class="task-system-icon" title="${isClientRequest ? 'Запрос клиента' : 'Закроется после смены статуса'}">${isClientRequest ? '📅' : '⏱'}</div>` : `<div class="task-check" data-id="${t.id}" title="${t.done ? 'Снять выполнение' : 'Отметить выполненным'}"></div>`}
+        <div class="task-card${t.done ? ' done' : ''}${isSystem ? ' task-card--system' : ''}${isClientPlan ? ' task-card--client-request' : ''}">
+          ${isSystem ? `<div class="task-system-icon" title="${isClientPlan ? 'Дату выбрал клиент' : 'Закроется после смены статуса'}">${isClientPlan ? '📅' : '⏱'}</div>` : `<div class="task-check" data-id="${t.id}" title="${t.done ? 'Снять выполнение' : 'Отметить выполненным'}"></div>`}
           <div class="task-meta">
             <div class="task-row1">
               <span class="task-pill ${datePill}">📅 ${escapeHtml(fmtDate(t.date) || t.date || '—')}</span>
@@ -1408,25 +1424,30 @@
         const rows = byDate.get(iso) || [];
         const total = rows.reduce((s, r) => s + r.count, 0);
         const doneTotal = rows.reduce((s, r) => s + r.completedCount, 0);
-        const taskTotal = (actionsByDate.get(iso) || []).length;
+        const dayActions = actionsByDate.get(iso) || [];
+        const taskTotal = dayActions.length;
+        const clientTaskTotal = dayActions.filter(task => task.source === 'client_publication_request'
+          || task.planSource === 'client').length;
         const avatars = rows.map(scheduleAvatarHtml).join('');
         const cls = [
           'sched-cell',
           iso === today ? 'is-today' : '',
           iso === schedState.selected ? 'is-selected' : '',
           total > 0 ? 'has-plan' : '',
-          taskTotal > 0 ? 'has-task' : ''
+          taskTotal > 0 ? 'has-task' : '',
+          clientTaskTotal > 0 ? 'has-client-task' : ''
         ].filter(Boolean).join(' ');
         const lowerBadge = [
           doneTotal > 0 ? `✓ ${doneTotal}` : '',
-          taskTotal > 0 ? taskCountLabel(taskTotal) : ''
+          clientTaskTotal > 0 ? `КЛИЕНТ ${clientTaskTotal}` : '',
+          taskTotal > clientTaskTotal ? taskCountLabel(taskTotal - clientTaskTotal) : ''
         ].filter(Boolean).join(' · ');
         cells.push(`
           <button class="${cls}" data-iso="${iso}">
             ${total > 0 ? `<span class="sched-cell__count">${total}</span>` : ''}
             <span class="sched-cell__day">${d}</span>
             ${avatars ? `<span class="sched-cell__avatars">${avatars}</span>` : ''}
-            ${lowerBadge ? `<span class="sched-cell__task-count" data-tone="${taskTotal > 0 ? 'task' : 'done'}">${lowerBadge}</span>` : ''}
+            ${lowerBadge ? `<span class="sched-cell__task-count" data-tone="${clientTaskTotal > 0 ? 'client' : (taskTotal > 0 ? 'task' : 'done')}">${lowerBadge}</span>` : ''}
           </button>
         `);
       }
@@ -1499,15 +1520,16 @@
           }).join('');
       const actionBody = actionRows.map(task => {
         const isClientRequest = task.source === 'client_publication_request';
+        const isClientPlan = isClientRequest || task.planSource === 'client';
         const clientContent = `
           <strong>${escapeHtml(task.code || '')}</strong>
           ${task.name ? ` · ${escapeHtml(task.name)}` : ''}
           <span class="sched-row__progress">${escapeHtml(task.manager || 'не назначен')} · ${escapeHtml(task.accountLabel)} · ${escapeHtml(task.note)}</span>`;
         return `
-          <div class="sched-row sched-row--task${isClientRequest ? ' task-card--client-request' : ''}">
-            <span class="sched-row__dot" style="background:${isClientRequest ? '#22c55e' : '#a855f7'}"></span>
+          <div class="sched-row sched-row--task${isClientPlan ? ' task-card--client-request' : ''}">
+            <span class="sched-row__dot" style="background:${isClientPlan ? '#22c55e' : '#a855f7'}"></span>
             ${clientPhotoTriggerHtml(task.mentorId, clientContent, 'sched-row__name')}
-            <span class="sched-row__task-label">${isClientRequest ? 'КЛИЕНТ' : 'СТАТУС'}</span>
+            <span class="sched-row__task-label">${isClientPlan ? 'КЛИЕНТ' : 'СТАТУС'}</span>
             ${isClientRequest
               ? `<button class="sched-row__link" type="button" data-calendar-accept-publication="${escapeHtml(task.requestId)}">Подтвердить</button>
                  <button class="sched-row__link" type="button" data-calendar-reject-publication="${escapeHtml(task.requestId)}">Отклонить</button>`

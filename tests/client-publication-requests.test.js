@@ -23,6 +23,10 @@ const minimumMigration = fs.readFileSync(
   path.join(root, 'sql/migrations/2026-08-20_client_publication_minimum.sql'),
   'utf8'
 );
+const nextStatusMigration = fs.readFileSync(
+  path.join(root, 'sql/migrations/2026-09-01_client_next_status_planning.sql'),
+  'utf8'
+);
 const telegramPatch = fs.readFileSync(
   path.join(root, 'ops/telegram/patches/client-publication-approval.patch'),
   'utf8'
@@ -117,23 +121,50 @@ assert.match(minimumMigration, /v_niche = 'remont'[\s\S]*v_wait := 20/);
 assert.match(minimumMigration, /PUBLICATION_TOO_EARLY/);
 assert.match(minimumMigration, /before insert or update of requested_date, request_status, status_date/i);
 
-assert.match(clientApp, /status\.status !== '🏆 Выбран'/);
+assert.match(nextStatusMigration, /add column if not exists current_status text/);
+assert.match(nextStatusMigration, /add column if not exists target_status text/);
+assert.match(nextStatusMigration, /when '💬 Начать диалог' then '✅ Обменяться'/);
+assert.match(nextStatusMigration, /when '✅ Обменяться' then '⭐ Выбрать'/);
+assert.match(nextStatusMigration, /when '⭐ Выбрать' then '🏆 Выбран'/);
+assert.match(nextStatusMigration, /when '🏆 Выбран' then '🎯 Опубликован'/);
+assert.match(nextStatusMigration, /status_row ->> 'status' <> request_row\.current_status/,
+  'подтверждение должно отклонять устаревший запрос после смены статуса');
+assert.match(nextStatusMigration, /'taskPlanSource', 'client'/,
+  'подтверждённая дата должна сохранять источник планирования');
+assert.match(nextStatusMigration, /Клиент выбрал дату следующего этапа/,
+  'владельцу должно приходить уведомление о каждой клиентской дате');
+assert.match(nextStatusMigration, /NEW\.current_status \|\| ' → ' \|\| NEW\.target_status/);
+assert.match(nextStatusMigration, /not coalesce\(\(a\.item ->> 'closed'\)::boolean, false\)/,
+  'закрытая анкета не должна принимать новые даты из веб-кабинета');
+assert.match(nextStatusMigration, /not coalesce\(\(anketa\.item ->> 'closed'\)::boolean, false\)/,
+  'закрытая анкета не должна принимать новые даты из Mini App');
+assert.match(nextStatusMigration, /client_snapshots[\s\S]*raise exception 'STATUS_NOT_AVAILABLE'/,
+  'ранее созданный запрос нельзя подтвердить после закрытия анкеты');
+
+assert.match(clientApp, /function nextStatusTarget\(status\)/);
+assert.match(clientApp, /'💬 Начать диалог': '✅ Обменяться'/);
+assert.match(clientApp, /'✅ Обменяться': '⭐ Выбрать'/);
+assert.match(clientApp, /'⭐ Выбрать': '🏆 Выбран'/);
+assert.match(clientApp, /'🏆 Выбран': '🎯 Опубликован'/);
 assert.match(clientApp, /request_client_publication_date/);
 assert.match(clientApp, /Ожидает подтверждения/);
 assert.match(clientApp, /const isReadyStatus = status => status\.status === STATUS_DONE/);
 assert.match(clientApp, /Опубликовано/);
 assert.match(clientApp, /statusAge\(s\)/);
-assert.match(clientApp, /publicationMinimumDate\(a, status\)/);
+assert.match(clientApp, /nextStatusMinimumDate\(a, status\)/);
 assert.match(clientApp, /data-publication-min/);
 assert.match(clientApp, /data-publication-wait/);
-assert.match(clientApp, /min="\$\{todayISO\(\)\}"/);
+assert.match(clientApp, /min="\$\{escapeAttr\(minimumDate\)\}"/);
 assert.match(clientApp, /Минимальная дата публикации/);
 assert.match(clientApp, /PUBLICATION_TOO_EARLY/);
+assert.match(clientApp, /isCompletedAnketa\(a\) && !isReadyStatus\(status\)/,
+  'в завершённой анкете статусы остаются видны, но дальнейшее планирование блокируется');
+assert.match(clientApp, /Работа по анкете завершена/,
+  'план откликов завершённой анкеты должен быть только для просмотра');
 assert.match(profileHtml, /loadMyPublicationRequests/);
 assert.match(clientApp, /request\.request_status === 'accepted'/);
-assert.match(clientApp, /kind: 'publication'/);
-assert.match(clientApp, /title: 'Запланирована публикация'/);
-assert.match(clientApp, /status\.status !== '🏆 Выбран'/);
+assert.match(clientApp, /kind: 'status-plan'/);
+assert.match(clientApp, /\? 'Запланирована публикация'/);
 assert.match(clientIndex, /loadMyPublicationRequests\(\)/,
   'главный календарь клиента должен загружать подтверждённые публикации');
 assert.match(clientIndex, /renderCalendar\(snap\.payload, outreachSlots, publicationRequests\)/,
@@ -146,6 +177,10 @@ assert.match(tasksHtml, /data-queue-reject/);
 assert.match(tasksHtml, /rpc\/resolve_client_publication_request/);
 assert.doesNotMatch(tasksHtml, /Store\.setProfileStatusTaskDate\(request\.status_id, request\.requested_date\)/);
 assert.match(tasksHtml, /pushClientSnapshots\(Store\.state\)/);
+assert.match(tasksHtml, /task\.planSource === 'client'/,
+  'подтверждённая клиентская дата должна оставаться заметной в календаре');
+assert.match(tasksHtml, /КЛИЕНТ \$\{clientTaskTotal\}/,
+  'в ячейке календаря должна быть явная клиентская метка');
 
 assert.match(telegramPatch, /cpub:c:/);
 assert.match(telegramPatch, /cpub:r:/);

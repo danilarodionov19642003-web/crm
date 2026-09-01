@@ -152,6 +152,8 @@
     return Math.round((to.getTime() - from.getTime()) / 86400000);
   }
   function statusActionTarget(status) {
+    if (status === '💬 Начать диалог') return '✅ Обменяться';
+    if (status === '✅ Обменяться') return STATUS_SELECT;
     if (status === STATUS_SELECT) return STATUS_CHOSEN;
     if (status === STATUS_CHOSEN) return STATUS_READY;
     return '';
@@ -506,9 +508,9 @@
       daysOverdue,
       dueState: daysOverdue > 0 ? 'overdue' : daysOverdue === 0 ? 'today' : 'future',
       mode: storedDate ? (rec.nextActionMode || 'manual') : 'legacy-auto',
-      note: rec.status === STATUS_SELECT
-        ? `Перевести ${STATUS_SELECT} → ${STATUS_CHOSEN}`
-        : `Опубликовать отзыв и перевести ${STATUS_CHOSEN} → ${STATUS_READY}`
+      note: rec.status === STATUS_CHOSEN
+        ? `Опубликовать отзыв и перевести ${STATUS_CHOSEN} → ${STATUS_READY}`
+        : `Перевести ${rec.status} → ${targetStatus}`
     };
   }
 
@@ -1980,6 +1982,7 @@
           nextActionDate: rec.nextActionDate || '',
           nextActionStatus: rec.nextActionStatus || statusActionTarget(rec.status),
           plannedActionDate: rec.plannedActionDate || '',
+          taskPlanSource: rec.taskPlanSource || '',
           performer: rec.performer || '',
           performerRate: rec.performerRate
         });
@@ -2037,12 +2040,16 @@
     _syncProfileStatusAction(rec, options = {}) {
       if (!rec) return;
       const targetStatus = statusActionTarget(rec.status);
-      if (options.clearTaskPlan) delete rec.plannedActionDate;
+      if (options.clearTaskPlan) {
+        delete rec.plannedActionDate;
+        delete rec.taskPlanSource;
+      }
       if (!targetStatus) {
         delete rec.nextActionDate;
         delete rec.nextActionStatus;
         delete rec.nextActionMode;
         delete rec.plannedActionDate;
+        delete rec.taskPlanSource;
         return;
       }
       const hasExplicitDate = options.nextActionDate !== undefined;
@@ -2151,6 +2158,7 @@
       if (!targetStatus) return null;
       rec.plannedActionDate = safeDate;
       rec.taskPlanSchema = 'separate-v1';
+      rec.taskPlanSource = 'staff';
       rec.updatedAt = new Date().toISOString();
       this.save();
       return rec;
@@ -2171,6 +2179,7 @@
         const profile = (this.state.profiles || []).find(item => item.id === rec.profileId);
         if (!mentor || !profile) return null;
         const client = clientForStatusMentor(this.state, rec.mentorId);
+        if (client && client.closed === true) return null;
         const registration = (this.state.accountRegs || []).find(item => item.profileId === rec.profileId);
         return {
           id: `status-action:${rec.id}`,
@@ -2189,6 +2198,7 @@
           dueState: action.dueState,
           actionMode: action.mode,
           plannedDate: String(rec.plannedActionDate || '').slice(0, 10),
+          planSource: String(rec.taskPlanSource || ''),
           manager: String((client && client.manager) || '').trim(),
           accountCode: profile.code || '',
           accountOwner: (registration && registration.ownerName) || ''
