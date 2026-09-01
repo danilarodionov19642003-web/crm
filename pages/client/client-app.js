@@ -88,6 +88,35 @@
       '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
     }[c]));
   }
+  function clientStatusLabel(status) {
+    return ({
+      '📋 Запланировано': 'Отклик запланирован',
+      '💬 Начать диалог': 'Начать диалог',
+      '✅ Обменяться': 'Обменяться контактами',
+      '⭐ Выбрать': 'Выбрать специалиста',
+      '🏆 Выбран': 'Специалист выбран',
+      '🎯 Опубликован': 'Отзыв опубликован'
+    })[String(status || '')] || String(status || '').replace(/^[^А-ЯA-Z0-9]+/i, '').trim();
+  }
+  function clientStatusFlow(status) {
+    const current = clientStatusLabel(status);
+    const targetStatus = nextStatusTarget(status);
+    if (!targetStatus) return `<span class="cli-status-pill">${escapeHtml(current)}</span>`;
+    const target = clientStatusLabel(targetStatus);
+    return `<span class="cli-status-flow" aria-label="Сейчас: ${escapeAttr(current)}. Дальше: ${escapeAttr(target)}">
+      <span class="cli-status-flow__current"><small>Сейчас</small><b>${escapeHtml(current)}</b></span>
+      <i aria-hidden="true">→</i>
+      <span class="cli-status-flow__next"><small>Дальше</small><b>${escapeHtml(target)}</b></span>
+    </span>`;
+  }
+  function nextStatusQuestion(targetStatus) {
+    return ({
+      '✅ Обменяться': 'Когда обменяться контактами?',
+      '⭐ Выбрать': 'Когда перейти к выбору специалиста?',
+      '🏆 Выбран': 'Когда выбрать специалиста?',
+      '🎯 Опубликован': 'Когда опубликовать отзыв?'
+    })[String(targetStatus || '')] || 'Когда перейти к следующему этапу?';
+  }
   function safeProfiAvatarUrl(value) {
     try {
       const url = new URL(String(value || ''));
@@ -1082,11 +1111,100 @@
   }
 
   let outreachPlannerState = null;
+  let outreachCancelResolver = null;
   const inlineOutreachMonths = new Map();
 
   function localISO(date) {
     const pad = value => String(value).padStart(2, '0');
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  }
+
+  function outreachCancellationCopy(scheduledDate, minimumDate = outreachMinimumDate()) {
+    const date = String(scheduledDate || '').slice(0, 10);
+    const minimum = String(minimumDate || '').slice(0, 10);
+    const cannotRestoreDate = /^\d{4}-\d{2}-\d{2}$/.test(date)
+      && /^\d{4}-\d{2}-\d{2}$/.test(minimum)
+      && date < minimum;
+    return {
+      date,
+      dateLabel: fmtDate(date),
+      cannotRestoreDate,
+      title: cannotRestoreDate
+        ? 'Отменить отклик на сегодня?'
+        : 'Отменить запланированный отклик?',
+      message: cannotRestoreDate
+        ? `Вернуть его на сегодняшний день уже не получится: для нового планирования нужен день на закупку и подготовку. После отмены выбрать новую дату можно будет начиная с ${fmtDate(minimum)}.`
+        : 'После отмены эта дата освободится, а отклик вернётся в доступные для планирования. Повторно выбрать эту дату получится только при наличии свободных мест.',
+      confirmLabel: cannotRestoreDate ? 'Всё равно отменить' : 'Отменить отклик'
+    };
+  }
+
+  function ensureOutreachCancelModal() {
+    let modal = document.getElementById('cliOutreachCancelModal');
+    if (modal) return modal;
+    modal = document.createElement('div');
+    modal.className = 'cli-modal cli-outreach-cancel-confirm';
+    modal.id = 'cliOutreachCancelModal';
+    modal.hidden = true;
+    modal.innerHTML = `
+      <div class="cli-modal__backdrop" data-outreach-cancel-close></div>
+      <section class="cli-modal__box cli-outreach-cancel-modal" role="alertdialog" aria-modal="true" aria-labelledby="cliOutreachCancelTitle" aria-describedby="cliOutreachCancelMessage">
+        <button class="cli-modal__x cli-outreach-cancel-modal__x" type="button" data-outreach-cancel-close aria-label="Не отменять">✕</button>
+        <div class="cli-outreach-cancel-modal__body">
+          <span class="cli-outreach-cancel-modal__icon" aria-hidden="true">!</span>
+          <span class="cli-outreach-cancel-modal__date" data-outreach-cancel-date></span>
+          <h3 id="cliOutreachCancelTitle" data-outreach-cancel-title></h3>
+          <p id="cliOutreachCancelMessage" data-outreach-cancel-message></p>
+          <div class="cli-outreach-cancel-modal__actions">
+            <button class="cli-outreach-cancel-modal__keep" type="button" data-outreach-cancel-close>Не отменять</button>
+            <button class="cli-outreach-cancel-modal__danger" type="button" data-outreach-cancel-confirm></button>
+          </div>
+        </div>
+      </section>`;
+    document.body.appendChild(modal);
+    modal.querySelectorAll('[data-outreach-cancel-close]').forEach(button => {
+      button.addEventListener('click', () => closeOutreachCancelModal(false));
+    });
+    modal.querySelector('[data-outreach-cancel-confirm]').addEventListener('click', () => {
+      closeOutreachCancelModal(true);
+    });
+    modal.addEventListener('keydown', event => {
+      if (event.key === 'Escape') closeOutreachCancelModal(false);
+    });
+    return modal;
+  }
+
+  function closeOutreachCancelModal(confirmed) {
+    const modal = document.getElementById('cliOutreachCancelModal');
+    if (modal) modal.hidden = true;
+    if (!document.querySelector('.cli-modal:not([hidden])')) {
+      document.body.classList.remove('cli-modal-open');
+    }
+    const resolve = outreachCancelResolver;
+    outreachCancelResolver = null;
+    if (resolve) resolve(Boolean(confirmed));
+  }
+
+  function confirmOutreachCancellation(slot) {
+    const copy = outreachCancellationCopy(slot && slot.scheduled_date || slot);
+    const modal = ensureOutreachCancelModal();
+    if (outreachCancelResolver) {
+      const previousResolve = outreachCancelResolver;
+      outreachCancelResolver = null;
+      previousResolve(false);
+    }
+    modal.classList.toggle('is-today', copy.cannotRestoreDate);
+    modal.querySelector('[data-outreach-cancel-date]').textContent = copy.dateLabel;
+    modal.querySelector('[data-outreach-cancel-title]').textContent = copy.title;
+    modal.querySelector('[data-outreach-cancel-message]').textContent = copy.message;
+    modal.querySelector('[data-outreach-cancel-confirm]').textContent = copy.confirmLabel;
+    modal.hidden = false;
+    document.body.classList.add('cli-modal-open');
+    window.requestAnimationFrame(() => {
+      const keepButton = modal.querySelector('.cli-outreach-cancel-modal__keep');
+      if (keepButton) keepButton.focus();
+    });
+    return new Promise(resolve => { outreachCancelResolver = resolve; });
   }
 
   function ensureOutreachPlannerModal() {
@@ -1324,6 +1442,7 @@
         const date = button.dataset.outreachInlineDate;
         const ownSlots = ownByDate.get(date) || [];
         const action = ownSlots.length ? 'cancel' : 'add';
+        if (action === 'cancel' && !(await confirmOutreachCancellation(ownSlots[0]))) return;
         const result = host.querySelector('[data-outreach-inline-result]');
         host.querySelectorAll('button').forEach(item => { item.disabled = true; });
         result.className = 'cli-outreach-cal__result is-pending';
@@ -1705,9 +1824,10 @@
       }
       const targetStatus = nextStatusTarget(status.status);
       if (!targetStatus || !status.id) return '<span class="cli-pub-empty">—</span>';
+      const question = nextStatusQuestion(targetStatus);
       const request = requestForStatus(status);
       if (request && request.request_status === 'accepted') {
-        return `<div class="cli-pub-confirmed"><strong>${fmtDate(request.requested_date)}</strong><span>Подтверждено · ${escapeHtml(targetStatus)}</span></div>`;
+        return `<div class="cli-pub-question">${escapeHtml(question)}</div><div class="cli-pub-confirmed"><strong>${fmtDate(request.requested_date)}</strong><span>Дата подтверждена · ${escapeHtml(clientStatusLabel(targetStatus))}</span></div>`;
       }
       const staffPlanDate = status.taskPlanSource !== 'client'
         ? String(status.plannedActionDate || '').slice(0, 10)
@@ -1728,9 +1848,10 @@
                 : '<span class="cli-pub-state" data-publication-result></span>'));
       return `
         <div class="cli-pub-control" data-publication-status="${escapeAttr(status.id)}" data-publication-min="${escapeAttr(minimumDate)}" data-publication-wait="${waitDays}">
+          <div class="cli-pub-question">${escapeHtml(question)}</div>
           <div class="cli-pub-actions">
-            <input type="date" class="cli-pub-date" min="${escapeAttr(minimumDate)}" value="${escapeAttr(value)}" aria-label="Дата перехода в статус ${escapeAttr(targetStatus)}"/>
-            <button type="button" class="cli-pub-submit" data-publication-submit>${value ? 'Изменить' : 'Запланировать'}</button>
+            <input type="date" class="cli-pub-date" min="${escapeAttr(minimumDate)}" value="${escapeAttr(value)}" aria-label="${escapeAttr(question)}"/>
+            <button type="button" class="cli-pub-submit" data-publication-submit>${value ? 'Изменить дату' : 'Запланировать'}</button>
           </div>
           ${waitDays ? `<span class="cli-pub-min">Не раньше ${fmtDate(minimumDate)} · минимум ${waitDays} дн. в статусе</span>` : ''}
           ${state}
@@ -1753,14 +1874,14 @@
         ? String(status.plannedActionDate || '').slice(0, 10)
         : '';
       if (!request && staffPlanDate) {
-        return `<span class="cli-status-mobile__request is-accepted">${fmtDate(staffPlanDate)} · ${escapeHtml(targetStatus)} · назначено менеджером</span>`;
+        return `<span class="cli-status-mobile__request is-accepted">${fmtDate(staffPlanDate)} · ${escapeHtml(clientStatusLabel(targetStatus))} · назначено менеджером</span>`;
       }
-      if (!request) return `<span class="cli-status-mobile__request">Следующий: ${escapeHtml(targetStatus)} · дата не выбрана</span>`;
+      if (!request) return '<span class="cli-status-mobile__request">Дата следующего этапа не выбрана</span>';
       if (request.request_status === 'accepted') {
-        return `<span class="cli-status-mobile__request is-accepted">${fmtDate(request.requested_date)} · ${escapeHtml(targetStatus)}</span>`;
+        return `<span class="cli-status-mobile__request is-accepted">${fmtDate(request.requested_date)} · ${escapeHtml(clientStatusLabel(targetStatus))}</span>`;
       }
       if (request.request_status === 'pending') {
-        return `<span class="cli-status-mobile__request is-pending">${fmtDate(request.requested_date)} · ${escapeHtml(targetStatus)} · на проверке</span>`;
+        return `<span class="cli-status-mobile__request is-pending">${fmtDate(request.requested_date)} · ${escapeHtml(clientStatusLabel(targetStatus))} · на проверке</span>`;
       }
       if (request.request_status === 'rejected') {
         return '<span class="cli-status-mobile__request is-rejected">Выбрать другую дату</span>';
@@ -1771,11 +1892,11 @@
       <h3 class="cli-section-title">Аккаунты в работе</h3>
       <div class="cli-table-wrap">
       <table class="cli-table cli-status-table">
-        <thead><tr><th>Аккаунт</th><th>Статус</th><th>Обновлён</th><th>В статусе</th><th>Следующий этап</th></tr></thead>
+        <thead><tr><th>Аккаунт</th><th>Сейчас → дальше</th><th>Обновлён</th><th>В статусе</th><th>Запланировать дату</th></tr></thead>
         <tbody>${a.statuses.map(s => `
           <tr>
             <td data-label="Аккаунт"><strong>${escapeHtml(s.profileName || '—')}</strong></td>
-            <td data-label="Статус"><span class="cli-status-pill">${escapeHtml(s.status || '')}</span></td>
+            <td data-label="Этапы">${clientStatusFlow(s.status)}</td>
             <td data-label="Обновлён">${fmtDate(s.date)}</td>
             <td data-label="В статусе"><div class="cli-status-age-proof">${statusAge(s)}${accountProofs(s, true)}</div></td>
             <td data-label="Следующий этап">${nextStatusControl(s)}</td>
@@ -1790,7 +1911,7 @@
             <summary class="cli-status-mobile__summary">
               <span class="cli-status-mobile__identity">
                 <strong>${escapeHtml(s.profileName || '—')}</strong>
-                <span class="cli-status-pill">${escapeHtml(s.status || '')}</span>
+                ${clientStatusFlow(s.status)}
               </span>
               <span class="cli-status-mobile__meta">
                 ${statusAge(s)}
@@ -1804,7 +1925,7 @@
                 <strong>${fmtDate(s.date)}</strong>
               </div>
               <div class="cli-status-mobile__publication">
-                <span>Следующий этап</span>
+                <span>Дата следующего этапа</span>
                 ${nextStatusControl(s)}
               </div>
               ${approvedTextPanel(s)}
@@ -1950,7 +2071,7 @@
     root.querySelectorAll('[data-outreach-cancel]').forEach(button => {
       button.addEventListener('click', async () => {
         const slot = slotsById.get(button.dataset.outreachCancel);
-        if (!slot || !confirm(`Отменить отклик на ${fmtDate(slot.scheduled_date)}?`)) return;
+        if (!slot || !(await confirmOutreachCancellation(slot))) return;
         button.disabled = true;
         const response = await manageOutreachSlot('cancel', { slotId: slot.id });
         if (!response.ok) {
@@ -2983,6 +3104,9 @@
     renderAnketas,
     renderCalendar,
     gatherCalendarEvents: _gatherEvents,
+    outreachCancellationCopy,
+    clientStatusLabel,
+    nextStatusQuestion,
     renderProfileDetail,
     loadMyPublicationRequests,
     submitPublicationRequest: submitNextStatusRequest,

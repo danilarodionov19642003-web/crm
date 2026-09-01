@@ -21,6 +21,7 @@
     selectedDate: '',
     month: null,
     busy: false,
+    cancelPromptOpen: false,
     view: initialView,
     flash: ''
   };
@@ -71,6 +72,67 @@
     return Number.isNaN(date.getTime()) ? '—' : dateFmt.format(date);
   }
 
+  function moscowDateAfter(days) {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Europe/Moscow', year: 'numeric', month: '2-digit', day: '2-digit'
+    }).formatToParts(new Date()).reduce((result, part) => {
+      if (part.type !== 'literal') result[part.type] = Number(part.value);
+      return result;
+    }, {});
+    const date = new Date(Date.UTC(parts.year, parts.month - 1, parts.day + Number(days || 0)));
+    return date.toISOString().slice(0, 10);
+  }
+
+  function outreachCancellationCopy(scheduledDate) {
+    const date = String(scheduledDate || '').slice(0, 10);
+    const payloadMinimum = String(state.payload && state.payload.minimum_date || '').slice(0, 10);
+    const liveMinimum = moscowDateAfter(1);
+    const minimum = /^\d{4}-\d{2}-\d{2}$/.test(payloadMinimum) && payloadMinimum > liveMinimum
+      ? payloadMinimum
+      : liveMinimum;
+    const cannotRestoreDate = /^\d{4}-\d{2}-\d{2}$/.test(date)
+      && /^\d{4}-\d{2}-\d{2}$/.test(minimum)
+      && date < minimum;
+    return {
+      title: cannotRestoreDate
+        ? 'Отменить отклик на сегодня?'
+        : 'Отменить запланированный отклик?',
+      message: cannotRestoreDate
+        ? `Вернуть его на сегодняшний день уже не получится: нужен день на закупку и подготовку. Новую дату можно будет выбрать начиная с ${fmtDate(minimum)}.`
+        : `Отклик на ${fmtDate(date)} вернётся в доступные. Повторно выбрать эту дату получится только при наличии свободных мест.`
+    };
+  }
+
+  function confirmOutreachCancellation(scheduledDate) {
+    if (state.cancelPromptOpen) return Promise.resolve(false);
+    const copy = outreachCancellationCopy(scheduledDate);
+    state.cancelPromptOpen = true;
+    if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('warning');
+    if (tg && typeof tg.showPopup === 'function') {
+      return new Promise(resolve => {
+        try {
+          tg.showPopup({
+            title: copy.title,
+            message: copy.message,
+            buttons: [
+              { id: 'keep', type: 'cancel', text: 'Не отменять' },
+              { id: 'cancel', type: 'destructive', text: 'Всё равно отменить' }
+            ]
+          }, buttonId => {
+            state.cancelPromptOpen = false;
+            resolve(buttonId === 'cancel');
+          });
+        } catch (_) {
+          state.cancelPromptOpen = false;
+          resolve(window.confirm(`${copy.title}\n\n${copy.message}`));
+        }
+      });
+    }
+    const confirmed = window.confirm(`${copy.title}\n\n${copy.message}`);
+    state.cancelPromptOpen = false;
+    return Promise.resolve(confirmed);
+  }
+
   function nextStatusTarget(status) {
     return ({
       '💬 Начать диалог': '✅ Обменяться',
@@ -78,6 +140,38 @@
       '⭐ Выбрать': '🏆 Выбран',
       '🏆 Выбран': '🎯 Опубликован'
     })[String(status || '')] || '';
+  }
+
+  function clientStatusLabel(status) {
+    return ({
+      '📋 Запланировано': 'Отклик запланирован',
+      '💬 Начать диалог': 'Начать диалог',
+      '✅ Обменяться': 'Обменяться контактами',
+      '⭐ Выбрать': 'Выбрать специалиста',
+      '🏆 Выбран': 'Специалист выбран',
+      '🎯 Опубликован': 'Отзыв опубликован'
+    })[String(status || '')] || String(status || '').replace(/^[^А-ЯA-Z0-9]+/i, '').trim();
+  }
+
+  function clientStatusFlow(status, extraClass = '') {
+    const current = clientStatusLabel(status);
+    const targetStatus = nextStatusTarget(status);
+    if (!targetStatus) return `<span class="tgapp-stage-final">${escapeHtml(current)}</span>`;
+    const target = clientStatusLabel(targetStatus);
+    return `<span class="tgapp-stage-flow ${escapeHtml(extraClass)}" aria-label="Сейчас: ${escapeHtml(current)}. Дальше: ${escapeHtml(target)}">
+      <span><small>Сейчас</small><b>${escapeHtml(current)}</b></span>
+      <i aria-hidden="true">→</i>
+      <span><small>Дальше</small><b>${escapeHtml(target)}</b></span>
+    </span>`;
+  }
+
+  function nextStatusQuestion(targetStatus) {
+    return ({
+      '✅ Обменяться': 'Когда обменяться контактами?',
+      '⭐ Выбрать': 'Когда перейти к выбору специалиста?',
+      '🏆 Выбран': 'Когда выбрать специалиста?',
+      '🎯 Опубликован': 'Когда опубликовать отзыв?'
+    })[String(targetStatus || '')] || 'Когда перейти к следующему этапу?';
   }
 
   function safeImageUrl(value) {
@@ -298,7 +392,7 @@
     const sourceLabel = plan.source === 'client' ? 'Вы выбрали дату' : 'Назначено менеджером';
     return `<button type="button" class="tgapp-status-plan is-${escapeHtml(plan.source)}" data-open-status-plan="${escapeHtml(plan.profileId || '')}" data-plan-mentor="${escapeHtml(plan.mentorId || '')}">
       <time>${escapeHtml(fmtDate(plan.date))}</time>
-      <span><small>${escapeHtml(String(plan.anketaCode || '').toUpperCase())} · ${escapeHtml(plan.accountName)}</small><strong>${escapeHtml(plan.targetStatus)}</strong><em>${escapeHtml(sourceLabel)}</em></span>
+      <span><small>${escapeHtml(String(plan.anketaCode || '').toUpperCase())} · ${escapeHtml(plan.accountName)}</small><strong>${escapeHtml(clientStatusLabel(plan.targetStatus))}</strong><em>${escapeHtml(sourceLabel)}</em></span>
       <i>›</i>
     </button>`;
   }
@@ -513,11 +607,11 @@
       const needsApproval = pendingApproval && pendingApproval.request_status === 'pending';
       const plan = statusPlan(item, anketa);
       const planLabel = plan
-        ? `<span class="tgapp-status-row__plan is-${escapeHtml(plan.source)}">${escapeHtml(fmtDate(plan.date))} · ${escapeHtml(plan.targetStatus)} · ${plan.source === 'client' ? 'вы выбрали дату' : 'назначено менеджером'}</span>`
+        ? `<span class="tgapp-status-row__plan is-${escapeHtml(plan.source)}">${escapeHtml(fmtDate(plan.date))} · ${escapeHtml(clientStatusLabel(plan.targetStatus))} · ${plan.source === 'client' ? 'вы выбрали дату' : 'назначено менеджером'}</span>`
         : '';
       return `<button type="button" class="tgapp-status-row${needsApproval ? ' is-approval-pending' : ''}" data-open-account="${escapeHtml(item.profile_id || '')}">
       <span class="tgapp-status-row__dot ${statusTone(item.status)}"></span>
-      <div><strong>${escapeHtml(item.profile_name || 'Аккаунт')}</strong><span>${escapeHtml(item.status || '—')}</span>${planLabel}${needsApproval ? '<em>📝 Текст ждёт согласования</em>' : ''}</div>
+      <div><strong>${escapeHtml(item.profile_name || 'Аккаунт')}</strong>${clientStatusFlow(item.status)}${planLabel}${needsApproval ? '<em>📝 Текст ждёт согласования</em>' : ''}</div>
       <span class="tgapp-status-row__side"><time>${escapeHtml(fmtDate(item.date))}</time><i>›</i></span>
     </button>`;
     }).join('');
@@ -612,6 +706,7 @@
     let publicationHtml = '';
     const targetStatus = nextStatusTarget(status.status);
     if (targetStatus) {
+      const question = nextStatusQuestion(targetStatus);
       const accepted = request && request.request_status === 'accepted';
       const value = request && ['pending', 'accepted'].includes(request.request_status)
         ? String(request.requested_date || '').slice(0, 10)
@@ -631,13 +726,14 @@
             : plan && plan.source === 'staff'
               ? `<span class="tgapp-publication-state is-manager">Назначено менеджером</span>` : '';
       publicationHtml = `<section class="tgapp-account-card tgapp-publication">
-        <header><span>Следующий этап · ${escapeHtml(targetStatus)}</span>${publicationState}</header>
+        <header><span>${escapeHtml(question)}</span>${publicationState}</header>
+        ${clientStatusFlow(status.status, 'is-publication')}
         <p>${targetStatus === '🎯 Опубликован'
           ? 'Выберите удобный день, когда будете готовы опубликовать согласованный отзыв.'
-          : `Выберите день, когда аккаунт должен перейти в статус «${escapeHtml(targetStatus)}».`}</p>
+          : 'Выберите удобный день для перехода к следующему этапу.'}</p>
         <div class="tgapp-publication__control">
           <input type="date" min="${escapeHtml(minimum)}" value="${escapeHtml(value)}" data-publication-date${accepted ? ' disabled' : ''}/>
-          <button type="button" data-save-publication${accepted ? ' disabled' : ''}>${value ? 'Изменить' : 'Запланировать'}</button>
+          <button type="button" data-save-publication${accepted ? ' disabled' : ''}>${value ? 'Изменить дату' : 'Запланировать'}</button>
         </div>
         ${waitDays ? `<small>Не раньше ${escapeHtml(fmtDate(minimum))}, минимум ${waitDays} дн. в статусе «Выбран».</small>` : ''}
         <div class="tgapp-account-result" data-publication-result></div>
@@ -651,7 +747,7 @@
       <button type="button" class="tgapp-back" data-back-anketa>‹ <span>К анкете ${escapeHtml(String(anketa.code || '').toUpperCase())}</span></button>
       <section class="tgapp-account-hero">
         <span class="tgapp-status-row__dot ${statusTone(status.status)}"></span>
-        <div><small>${escapeHtml(String(anketa.code || '').toUpperCase())} · аккаунт</small><h1>${escapeHtml(status.profile_name || 'Аккаунт')}</h1><span>${escapeHtml(status.status || '—')} · обновлён ${escapeHtml(fmtDate(status.date))}</span></div>
+        <div><small>${escapeHtml(String(anketa.code || '').toUpperCase())} · аккаунт</small><h1>${escapeHtml(status.profile_name || 'Аккаунт')}</h1><div class="tgapp-account-hero__stage">${clientStatusFlow(status.status)}<time>Обновлён ${escapeHtml(fmtDate(status.date))}</time></div></div>
       </section>
       ${approvalHtml}
       ${publicationHtml}
@@ -810,7 +906,7 @@
     const canAdd = Number(anketa.available_to_add) > 0;
     const slots = (anketa.slots || []).map(slot => `<div class="tgcal-slot">
       <span><i>✓</i><div><small>Запланировано</small><strong>${escapeHtml(fmtDate(slot.scheduled_date))}</strong></div></span>
-      <button type="button" data-cancel-slot="${Number(slot.id)}">Отменить</button>
+      <button type="button" data-cancel-slot="${Number(slot.id)}" data-cancel-date="${escapeHtml(String(slot.scheduled_date || '').slice(0, 10))}">Отменить</button>
     </div>`).join('');
     renderShell(`
       <header class="tgcal-head"><span>Планирование</span><h1>Календарь откликов</h1><p>Начать можно со следующего дня, если есть свободные места.</p></header>
@@ -885,8 +981,8 @@
     });
     const submit = root.querySelector('[data-submit]');
     submit.addEventListener('click', () => manage('add', null, state.selectedDate, submit));
-    root.querySelectorAll('[data-cancel-slot]').forEach(button => button.addEventListener('click', () => {
-      if (window.confirm('Отменить этот запланированный отклик?')) {
+    root.querySelectorAll('[data-cancel-slot]').forEach(button => button.addEventListener('click', async () => {
+      if (await confirmOutreachCancellation(button.dataset.cancelDate)) {
         manage('cancel', Number(button.dataset.cancelSlot), null, button);
       }
     }));

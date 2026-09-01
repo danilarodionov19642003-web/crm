@@ -195,6 +195,26 @@ button { -webkit-tap-highlight-color: transparent; }
 .tgapp-status-row__side { display: flex; align-items: center; gap: 7px; }
 .tgapp-status-row time { color: var(--mute); font-size: 8px; }
 .tgapp-status-row__side i { color: #65656a; font-size: 20px; font-style: normal; }
+.tgapp-stage-flow {
+  display: grid; grid-template-columns: minmax(0,1fr) auto minmax(0,1fr);
+  align-items: center; gap: 4px; width: min(100%, 280px); margin-top: 5px;
+}
+.tgapp-status-row div > .tgapp-stage-flow,
+.tgapp-account-hero__stage > .tgapp-stage-flow,
+.tgapp-publication > .tgapp-stage-flow {
+  display: grid; overflow: visible; text-overflow: clip; white-space: normal;
+}
+.tgapp-stage-flow > span {
+  display: grid !important; gap: 1px; min-width: 0; margin: 0 !important; padding: 4px 5px;
+  border-radius: 7px; background: rgba(127,127,127,.10);
+  overflow: visible !important; text-overflow: clip !important; white-space: normal !important;
+}
+.tgapp-stage-flow > span:last-child { border: 1px solid rgba(255,122,0,.24); background: rgba(255,122,0,.08); }
+.tgapp-stage-flow small { color: var(--mute); font-size: 5.8px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.tgapp-stage-flow b { color: #d7d7d9; font-size: 7.5px; line-height: 1.2; }
+.tgapp-stage-flow > span:last-child b { color: var(--accent); }
+.tgapp-stage-flow > i { color: var(--mute); font-size: 11px; font-style: normal; }
+.tgapp-stage-final { display: inline-flex !important; width: max-content; max-width: 100%; margin-top: 4px; padding: 4px 7px; border-radius: 7px; background: rgba(34,197,94,.1); color: var(--green) !important; font-size: 8px !important; }
 .tgapp-review { padding: 12px; border: 1px solid rgba(34,197,94,.2); border-radius: 13px; background: linear-gradient(145deg, rgba(34,197,94,.06), var(--card)); }
 .tgapp-review header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .tgapp-review header b { color: var(--green); font-size: 10px; }
@@ -213,6 +233,9 @@ button { -webkit-tap-highlight-color: transparent; }
 .tgapp-account-hero small { color: var(--accent); font-size: 9px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
 .tgapp-account-hero h1 { margin: 5px 0 4px; overflow: hidden; font-size: 19px; text-overflow: ellipsis; white-space: nowrap; }
 .tgapp-account-hero div > span { color: var(--mute); font-size: 10px; }
+.tgapp-account-hero__stage { display: grid; gap: 5px; }
+.tgapp-account-hero__stage .tgapp-stage-flow { width: min(100%, 310px); }
+.tgapp-account-hero__stage time { color: var(--mute); font-size: 7.5px; }
 .tgapp-account-card {
   margin-bottom: 10px; padding: 13px; border: 1px solid var(--border); border-radius: 15px;
   background: var(--card); box-shadow: 0 8px 22px rgba(0,0,0,.16);
@@ -249,6 +272,8 @@ button { -webkit-tap-highlight-color: transparent; }
 .tgapp-publication.is-complete { border-color: rgba(34,197,94,.22); background: linear-gradient(145deg, rgba(34,197,94,.06), var(--card)); }
 .tgapp-publication.is-complete header b { color: var(--green); }
 .tgapp-publication.is-locked header b { color: var(--mute); }
+.tgapp-publication .tgapp-stage-flow.is-publication { width: 100%; margin-top: 10px; }
+.tgapp-publication .tgapp-stage-flow.is-publication b { font-size: 8.5px; }
 .tgapp-publication__control { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 7px; margin-top: 10px; }
 .tgapp-publication__control input {
   width: 100%; min-width: 0; min-height: 39px; box-sizing: border-box; padding: 0 8px;

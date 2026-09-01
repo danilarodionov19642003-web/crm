@@ -237,6 +237,14 @@ assert.match(clientApp, /data-outreach-move/);
 assert.match(clientApp, /data-outreach-cancel/);
 assert.match(clientApp, /data-outreach-inline-date/);
 assert.match(clientApp, /ownSlots\.length \? 'cancel' : 'add'/);
+assert.match(clientApp, /const action = ownSlots\.length \? 'cancel' : 'add';[\s\S]{0,220}if \(action === 'cancel' && !\(await confirmOutreachCancellation\(ownSlots\[0\]\)\)\) return;[\s\S]{0,520}manageOutreachSlot\(action/,
+  'клик по своему дню должен спрашивать подтверждение до отмены');
+assert.match(clientApp, /const slot = slotsById\.get\(button\.dataset\.outreachCancel\);[\s\S]{0,140}await confirmOutreachCancellation\(slot\)[\s\S]{0,220}manageOutreachSlot\('cancel'/,
+  'кнопка отмены в списке должна использовать то же предупреждение');
+assert.match(clientApp, /id = 'cliOutreachCancelModal'/);
+assert.match(clientApp, /Вернуть его на сегодняшний день уже не получится/);
+assert.match(clientApp, /день на закупку и подготовку/);
+assert.match(clientApp, /data-outreach-cancel-confirm/);
 assert.match(clientApp, /acceptedPublicationDates\(meta\.anketa, context\.publicationRequests\)/,
   'календарь внутри анкеты должен учитывать подтверждённые публикации');
 assert.match(clientApp, /eventLabels\.join\('<br>'\)/,

@@ -119,3 +119,29 @@ test('closed anketa keeps plan data but does not create an actionable calendar e
   ).filter(event => event.kind === 'status-plan');
   assert.equal(events.length, 0);
 });
+
+test('same-day outreach cancellation warns that the date cannot be restored', () => {
+  const copy = context.window.ClientApp.outreachCancellationCopy('2026-09-01', '2026-09-02');
+  assert.equal(copy.cannotRestoreDate, true);
+  assert.equal(copy.title, 'Отменить отклик на сегодня?');
+  assert.match(copy.message, /Вернуть его на сегодняшний день уже не получится/);
+  assert.match(copy.message, /день на закупку и подготовку/);
+  assert.match(copy.message, /02\.09\.2026/);
+  assert.equal(copy.confirmLabel, 'Всё равно отменить');
+});
+
+test('future outreach cancellation keeps a softer availability warning', () => {
+  const copy = context.window.ClientApp.outreachCancellationCopy('2026-09-05', '2026-09-02');
+  assert.equal(copy.cannotRestoreDate, false);
+  assert.equal(copy.title, 'Отменить запланированный отклик?');
+  assert.match(copy.message, /только при наличии свободных мест/);
+  assert.equal(copy.confirmLabel, 'Отменить отклик');
+});
+
+test('client-facing workflow labels explain the current and next action', () => {
+  assert.equal(context.window.ClientApp.clientStatusLabel('⭐ Выбрать'), 'Выбрать специалиста');
+  assert.equal(context.window.ClientApp.clientStatusLabel('🏆 Выбран'), 'Специалист выбран');
+  assert.equal(context.window.ClientApp.clientStatusLabel('🎯 Опубликован'), 'Отзыв опубликован');
+  assert.equal(context.window.ClientApp.nextStatusQuestion('🏆 Выбран'), 'Когда выбрать специалиста?');
+  assert.equal(context.window.ClientApp.nextStatusQuestion('🎯 Опубликован'), 'Когда опубликовать отзыв?');
+});

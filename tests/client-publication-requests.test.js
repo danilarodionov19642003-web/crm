@@ -150,6 +150,13 @@ assert.match(clientApp, /'💬 Начать диалог': '✅ Обменять
 assert.match(clientApp, /'✅ Обменяться': '⭐ Выбрать'/);
 assert.match(clientApp, /'⭐ Выбрать': '🏆 Выбран'/);
 assert.match(clientApp, /'🏆 Выбран': '🎯 Опубликован'/);
+assert.match(clientApp, /function clientStatusFlow\(status\)/);
+assert.match(clientApp, /'⭐ Выбрать': 'Выбрать специалиста'/);
+assert.match(clientApp, /'🏆 Выбран': 'Специалист выбран'/);
+assert.match(clientApp, /'🎯 Опубликован': 'Отзыв опубликован'/);
+assert.match(clientApp, /Когда опубликовать отзыв\?/);
+assert.match(clientApp, /Сейчас → дальше/,
+  'клиент должен видеть текущий и следующий этап одной цепочкой');
 assert.match(clientApp, /request_client_publication_date/);
 assert.match(clientApp, /Ожидает подтверждения/);
 assert.match(clientApp, /const isReadyStatus = status => status\.status === STATUS_DONE/);

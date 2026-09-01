@@ -31,8 +31,8 @@ test('Telegram direct menu keeps its bearer credential out of HTTP requests', ()
   assert.match(js, /fragmentParams/);
   assert.match(js, /location\.hash/);
   assert.match(js, /fragmentParams\.get\('token'\)/);
-  assert.match(html, /telegram-calendar\.js\?v=20260901b/);
-  assert.match(html, /telegram-calendar\.css\?v=20260901b/);
+  assert.match(html, /telegram-calendar\.js\?v=20260901c/);
+  assert.match(html, /telegram-calendar\.css\?v=20260901c/);
 });
 
 test('Telegram calendar reads capacity and schedules through bounded RPCs', () => {
@@ -44,6 +44,22 @@ test('Telegram calendar reads capacity and schedules through bounded RPCs', () =
   assert.match(js, /get_client_telegram_calendar/);
   assert.match(js, /manage_client_telegram_outreach_slot/);
   assert.match(js, /data-cancel-slot/);
+});
+
+test('Mini App requires an explicit destructive confirmation before cancellation', () => {
+  assert.match(js, /function confirmOutreachCancellation\(scheduledDate\)/);
+  assert.match(js, /state\.payload && state\.payload\.minimum_date/,
+    'необратимость сегодняшней отмены должна считаться по серверной минимальной дате');
+  assert.match(js, /function moscowDateAfter\(days\)/,
+    'долго открытая Mini App должна пересчитывать минимальную дату после полуночи по Москве');
+  assert.match(js, /payloadMinimum > liveMinimum/);
+  assert.match(js, /Вернуть его на сегодняшний день уже не получится/);
+  assert.match(js, /день на закупку и подготовку/);
+  assert.match(js, /tg\.showPopup/);
+  assert.match(js, /type: 'destructive'/);
+  assert.match(js, /data-cancel-date/);
+  assert.match(js, /if \(await confirmOutreachCancellation\(button\.dataset\.cancelDate\)\)[\s\S]{0,120}manage\('cancel'/,
+    'RPC отмены должен вызываться только после явного подтверждения');
 });
 
 test('Mini App renders a compact mobile calendar and initializes Telegram WebApp', () => {
@@ -101,6 +117,12 @@ test('Mini App opens an account with its review text and next-status date contro
   assert.match(js, /'✅ Обменяться': '⭐ Выбрать'/);
   assert.match(js, /'⭐ Выбрать': '🏆 Выбран'/);
   assert.match(js, /'🏆 Выбран': '🎯 Опубликован'/);
+  assert.match(js, /function clientStatusFlow\(status, extraClass = ''\)/);
+  assert.match(js, /'⭐ Выбрать': 'Выбрать специалиста'/);
+  assert.match(js, /'🏆 Выбран': 'Специалист выбран'/);
+  assert.match(js, /'🎯 Опубликован': 'Отзыв опубликован'/);
+  assert.match(js, /Когда опубликовать отзыв\?/);
+  assert.match(css, /\.tgapp-stage-flow/);
   assert.match(js, /state\.payload\.business_today/);
   assert.match(nextStatusSql, /request_client_telegram_publication_date/);
   assert.match(nextStatusSql, /current_status, target_status/);
