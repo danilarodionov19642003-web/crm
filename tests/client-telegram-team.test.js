@@ -134,8 +134,8 @@ test('review-linked approval is idempotent and survives a missing Telegram conta
 
 test('review text can be sent before Ready and Ready remains the publication marker', () => {
   assert.match(statusesHtml, /client-text-approvals\.js/);
-  assert.match(statusesHtml, /client-text-approvals\.js\?v=20260829a/);
-  assert.match(reviewsHtml, /client-text-approvals\.js\?v=20260826b/);
+  assert.match(statusesHtml, /client-text-approvals\.js\?v=20260902a/);
+  assert.match(reviewsHtml, /client-text-approvals\.js\?v=20260902a/);
   assert.equal((statusesHtml.match(/ClientTextApprovals\.sendReview\(Store, review\)/g) || []).length, 1,
     'единая фоновая отправка должна обслуживать оба сценария сохранения');
   assert.match(statusesHtml, /id="addReviewPreapproved"/);

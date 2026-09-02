@@ -6,7 +6,7 @@
   if (!SB) return;
 
   const RPC_TIMEOUT_MS = 12_000;
-  const REQUEST_SELECT = 'id,portal_email,mentor_id,anketa_code,anketa_name,title,body,request_status,delivered_to_member_id,delivered_to_telegram_user_id,created_at,updated_at,resolved_at,resolved_by_label,resolution_comment,source_review_id,source_profile_id,source_revision';
+  const REQUEST_SELECT = 'id,portal_email,mentor_id,anketa_code,anketa_name,title,body,client_replacement_body,request_status,delivered_to_member_id,delivered_to_telegram_user_id,created_at,updated_at,resolved_at,resolved_by_label,resolution_comment,source_review_id,source_profile_id,source_revision';
 
   async function rpc(name, body = {}) {
     const controller = new AbortController();
@@ -201,7 +201,11 @@
   function statusMeta(row) {
     if (!row) return { key: 'missing', label: 'Не отправлен клиенту', cls: 'is-missing' };
     if (row.request_status === 'approved') {
-      return { key: 'approved', label: 'Клиент согласовал', cls: 'is-approved' };
+      return {
+        key: 'approved',
+        label: row.client_replacement_body ? 'Клиент прислал свой текст' : 'Клиент согласовал',
+        cls: 'is-approved'
+      };
     }
     if (row.request_status === 'changes_requested') {
       return { key: 'changes_requested', label: 'Клиент отклонил', cls: 'is-changes' };

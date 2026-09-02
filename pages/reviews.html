@@ -78,12 +78,12 @@
   </div>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260901b"></script>
+  <script src="../js/app.js?v=20260902a"></script>
   <script src="../js/supabase-client.js?v=20260820d"></script>
   <script src="../js/auth-gate.js?v=20260726a"></script>
   <script src="../js/cloud-sync.js?v=20260820d"></script>
   <script src="../js/reviews-sync.js?v=20260717a"></script>
-  <script src="../js/client-text-approvals.js?v=20260826b"></script>
+  <script src="../js/client-text-approvals.js?v=20260902a"></script>
   <script src="../components/sidebar.js?v=20260820b"></script>
   <script src="../components/header.js"></script>
 
@@ -273,6 +273,9 @@
           : review.clientApprovalLastError
             ? 'Отправка не завершена. Текст сохранён в CRM.'
             : '';
+      const replacement = row && row.client_replacement_body
+        ? `<div class="rv-client-approval__comment" style="border-left-color:var(--green)"><strong>Вариант клиента:</strong><br>${escapeHtml(row.client_replacement_body)}</div>`
+        : '';
       const comment = row && row.resolution_comment
         ? `<div class="rv-client-approval__comment"><strong>Комментарий клиента:</strong><br>${escapeHtml(row.resolution_comment)}</div>`
         : '';
@@ -282,7 +285,7 @@
           <span class="rv-client-approval__status ${meta.cls}">${escapeHtml(meta.label)}</span>
         </div>
         ${detail ? `<div class="rv-client-approval__meta">${detail}</div>` : ''}
-        ${comment}
+        ${replacement}${comment}
       </div>`;
     }
 
@@ -363,6 +366,7 @@
             <button class="btn btn--ghost btn--sm" data-act="del"    data-id="${r.id}" style="color:var(--red)">🗑 Удалить</button>
           </div>` : '';
         const approval = approvalByReview.get(String(r.id));
+        const visibleText = String(approval && approval.client_replacement_body || r.text || '');
         const approvalMeta = window.ClientTextApprovals
           ? window.ClientTextApprovals.statusMeta(approval)
           : { key: 'missing' };
@@ -384,7 +388,7 @@
               <div style="flex:1"></div>
               ${moderationBadge(r, published)}
             </div>
-            <div class="rv-text">${escapeHtml(r.text || '')}</div>
+            <div class="rv-text">${escapeHtml(visibleText)}</div>
             ${clientApprovalHtml(r)}
             <div class="rv-meta">
               <span>👤 ${escapeHtml(r.authorEmail || '—')}</span>

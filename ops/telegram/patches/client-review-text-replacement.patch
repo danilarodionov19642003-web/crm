@@ -1,0 +1,104 @@
+--- a/backend/bot.py
++++ b/backend/bot.py
+@@ -953 +953 @@
+-    awaiting_comment = State()
++    awaiting_replacement = State()
+@@ -1870,4 +1870,7 @@
+-    return InlineKeyboardMarkup(inline_keyboard=[[
+-        InlineKeyboardButton(text="✅ Подтвердить", callback_data=f"ctxt:a:{request_id}"),
+-        InlineKeyboardButton(text="❌ Отклонить", callback_data=f"ctxt:c:{request_id}"),
+-    ]])
++    return InlineKeyboardMarkup(inline_keyboard=[
++        [InlineKeyboardButton(text="✅ Подтвердить", callback_data=f"ctxt:a:{request_id}")],
++        [InlineKeyboardButton(
++            text="✍️ Нет, пришлю свой вариант",
++            callback_data=f"ctxt:r:{request_id}",
++        )],
++    ])
+@@ -1921,24 +1924 @@
+-        await cb.answer("Ввод правок отменён")
+-        return
+-
+-    if parts[1] == "c":
+-        result = await crm_client.resolve_client_text_approval(
+-            request_id=request_id,
+-            decision="changes_requested",
+-            telegram_user_id=cb.from_user.id,
+-            telegram_chat_id=cb.message.chat.id,
+-            comment="Клиент отклонил текст в Telegram",
+-        )
+-        if not result.get("ok"):
+-            reason = str(result.get("reason") or "")
+-            message = ("Этот запрос уже обработан."
+-                       if "ALREADY_RESOLVED" in reason
+-                       else "Отклонить может только назначенный контакт.")
+-            await cb.answer(message, show_alert=True)
+-            return
+-        await state.clear()
+-        await _finish_text_approval_message(
+-            bot, cb.message.chat.id, cb.message.message_id,
+-            original_html, "❌ <b>Текст отклонён</b>",
+-        )
+-        await cb.answer("Текст отклонён")
++        await cb.answer("Ввод текста отменён")
+@@ -1947,2 +1927,4 @@
+-    if parts[1] == "r":
+-        await state.set_state(TextApprovalFSM.awaiting_comment)
++    # `c` remains a backward-compatible alias for approval messages that were
++    # sent before the new replacement button was deployed.
++    if parts[1] in ("r", "c"):
++        await state.set_state(TextApprovalFSM.awaiting_replacement)
+@@ -1957 +1939 @@
+-                    text="Отменить ввод правок",
++                    text="Отменить ввод текста",
+@@ -1963 +1945,4 @@
+-        await cb.message.answer("Напишите одним сообщением, что нужно изменить в тексте.")
++        await cb.message.answer(
++            "Пришлите одним сообщением полный вариант отзыва. "
++            "Он заменит предложенный текст и сразу будет отмечен как согласованный."
++        )
+@@ -1988,5 +1973,5 @@
+-@dp.message(TextApprovalFSM.awaiting_comment)
+-async def on_client_text_approval_comment(m: Message, bot: Bot, state: FSMContext) -> None:
+-    comment = (m.text or m.caption or "").strip()
+-    if not comment:
+-        await m.answer("Напишите правки текстом одним сообщением.")
++@dp.message(TextApprovalFSM.awaiting_replacement)
++async def on_client_text_approval_replacement(m: Message, bot: Bot, state: FSMContext) -> None:
++    replacement = (m.text or m.caption or "").strip()
++    if not replacement:
++        await m.answer("Пришлите полный текст отзыва одним сообщением.")
+@@ -1994,2 +1979,2 @@
+-    if len(comment) > 1500:
+-        await m.answer("Комментарий слишком длинный. Сократите его до 1500 символов.")
++    if len(replacement) > 3000:
++        await m.answer("Текст слишком длинный. Сократите его до 3000 символов.")
+@@ -2007 +1992 @@
+-        decision="changes_requested",
++        decision="replacement",
+@@ -2010 +1995 @@
+-        comment=comment,
++        comment=replacement,
+@@ -2016 +2001 @@
+-                       else "Отправить правки может только назначенный контакт.")
++                       else "Прислать свой текст может только назначенный контакт.")
+@@ -2026 +2011 @@
+-            "✏️ <b>Правки отправлены менеджеру</b>",
++            "✅ <b>Ваш вариант принят и согласован</b>",
+@@ -2028 +2013 @@
+-    await m.answer("✅ Комментарий с правками отправлен менеджеру.")
++    await m.answer("✅ Ваш вариант сохранён как согласованный текст отзыва.")
+--- a/backend/notifier.py
++++ b/backend/notifier.py
+@@ -359,4 +359,7 @@
+-        reply_markup = {"inline_keyboard": [[
+-            {"text": "✅ Подтвердить", "callback_data": f"ctxt:a:{request_id}"},
+-            {"text": "❌ Отклонить", "callback_data": f"ctxt:c:{request_id}"},
+-        ]]}
++        reply_markup = {"inline_keyboard": [
++            [{"text": "✅ Подтвердить", "callback_data": f"ctxt:a:{request_id}"}],
++            [{
++                "text": "✍️ Нет, пришлю свой вариант",
++                "callback_data": f"ctxt:r:{request_id}",
++            }],
++        ]}

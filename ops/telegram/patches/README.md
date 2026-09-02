@@ -83,8 +83,15 @@ Apply it after `client-notification-copy.patch` and the
 `client-schedule-onboarding-reminder.patch` sends a one-time onboarding
 reminder immediately after a client redeems a personal Telegram link. It tells
 the client that manager-entered dates are preliminary and asks them to review
-every active anketa in the persistent `Кабинет` Mini App. Apply it last, after
+every active anketa in the persistent `Кабинет` Mini App. Apply it after
 `client-text-approval-message-cleanup.patch`.
+
+`client-review-text-replacement.patch` changes the negative review-text action
+to `Нет, пришлю свой вариант`. The next free-form Telegram message becomes the
+complete canonical review text and is accepted through the atomic replacement
+RPC. Legacy `ctxt:c:` buttons enter the same replacement flow. Apply it after
+`client-schedule-onboarding-reminder.patch` and the
+`2026-09-02_client_review_text_replacement.sql` migration.
 
 Apply from the bot repository root with zero-context support:
 

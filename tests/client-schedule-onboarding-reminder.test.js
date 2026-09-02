@@ -55,11 +55,12 @@ test('newly linked clients receive one schedule onboarding reminder', () => {
   assert.doesNotMatch(patch, /crm_state|notification_outbox|send_my_schedule/);
 });
 
-test('schedule reminder remains the last maintained bot patch', () => {
+test('schedule reminder stays after cleanup and before text replacement', () => {
   const cleanupIndex = readme.indexOf('`client-text-approval-message-cleanup.patch` records');
   const reminderIndex = readme.indexOf('`client-schedule-onboarding-reminder.patch` sends');
-  assert.ok(cleanupIndex >= 0 && reminderIndex > cleanupIndex);
-  assert.match(readme, /Apply it last, after\s+`client-text-approval-message-cleanup\.patch`/);
+  const replacementIndex = readme.indexOf('`client-review-text-replacement.patch` changes');
+  assert.ok(cleanupIndex >= 0 && reminderIndex > cleanupIndex && replacementIndex > reminderIndex);
+  assert.match(readme, /Apply it after\s+`client-text-approval-message-cleanup\.patch`/);
 });
 
 test('schedule onboarding patch has valid unified-diff hunk lengths', () => {

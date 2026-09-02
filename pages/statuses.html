@@ -670,13 +670,13 @@
   </style>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260901b"></script>
+  <script src="../js/app.js?v=20260902a"></script>
   <script src="../js/supabase-client.js?v=20260820d"></script>
   <script src="../js/auth-gate.js?v=20260726a"></script>
   <script src="../js/cloud-sync.js?v=20260820d"></script>
   <script src="../js/accounts-sync.js"></script>
   <script src="../js/reviews-sync.js?v=20260717a"></script>
-  <script src="../js/client-text-approvals.js?v=20260829a"></script>
+  <script src="../js/client-text-approvals.js?v=20260902a"></script>
   <script src="../components/sidebar.js?v=20260820b"></script>
   <script src="../components/header.js"></script>
   <script src="../components/table.js"></script>
@@ -1536,6 +1536,15 @@
       ) || null;
     }
 
+    function currentReviewApproval(review) {
+      return review ? (approvalByReview.get(String(review.id || '')) || null) : null;
+    }
+
+    function canonicalReviewText(review) {
+      const approval = currentReviewApproval(review);
+      return String((approval && approval.client_replacement_body) || (review && review.text) || '').trim();
+    }
+
     function renderChangeStatusReview() {
       const existing = currentChangeStatusReview();
       const wrap = document.getElementById('chgReviewWrap');
@@ -1552,6 +1561,11 @@
       const mod = existing.moderation;
       const approvalKey = String(existing.id || '');
       const approval = approvalByReview.get(approvalKey) || null;
+      const canonicalText = canonicalReviewText(existing);
+      const previousInput = existingBox.querySelector('#chgExistingReviewText');
+      const visibleText = previousInput && document.activeElement === previousInput
+        ? previousInput.value
+        : canonicalText;
       let badgeText = '';
       let badgeClass = '';
 
@@ -1591,9 +1605,17 @@
       const approvalComment = !published && approval && approval.resolution_comment
         ? `<div style="font-size:12px;color:var(--text-dim);margin-top:6px"><b>Комментарий клиента:</b> ${escapeHtml(approval.resolution_comment)}</div>`
         : '';
+      const replacementNote = approval && approval.client_replacement_body
+        ? '<div style="font-size:11px;color:var(--green);margin-top:6px">Клиент прислал этот вариант сообщением в Telegram. Он уже считается согласованным.</div>'
+        : '';
       const copyButton = clientApprovedReview(existing)
         ? '<button type="button" class="btn btn--ghost chg-review-copy" data-copy-review-text>Копировать текст</button>'
         : '';
+      const outsideApproval = !published ? `
+        <label style="display:flex;align-items:flex-start;gap:9px;margin-top:9px;cursor:pointer;font-size:12px;color:var(--text-dim);font-weight:500">
+          <input type="checkbox" id="chgExistingReviewPreapproved" style="margin-top:2px;accent-color:var(--green)">
+          <span><b style="color:var(--text)">Изменённый текст уже согласован вне кабинета</b><br><span style="font-size:11px;color:var(--text-mute)">Сохранить без повторной отправки клиенту.</span></span>
+        </label>` : '<div style="font-size:11px;color:var(--text-mute);margin-top:6px">Можно исправить текст, если фактически опубликован другой вариант.</div>';
 
       wrap.style.display = 'none';
       existingBox.style.display = 'block';
@@ -1602,12 +1624,14 @@
           <label style="font-size:12px;color:var(--text-dim);font-weight:500">${published ? 'Опубликованный отзыв' : 'Текст на согласование'} · <span class="chg-approval-badge ${badgeClass}">${escapeHtml(badgeText)}</span></label>
           ${copyButton}
         </div>
-        <div class="input" style="min-height:90px;white-space:pre-wrap;font-family:inherit;background:rgba(255,255,255,0.02);margin-top:6px">${escapeHtml(existing.text || '')}</div>
+        <textarea id="chgExistingReviewText" class="input" rows="7" style="resize:vertical;min-height:110px;font-family:inherit;margin-top:6px">${escapeHtml(visibleText)}</textarea>
+        ${outsideApproval}
         <div style="font-size:11px;color:var(--text-mute);margin-top:4px">${published ? 'Опубликован' : 'Создан'}: ${escapeHtml(fmtDate(existing.publishedAt || existing.draftCreatedAt || existing.submittedAt))}${existing.moderatedAt ? ' · Проверен: ' + escapeHtml(fmtDate(existing.moderatedAt)) : ''}${approvalDetail}</div>
+        ${replacementNote}
         ${approvalComment}
       `;
       const copy = existingBox.querySelector('[data-copy-review-text]');
-      if (copy) copy.addEventListener('click', () => copyReviewText(existing.text));
+      if (copy) copy.addEventListener('click', () => copyReviewText(document.getElementById('chgExistingReviewText').value));
     }
 
     async function refreshChangeStatusApproval(review) {
@@ -1688,6 +1712,18 @@
       const existingReview = (Store.state.reviews || []).find(r => r.mentorId === chgMid && r.profileId === chgPid);
       const newReviewText = existingReview ? '' : document.getElementById('chgReviewText').value.trim();
       const reviewPreapproved = !existingReview && document.getElementById('chgReviewPreapproved').checked;
+      const existingCanonicalText = existingReview ? canonicalReviewText(existingReview) : '';
+      const existingTextInput = existingReview ? document.getElementById('chgExistingReviewText') : null;
+      const editedExistingText = existingTextInput ? existingTextInput.value.trim() : '';
+      const existingTextChanged = Boolean(existingReview && editedExistingText !== existingCanonicalText);
+      const existingPreapprovedInput = existingReview
+        ? document.getElementById('chgExistingReviewPreapproved')
+        : null;
+      const existingTextPreapproved = Boolean(existingPreapprovedInput && existingPreapprovedInput.checked);
+      if (existingReview && !editedExistingText) {
+        toast('Текст отзыва не может быть пустым', 'error');
+        return;
+      }
       if (newStatus === DONE_STATUS && !existingReview) {
         toast('Сначала оставь текущий статус и отправь текст клиенту на согласование. После публикации переведи аккаунт в «Опубликован».', 'error');
         return;
@@ -1705,6 +1741,20 @@
           : 'Снять статус «Опубликован»? Связанный отзыв на модерации удалится.';
         if (!confirmDelete(msg)) return;
       }
+      const editBecomesPublished = existingTextChanged && (wasDone || newStatus === DONE_STATUS);
+      const editNeedsApprovalReset = existingTextChanged && !editBecomesPublished
+        && existingReview.clientApprovalRequired;
+      if (editNeedsApprovalReset) {
+        if (!window.ClientTextApprovals) {
+          toast('Модуль согласования не загрузился. Обновите страницу и повторите.', 'error');
+          return;
+        }
+        const cancellation = await window.ClientTextApprovals.cancelReview(existingReview.id);
+        if (!cancellation.ok) {
+          toast(cancellation.message, 'error');
+          return;
+        }
+      }
       // Если статус не поменялся — обновляем только исполнителя и/или срок
       // следующего действия, без новой записи в истории.
       // Иначе — полноценная смена статуса (запишет историю).
@@ -1717,6 +1767,25 @@
         Store.deleteReviewsForPair(chgPid, chgMid);
         if (window.ReviewsSync && window.ReviewsSync.recompute) window.ReviewsSync.recompute();
         if (existingReview.clientApprovalRequired) cancelReviewInBackground(existingReview.id);
+      }
+      let resendEditedReview = false;
+      if (existingTextChanged && !goingAway) {
+        const myEmail = (window.AuthGate && window.AuthGate.email && window.AuthGate.email()) || '';
+        const editedAt = new Date().toISOString();
+        const treatedAsPreapproved = editBecomesPublished || existingTextPreapproved;
+        Store.updateReviewText(existingReview.id, editedExistingText, {
+          textEditedAt: editedAt,
+          textEditedBy: myEmail,
+          textEditSource: editBecomesPublished ? 'published_correction' : 'crm_manual',
+          clientApprovalRequired: !treatedAsPreapproved,
+          clientApprovalPreconfirmed: treatedAsPreapproved,
+          clientApprovalPreconfirmedAt: treatedAsPreapproved ? editedAt : null,
+          clientApprovalPreconfirmedBy: treatedAsPreapproved ? myEmail : '',
+          clientApprovalRequestId: treatedAsPreapproved ? null : existingReview.clientApprovalRequestId,
+          clientApprovalSentAt: treatedAsPreapproved ? null : existingReview.clientApprovalSentAt,
+          clientApprovalLastError: ''
+        });
+        resendEditedReview = !treatedAsPreapproved;
       }
       const becomingDone = !wasDone && newStatus === DONE_STATUS && existingReview;
       if (becomingDone) {
@@ -1746,6 +1815,13 @@
         });
         if (reviewPreapproved) toast('Текст привязан как уже согласованный');
         else sendReviewInBackground(review);
+      } else if (resendEditedReview) {
+        sendReviewInBackground(existingReview);
+        toast('Изменённый текст сохранён и повторно отправлен клиенту');
+      } else if (existingTextChanged) {
+        toast(editBecomesPublished
+          ? 'Фактически опубликованный текст обновлён'
+          : 'Текст обновлён как согласованный вне кабинета');
       } else if (becomingDone) {
         toast(clientApprovedReview(existingReview)
           ? 'Отзыв опубликован. Согласование клиента уже учтено'

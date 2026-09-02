@@ -2240,6 +2240,15 @@
       this.save();
       return item;
     },
+    updateReviewText(id, text, metadata = {}) {
+      const review = (this.state.reviews || []).find(item => item.id === id);
+      const cleanText = String(text || '').trim();
+      if (!review || !cleanText) return null;
+      review.text = cleanText;
+      Object.assign(review, metadata || {});
+      this.save();
+      return review;
+    },
     approveReview(id, moderatorEmail) {
       const r = (this.state.reviews || []).find(x => x.id === id);
       if (!r) return null;
