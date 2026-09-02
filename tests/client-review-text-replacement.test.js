@@ -43,7 +43,8 @@ test('bot accepts a full free-form alternative and preserves old buttons', () =>
 
 test('an existing CRM review can be corrected without creating a duplicate', () => {
   assert.match(app, /updateReviewText\(id, text, metadata = \{\}\)/);
-  assert.match(statuses, /id="chgExistingReviewText"/);
+  assert.match(statuses, /id="chgExistingReviewText" class="input chg-review-text"/);
+  assert.match(statuses, /\.chg-review-text\s*\{[^}]*width:\s*100%/s);
   assert.match(statuses, /Изменённый текст уже согласован вне кабинета/);
   assert.match(statuses, /Store\.updateReviewText\(existingReview\.id, editedExistingText/);
   assert.match(statuses, /published_correction/);
