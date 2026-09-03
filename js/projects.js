@@ -19,7 +19,7 @@
     note: 'Заметка', stage: 'Этап', finance: 'Финансы', release: 'Релиз', client: 'Заказчик'
   };
 
-  const state = { projects: [], activity: [], resources: [], selectedId: null, loading: true };
+  const state = { projects: [], activity: [], resources: [], payments: [], selectedId: null, loading: true };
   const $ = id => document.getElementById(id);
   const esc = value => String(value == null ? '' : value)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -59,6 +59,13 @@
     return message.replace(/^REST \d+:\s*/, '');
   }
 
+  async function loadProjectPayments() {
+    return window.Supabase.rest('rpc/list_development_project_payments', {
+      method: 'POST',
+      body: JSON.stringify({})
+    });
+  }
+
   async function load() {
     state.loading = true;
     renderList();
@@ -71,6 +78,14 @@
       state.projects = projects || [];
       state.activity = activity || [];
       state.resources = resources || [];
+      try {
+        state.payments = await loadProjectPayments() || [];
+        state.paymentError = '';
+      } catch (paymentError) {
+        console.warn('[projects] payment list unavailable', paymentError);
+        state.payments = [];
+        state.paymentError = 'Платежи временно недоступны.';
+      }
       const visible = state.projects.filter(project => project.status !== 'archived');
       state.selectedId = visible.some(project => project.id === state.selectedId)
         ? state.selectedId
@@ -79,6 +94,7 @@
       state.projects = [];
       state.activity = [];
       state.resources = [];
+      state.payments = [];
       state.loadError = dbError(error);
     } finally {
       state.loading = false;
@@ -98,12 +114,28 @@
     });
   }
 
+  function paymentsForProject(projectId) {
+    return state.payments.filter(payment => payment.project_id === projectId);
+  }
+
+  function linkedIncomeForProject(projectId) {
+    return paymentsForProject(projectId)
+      .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+  }
+
+  function receivedForProject(project) {
+    return Number(project.received_amount || 0) + linkedIncomeForProject(project.id);
+  }
+
   function renderKpis() {
     const current = state.projects.filter(project => project.status !== 'archived');
     const active = current.filter(project => project.status === 'active').length;
     const waiting = current.filter(project => project.status === 'waiting_client').length;
     const attention = current.filter(project => project.health !== 'ok' && project.status !== 'completed').length;
-    const balance = current.reduce((sum, project) => sum + Number(project.contract_amount || 0) - Number(project.received_amount || 0), 0);
+    const balance = current.reduce((sum, project) => {
+      const contract = Number(project.contract_amount || 0);
+      return sum + Math.max(0, contract - receivedForProject(project));
+    }, 0);
     $('projectKpis').innerHTML = `
       <div class="card"><div class="card__label">Активные</div><div class="card__value">${active}</div></div>
       <div class="card"><div class="card__label">Ждём заказчика</div><div class="card__value">${waiting}</div></div>
@@ -155,8 +187,11 @@
     }
     const activity = state.activity.filter(item => item.project_id === project.id);
     const resources = state.resources.filter(item => item.project_id === project.id);
-    const remaining = Number(project.contract_amount || 0) - Number(project.received_amount || 0);
-    const profit = Number(project.received_amount || 0) - Number(project.expense_amount || 0);
+    const payments = paymentsForProject(project.id);
+    const linkedIncome = linkedIncomeForProject(project.id);
+    const received = receivedForProject(project);
+    const remaining = Math.max(0, Number(project.contract_amount || 0) - received);
+    const profit = received - Number(project.expense_amount || 0);
     $('projectDetail').innerHTML = `
       <div class="project-detail__head">
         <div class="project-detail__title-row">
@@ -169,7 +204,7 @@
         ${project.description ? `<p class="project-detail__description">${esc(project.description)}</p>` : ''}
         <div class="project-finance-grid">
           <div class="project-finance"><div class="project-finance__label">Стоимость</div><div class="project-finance__value">${money(project.contract_amount)}</div></div>
-          <div class="project-finance"><div class="project-finance__label">Получено</div><div class="project-finance__value is-positive">${money(project.received_amount)}</div></div>
+          <div class="project-finance"><div class="project-finance__label">Получено</div><div class="project-finance__value is-positive">${money(received)}</div>${linkedIncome ? `<div class="project-finance__note">Из финансов: ${money(linkedIncome)}</div>` : ''}</div>
           <div class="project-finance"><div class="project-finance__label">Остаток</div><div class="project-finance__value ${remaining < 0 ? 'is-negative' : ''}">${money(remaining)}</div></div>
           <div class="project-finance"><div class="project-finance__label">Прибыль сейчас</div><div class="project-finance__value ${profit < 0 ? 'is-negative' : 'is-positive'}">${money(profit)}</div></div>
         </div>
@@ -179,6 +214,14 @@
           <div class="project-info project-info--wide"><div class="project-info__label">Следующий шаг · ${date(project.next_action_date)}</div><div class="project-info__value">${esc(project.next_action || 'Не указан')}</div></div>
           ${project.waiting_for_client ? `<div class="project-info project-info--wide"><div class="project-info__label">Ждём от заказчика</div><div class="project-info__value">${esc(project.waiting_for_client)}</div></div>` : ''}
         </div>
+        <section class="project-section">
+          <div class="project-section__head"><h3>Платежи</h3><a class="btn btn--primary btn--sm" id="projectAddPayment" href="./finance.html?add=income&amp;project=${encodeURIComponent(project.id)}">Добавить платёж</a></div>
+          ${state.paymentError ? `<div class="project-empty-inline">${esc(state.paymentError)}</div>` : `
+          <div class="project-payments">${payments.length ? payments.map(payment => `<div class="project-payment">
+            <div><div class="project-payment__meta">${date(payment.payment_date)} · ${esc(payment.service_name || 'Без категории')}</div><div class="project-payment__comment">${esc(payment.comment || payment.client_name || 'Платёж')}</div></div>
+            <div class="project-payment__amount">${money(payment.amount)}</div>
+          </div>`).join('') : '<div class="project-empty-inline">Платежей пока нет. Добавьте доход в финансах и выберите этот проект.</div>'}</div>`}
+        </section>
         <section class="project-section">
           <div class="project-section__head"><h3>Материалы и доступы</h3><button class="btn btn--ghost btn--sm" id="resourceAdd">Добавить</button></div>
           <div class="project-resources">${resources.length ? resources.map(resource => {

@@ -93,8 +93,16 @@
           </div>
         </div>
 
-        <!-- Привязка к анкетам — основной способ -->
         <div class="field" style="margin-top:6px">
+          <label for="iProject">Проект разработки <span style="color:var(--text-mute)">(необязательно)</span></label>
+          <select id="iProject" class="select"><option value="">Без проекта</option></select>
+          <div style="font-size:11px;color:var(--text-mute);margin-top:4px">
+            Привязанный платёж появится в карточке проекта и войдёт в сумму «Получено».
+          </div>
+        </div>
+
+        <!-- Привязка к анкетам — основной способ -->
+        <div class="field" id="iMentoriPaymentBlock" style="margin-top:6px">
           <label style="display:flex;align-items:center;justify-content:space-between">
             <span>Анкеты и суммы</span>
             <button class="btn btn--ghost btn--sm" type="button" id="iAddItem">
@@ -199,7 +207,7 @@
   </div>
 
   <script src="../data/seed.js"></script>
-  <script src="../js/app.js?v=20260901b"></script>
+  <script src="../js/app.js?v=20260903a"></script>
   <script src="../js/supabase-client.js?v=20260820d"></script>
   <script src="../js/auth-gate.js?v=20260726a"></script>
   <script src="../js/cloud-sync.js?v=20260820d"></script>
@@ -223,6 +231,60 @@
 
     let activeTab = 'income';
     const filters = { from: '', to: '', group: '', q: '' };
+    let developmentProjects = [];
+    let projectIncomeLinks = new Map();
+
+    function projectById(id) {
+      return developmentProjects.find(project => project.id === id) || null;
+    }
+
+    function projectOptions(selectedId = '') {
+      const rows = developmentProjects.slice().sort((a, b) => {
+        const archivedDelta = Number(a.status === 'archived') - Number(b.status === 'archived');
+        return archivedDelta || String(a.name || '').localeCompare(String(b.name || ''), 'ru');
+      });
+      return '<option value="">Без проекта</option>' + rows.map(project => {
+        const suffix = project.status === 'archived' ? ' · архив' : '';
+        return `<option value="${escapeAttr(project.id)}" ${project.id === selectedId ? 'selected' : ''}>${escapeHtml(project.name)} · ${escapeHtml(project.client_name)}${suffix}</option>`;
+      }).join('');
+    }
+
+    function refreshIncomeProjectSelect(selectedId = '') {
+      const select = document.getElementById('iProject');
+      select.innerHTML = projectOptions(selectedId);
+      select.value = projectById(selectedId) ? selectedId : '';
+    }
+
+    async function loadDevelopmentProjectData() {
+      try {
+        const [projects, links] = await Promise.all([
+          window.Supabase.Tbl.select('development_projects', 'select=id,name,client_name,status&order=name.asc'),
+          window.Supabase.Tbl.select('development_project_income_links', 'select=income_id,project_id')
+        ]);
+        developmentProjects = projects || [];
+        projectIncomeLinks = new Map((links || []).map(link => [String(link.income_id), String(link.project_id)]));
+      } catch (error) {
+        console.warn('[finance] projects unavailable', error);
+        developmentProjects = [];
+        projectIncomeLinks = new Map();
+      }
+      refreshIncomeProjectSelect(document.getElementById('iProject').value);
+      renderAll();
+      openIncomeFromProjectLink();
+    }
+
+    async function setIncomeProjectLink(incomeId, projectId) {
+      if (projectId) {
+        await window.Supabase.Tbl.upsert('development_project_income_links', {
+          income_id: incomeId,
+          project_id: projectId
+        }, 'income_id');
+        projectIncomeLinks.set(String(incomeId), String(projectId));
+      } else {
+        await window.Supabase.Tbl.remove('development_project_income_links', `income_id=eq.${encodeURIComponent(incomeId)}`);
+        projectIncomeLinks.delete(String(incomeId));
+      }
+    }
 
     /* ---- Селекты в модалках ---- */
     document.getElementById('iService').innerHTML = SERVICES.map(s => `<option value="${s}">${s}</option>`).join('');
@@ -384,6 +446,7 @@
                     <th>Дата</th>
                     <th>Клиент</th>
                     <th>Услуга</th>
+                    <th>Проект</th>
                     <th class="num">Сумма</th>
                     <th>Комментарий</th>
                     <th class="actions"></th>
@@ -417,6 +480,11 @@
       const amountCell = hasItems
         ? `<td class="num pos" title="Сумма посчитана из привязанных анкет"><strong>${fmtMoney(r.amount||0)}</strong></td>`
         : `<td class="num pos" data-field="amount" data-type="number">${r.amount||0}</td>`;
+      const currentService = String(r.service || '');
+      const availableServices = SERVICES.includes(currentService) || !currentService
+        ? SERVICES
+        : SERVICES.concat(currentService);
+      const projectId = projectIncomeLinks.get(String(r.id)) || '';
 
       return `
         <tr data-id="${r.id}">
@@ -424,9 +492,10 @@
           <td>${clientCell}</td>
           <td>
             <select class="select" style="padding:4px 8px" data-field="service">
-              ${SERVICES.map(s => `<option value="${s}" ${r.service===s?'selected':''}>${s}</option>`).join('')}
+              ${availableServices.map(s => `<option value="${escapeAttr(s)}" ${r.service===s?'selected':''}>${escapeHtml(s)}</option>`).join('')}
             </select>
           </td>
+          <td><select class="select" style="padding:4px 8px;min-width:180px" data-project-link>${projectOptions(projectId)}</select></td>
           ${amountCell}
           <td data-field="comment">${escapeHtml(r.comment||'')}</td>
           <td class="actions">
@@ -630,17 +699,38 @@
           Store.updateIncome(id, { service: e.target.value });
           renderAll();
         });
+        const projectSelect = tr.querySelector('[data-project-link]');
+        projectSelect.addEventListener('change', async e => {
+          const projectId = e.target.value;
+          projectSelect.disabled = true;
+          try {
+            await setIncomeProjectLink(id, projectId);
+            toast(projectId ? 'Платёж привязан к проекту' : 'Платёж отвязан от проекта');
+            renderAll();
+          } catch (error) {
+            console.error('[finance] project link failed', error);
+            projectSelect.value = projectIncomeLinks.get(String(id)) || '';
+            projectSelect.disabled = false;
+            toast('Не удалось изменить привязку к проекту', 'error');
+          }
+        });
         // дата
         tr.querySelector('input[data-field="date"]').addEventListener('change', e => {
           Store.updateIncome(id, { date: e.target.value });
           renderAll();
         });
         // удаление
-        tr.querySelector('[data-act="del"]').addEventListener('click', () => {
+        tr.querySelector('[data-act="del"]').addEventListener('click', async () => {
           if (confirmDelete('Удалить эту запись?')) {
-            Store.deleteIncome(id);
-            toast('Доход удалён');
-            renderAll();
+            try {
+              if (projectIncomeLinks.has(String(id))) await setIncomeProjectLink(id, '');
+              Store.deleteIncome(id);
+              toast('Доход удалён');
+              renderAll();
+            } catch (error) {
+              console.error('[finance] income delete failed', error);
+              toast('Не удалось удалить привязку платежа', 'error');
+            }
           }
         });
       });
@@ -724,23 +814,53 @@
     });
 
     /* ---- Add buttons ---- */
+    function applyIncomeProjectMode() {
+      const projectId = document.getElementById('iProject').value;
+      const project = projectById(projectId);
+      document.getElementById('iMentoriPaymentBlock').style.display = project ? 'none' : '';
+      if (!project) return;
+      paymentItems = [];
+      renderPaymentItems();
+      document.getElementById('iManualBlock').open = true;
+      if (!document.getElementById('iClient').value.trim()) {
+        document.getElementById('iClient').value = project.client_name || project.name || '';
+      }
+      if (document.getElementById('iService').value === SERVICES[0]) {
+        document.getElementById('iService').value = 'Разработка CRM';
+      }
+    }
+
+    function openIncomeModal(projectId = '') {
+      document.getElementById('iDate').value = todayISO();
+      document.getElementById('iClient').value = '';
+      document.getElementById('iService').value = SERVICES[0];
+      document.getElementById('iAmount').value = '0';
+      document.getElementById('iComment').value = '';
+      refreshClientDatalist();
+      paymentItems = [];
+      renderPaymentItems();
+      document.getElementById('iManualBlock').open = false;
+      refreshIncomeProjectSelect(projectId);
+      applyIncomeProjectMode();
+      Modal.open('incomeModal');
+    }
+
+    let projectLinkOpened = false;
+    function openIncomeFromProjectLink() {
+      if (projectLinkOpened) return;
+      const params = new URLSearchParams(location.search);
+      const projectId = params.get('project') || '';
+      if (params.get('add') !== 'income' || !projectById(projectId)) return;
+      projectLinkOpened = true;
+      activeTab = 'income';
+      openIncomeModal(projectId);
+    }
+
+    document.getElementById('iProject').addEventListener('change', applyIncomeProjectMode);
+
     document.getElementById('btnAdd').addEventListener('click', () => {
       if (activeTab === 'income') {
-        document.getElementById('iDate').value = todayISO();
-        document.getElementById('iClient').value = '';
-        document.getElementById('iService').value = SERVICES[0];
-        document.getElementById('iAmount').value = '0';
-        document.getElementById('iComment').value = '';
-        refreshClientDatalist();
-        // Стартуем с пустым списком — модалка получается компактной (важно
-        // для телефона). Когда нужно привязать анкеты, владелец нажимает
-        // «+ Добавить анкету» — и только тогда появляется первая строка.
-        paymentItems = [];
-        renderPaymentItems();
-        document.getElementById('iManualBlock').open = false;
-        Modal.open('incomeModal');
-        // Не фокусируем ничего — на телефоне это поднимает клавиатуру и
-        // съедает половину экрана, заставляя скролить.
+        openIncomeModal();
       } else {
         const isPersonal = (activeTab === 'personal');
         document.getElementById('eDate').value = todayISO();
@@ -854,10 +974,13 @@
     document.getElementById('iAddItem').addEventListener('click', () => addPaymentItemRow());
     document.getElementById('iAmount').addEventListener('input', updateIncomeTotal);
 
-    document.getElementById('iSave').addEventListener('click', () => {
+    document.getElementById('iSave').addEventListener('click', async () => {
+      const saveButton = document.getElementById('iSave');
+      if (saveButton.disabled) return;
       const validItems = paymentItems
         .filter(it => it.accountId && Number(it.amount) > 0)
         .map(it => ({ accountId: it.accountId, amount: Number(it.amount) }));
+      const projectId = document.getElementById('iProject').value;
 
       const rec = {
         date: document.getElementById('iDate').value || todayISO(),
@@ -878,12 +1001,23 @@
         if (rec.amount <= 0) { toast('Укажите сумму', 'error'); return; }
       }
 
-      Store.addIncome(rec);
+      saveButton.disabled = true;
+      const income = Store.addIncome(rec);
       Modal.close('incomeModal');
-      toast(validItems.length > 0
-        ? `Доход добавлен · оплата распределена по ${validItems.length} ${pluralRu(validItems.length,'анкете','анкетам','анкетам')}`
-        : 'Доход добавлен');
-      renderAll();
+      try {
+        if (projectId) await setIncomeProjectLink(income.id, projectId);
+        toast(projectId
+          ? 'Доход добавлен и привязан к проекту'
+          : validItems.length > 0
+            ? `Доход добавлен · оплата распределена по ${validItems.length} ${pluralRu(validItems.length,'анкете','анкетам','анкетам')}`
+            : 'Доход добавлен');
+      } catch (error) {
+        console.error('[finance] new income project link failed', error);
+        toast('Доход добавлен, но проект не привязан. Выберите проект в строке дохода.', 'error');
+      } finally {
+        saveButton.disabled = false;
+        renderAll();
+      }
     });
 
     document.getElementById('eSave').addEventListener('click', () => {
@@ -923,6 +1057,7 @@
     };
 
     renderAll();
+    loadDevelopmentProjectData();
   });
 
   function trashIco() {

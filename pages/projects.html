@@ -10,7 +10,7 @@
   <link rel="manifest" href="/manifest.webmanifest?v=20260820"/>
   <title>Проекты разработки — Mentori CRM</title>
   <link rel="stylesheet" href="../css/styles.css?v=20260820b"/>
-  <link rel="stylesheet" href="../css/projects.css?v=20260901a"/>
+  <link rel="stylesheet" href="../css/projects.css?v=20260903a"/>
   <script src="../js/supabase-client.js?v=20260820d"></script>
   <script src="../js/auth-gate.js?v=20260726a"></script>
 </head>
@@ -81,9 +81,10 @@
           <div class="field"><label for="projectWaiting">Что ждём от заказчика</label><input class="input" id="projectWaiting" maxlength="1000"/></div>
           <div class="field-row">
             <div class="field"><label for="projectContract">Стоимость, ₽</label><input class="input" id="projectContract" type="number" min="0" step="100" value="0"/></div>
-            <div class="field"><label for="projectReceived">Получено, ₽</label><input class="input" id="projectReceived" type="number" min="0" step="100" value="0"/></div>
+            <div class="field"><label for="projectReceived">Получено вручную, ₽</label><input class="input" id="projectReceived" type="number" min="0" step="100" value="0"/></div>
             <div class="field"><label for="projectExpenses">Расходы, ₽</label><input class="input" id="projectExpenses" type="number" min="0" step="100" value="0"/></div>
           </div>
+          <div style="font-size:11px;color:var(--text-mute);margin-top:5px">Привязанные доходы из раздела «Финансы» считаются автоматически. Ручное поле нужно только для старых платежей, которых нет в финансах.</div>
         </form>
       </div>
       <div class="modal__footer">
@@ -117,6 +118,6 @@
   <div class="toast-wrap" id="projectToasts"></div>
   <script src="../components/sidebar.js?v=20260901a"></script>
   <script src="../components/header.js"></script>
-  <script src="../js/projects.js?v=20260901a"></script>
+  <script src="../js/projects.js?v=20260903a"></script>
 </body>
 </html>
