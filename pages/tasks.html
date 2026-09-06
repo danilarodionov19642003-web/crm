@@ -544,7 +544,7 @@
   <script src="../js/app.js?v=20260901b"></script>
   <script src="../js/supabase-client.js?v=20260820d"></script>
   <script src="../js/auth-gate.js?v=20260726a"></script>
-  <script src="../js/cloud-sync.js?v=20260820d"></script>
+  <script src="../js/cloud-sync.js?v=20260906a"></script>
   <script src="../js/reviews-sync.js?v=20260717a"></script>
   <script src="../js/outreach-schedule-sync.js?v=20260827a"></script>
   <script src="../js/schedule-apply.js?v=20260522b"></script>
@@ -567,6 +567,42 @@
     let publicationRequests = [];
     const resolvingPublicationIds = new Set();
     let publicationSnapshotsRefreshed = false;
+    const savingTaskChanges = new Set();
+
+    async function saveTaskChange(key, button, applyChange, successMessage) {
+      if (savingTaskChanges.has(key)) return false;
+      savingTaskChanges.add(key);
+      const label = button.textContent;
+      const showBusyLabel = button.tagName === 'BUTTON';
+      button.disabled = true;
+      button.setAttribute('aria-busy', 'true');
+      if (showBusyLabel) button.textContent = 'Сохраняем…';
+      let savedLocally = false;
+      try {
+        if (applyChange() === false) return false;
+        savedLocally = true;
+        const result = window.CloudSync && typeof window.CloudSync.confirmSaved === 'function'
+          ? await window.CloudSync.confirmSaved()
+          : { saved: false };
+        if (result && result.saved === true) {
+          if (successMessage) toast(successMessage);
+        } else {
+          toast('Изменения сохранены на устройстве. Ожидаем отправки на сервер.', 'error');
+        }
+        return true;
+      } catch (error) {
+        console.warn('[tasks] save failed', error);
+        toast(savedLocally
+          ? 'Изменения сохранены на устройстве. Ожидаем отправки на сервер.'
+          : 'Не удалось сохранить изменения. Попробуй ещё раз.', 'error');
+        return savedLocally;
+      } finally {
+        savingTaskChanges.delete(key);
+        button.disabled = false;
+        button.removeAttribute('aria-busy');
+        if (showBusyLabel) button.textContent = label;
+      }
+    }
 
     function escapeHtml(s) {
       return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -961,8 +997,9 @@
 
       // bind
       list.querySelectorAll('.task-check[data-id]').forEach(el => {
-        el.addEventListener('click', () => {
-          Store.toggleDailyTask(el.dataset.id);
+        el.addEventListener('click', async () => {
+          await saveTaskChange(`daily:${el.dataset.id}`, el,
+            () => !!Store.toggleDailyTask(el.dataset.id));
           render();
         });
       });
@@ -971,10 +1008,11 @@
           btn.addEventListener('click', () => openEdit(btn.dataset.id));
         });
         list.querySelectorAll('button[data-act="del"]').forEach(btn => {
-          btn.addEventListener('click', () => {
+          btn.addEventListener('click', async () => {
+            if (savingTaskChanges.has(`daily:${btn.dataset.id}`)) return;
             if (!confirmDelete('Удалить задачу?')) return;
-            Store.deleteDailyTask(btn.dataset.id);
-            toast('Удалено');
+            await saveTaskChange(`daily:${btn.dataset.id}`, btn,
+              () => Store.deleteDailyTask(btn.dataset.id), 'Удалено');
             render();
           });
         });
@@ -1081,24 +1119,27 @@
       setTimeout(() => dateInput.focus(), 50);
     }
 
-    document.getElementById('statusScheduleSave').addEventListener('click', () => {
+    document.getElementById('statusScheduleSave').addEventListener('click', async event => {
       const date = document.getElementById('statusScheduleDate').value;
       if (!date || date < todayISO()) {
         toast('Выбери сегодняшнюю или будущую дату', 'error');
         return;
       }
-      const updated = Store.setProfileStatusTaskDate(schedulingStatusId, date);
-      if (!updated) {
-        toast('Не удалось перенести задачу: статус уже изменён', 'error');
-        Modal.close('statusScheduleModal');
-        render();
-        return;
-      }
+      const statusId = schedulingStatusId;
+      const changed = await saveTaskChange(`status:${statusId}`, event.currentTarget, () => {
+        const updated = Store.setProfileStatusTaskDate(statusId, date);
+        if (!updated) {
+          toast('Не удалось перенести задачу: статус уже изменён', 'error');
+          Modal.close('statusScheduleModal');
+          render();
+          return false;
+        }
+      }, `Задача запланирована на ${fmtDate(date)}`);
+      if (!changed) return;
       const parts = date.split('-').map(Number);
       schedState.month = new Date(parts[0], parts[1] - 1, 1);
       schedState.selected = date;
-      Modal.close('statusScheduleModal');
-      toast(`Задача запланирована на ${fmtDate(date)}`);
+      if (schedulingStatusId === statusId) Modal.close('statusScheduleModal');
       render();
       renderSched();
     });
@@ -1130,7 +1171,7 @@
     if (isOwner) {
       document.getElementById('btnAdd').addEventListener('click', openNew);
     }
-    document.getElementById('tSave').addEventListener('click', () => {
+    document.getElementById('tSave').addEventListener('click', async event => {
       const date = document.getElementById('tDate').value || todayISO();
       const mentorId = document.getElementById('tMentor').value;
       const profileId = document.getElementById('tProfile').value;
@@ -1138,22 +1179,33 @@
       if (!mentorId) { toast('Выбери клиента', 'error'); return; }
       if (!note) { toast('Опиши задачу', 'error'); return; }
       const myEmail = (window.AuthGate && window.AuthGate.email && window.AuthGate.email()) || '';
-      if (editingId) {
-        Store.updateDailyTask(editingId, { date, mentorId, profileId, note });
-        toast('Сохранено');
-      } else {
-        Store.addDailyTask({ date, mentorId, profileId, note, createdBy: myEmail });
-        toast('Задача добавлена');
-      }
-      Modal.close('taskModal');
+      const taskId = editingId;
+      const changed = await saveTaskChange(`daily:${taskId || 'new'}`, event.currentTarget, () => {
+        if (taskId) {
+          if (!(Store.state.dailyTasks || []).some(task => task.id === taskId)) {
+            toast('Задача уже удалена. Обновляю список.', 'error');
+            Modal.close('taskModal');
+            render();
+            return false;
+          }
+          Store.updateDailyTask(taskId, { date, mentorId, profileId, note });
+        } else {
+          Store.addDailyTask({ date, mentorId, profileId, note, createdBy: myEmail });
+        }
+      }, taskId ? 'Сохранено' : 'Задача добавлена');
+      if (!changed) return;
+      if (editingId === taskId) Modal.close('taskModal');
       render();
     });
-    document.getElementById('tDelete').addEventListener('click', () => {
+    document.getElementById('tDelete').addEventListener('click', async event => {
       if (!editingId) return;
+      if (savingTaskChanges.has(`daily:${editingId}`)) return;
       if (!confirmDelete('Удалить задачу?')) return;
-      Store.deleteDailyTask(editingId);
-      Modal.close('taskModal');
-      toast('Удалено');
+      const taskId = editingId;
+      const changed = await saveTaskChange(`daily:${taskId}`, event.currentTarget,
+        () => Store.deleteDailyTask(taskId), 'Удалено');
+      if (!changed) return;
+      if (editingId === taskId) Modal.close('taskModal');
       render();
     });
 
@@ -1565,7 +1617,10 @@
       renderSchedGrid(byDate, actionsByDate);
       renderSchedDayDetail(byDate, actionsByDate);
       // ответы клиентов подтягиваем в фоне и перерендерим список дня
-      loadScheduleResponses().then(() => renderSchedDayDetail(byDate, actionsByDate));
+      loadScheduleResponses().then(() => {
+        // Пока загружались ответы, другой сотрудник мог обновить рабочий план.
+        renderSchedDayDetail(collectScheduleByDate(), collectStatusActionsByDate());
+      });
     }
 
     document.getElementById('schedPrev').addEventListener('click', () => {

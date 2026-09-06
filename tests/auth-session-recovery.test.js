@@ -259,7 +259,7 @@ const user = { id: 'owner-1', email: 'owner@example.test', app_metadata: { role:
   assert.match(cloudSource, /typeof sb\.authFetch === 'function'/);
   assert.match(cloudSource, /else resumeSync\(\)/, 'visible tab must resume cloud synchronization');
   assert.match(cloudSource, /window\.addEventListener\('pageshow'/);
-  assert.match(cloudSource, /resumeSync\(\{ silent: true \}\)/,
+  assert.match(cloudSource, /!pullCompleted[\s\S]*runPull\(\{ silent: true \}\)/,
     'polling must retry even when the first pull never completed');
 
   console.log('auth session recovery and cloud resume: OK');

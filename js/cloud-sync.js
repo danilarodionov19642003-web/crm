@@ -25,11 +25,22 @@
   const STORAGE_KEY = 'mentori-crm-v2';
   const META_KEY    = 'mentori-crm-meta';   // { lastPushedAt, lastPulledAt }
   const PENDING_KEY = 'mentori-crm-pending'; // несохранённый push (для recovery после reload)
+  const PENDING_TAB_KEY = 'mentori-crm-pending-tab';
+  const ACK_KEY = 'mentori-crm-ack';
+  const documentId = typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const ownPendingKey = `${PENDING_KEY}:${documentId}`;
+  let previousPendingKey = null;
+  try {
+    previousPendingKey = sessionStorage.getItem(PENDING_TAB_KEY);
+    sessionStorage.setItem(PENDING_TAB_KEY, ownPendingKey);
+  } catch (_) {}
   const PENDING_QUARANTINE_KEY = 'mentori-crm-pending-quarantine';
   const CONFLICT_LOG_KEY = 'mentori-crm-sync-conflicts';
   const CONFLICT_BACKUP_KEY = 'mentori-crm-sync-conflict-backup';
   const HISTORY_THROTTLE_MS = 5 * 60 * 1000;  // не чаще 1 снимка в 5 минут
   const POLL_INTERVAL_MS    = 60 * 1000;      // фоновый pull раз в минуту
+  const VERSION_POLL_INTERVAL_MS = 3000;
   // Exponential backoff retry: 5с, 15с, 45с, 2мин, 5мин, потом каждые 5мин.
   // Лучше много попыток с растущей паузой, чем 1 retry через 30с.
   const RETRY_DELAYS_MS = [5_000, 15_000, 45_000, 120_000, 300_000];
@@ -67,10 +78,14 @@
   async function _fetch(url, opts = {}) {
     const sb = _SB();
     const headers = { ..._hdr(), ...(opts.headers || {}) };
-    const request = { ...opts, headers };
-    if (typeof sb.authFetch === 'function') return sb.authFetch(url, request);
-    if (sb.Auth && typeof sb.Auth.ensureFresh === 'function') await sb.Auth.ensureFresh();
-    return fetch(url, { ...opts, headers: { ..._hdr(), ...(opts.headers || {}) } });
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timeout = controller ? setTimeout(() => controller.abort(), 20000) : null;
+    const request = { ...opts, headers, ...(controller ? { signal: controller.signal } : {}) };
+    try {
+      if (typeof sb.authFetch === 'function') return await sb.authFetch(url, request);
+      if (sb.Auth && typeof sb.Auth.ensureFresh === 'function') await sb.Auth.ensureFresh();
+      return await fetch(url, { ...request, headers: { ..._hdr(), ...(opts.headers || {}) } });
+    } finally { if (timeout !== null) clearTimeout(timeout); }
   }
 
   /* ---- Сетевые операции ---- */
@@ -82,8 +97,15 @@
     return rows[0] || null;  // { data, updated_at } или null
   }
 
+  async function fetchRemoteVersion() {
+    const res = await _fetch(`${_supaUrl()}/rest/v1/${TABLE}?id=eq.${ROW_ID}&select=updated_at`);
+    if (!res.ok) throw new Error(`version fetch ${res.status}`);
+    const rows = await res.json();
+    return rows[0] && rows[0].updated_at;
+  }
+
   async function pushRemote(state, expectedUpdatedAt = serverUpdatedAt) {
-    const updated_at = new Date().toISOString();
+    const updated_at = new Date(Math.max(Date.now(), tsMs(expectedUpdatedAt) + 1)).toISOString();
     const expected = expectedUpdatedAt ? encodeURIComponent(expectedUpdatedAt) : '';
     const body = expected
       ? JSON.stringify({ data: state, updated_at })
@@ -231,6 +253,10 @@
 
   /* ---- Индикатор статуса в шапке ---- */
   function setStatus(state, text) {
+    if (state === 'synced' && confirmationError) {
+      state = 'error';
+      text = 'Есть неотправленный черновик';
+    }
     const el = document.getElementById('cloudStatus');
     if (!el) return;
     el.dataset.state = state;        // idle | syncing | synced | error | offline
@@ -456,11 +482,22 @@
     return mergeObjectValues(localState, baseState, remoteData, '', conflicts);
   }
 
+  let lastAppliedRaw = null;
+  let lastAppliedStoreRaw = null;
   function applySyncedState(state) {
     const raw = JSON.stringify(state);
-    if (localStorage.getItem(STORAGE_KEY) === raw) return false;
+    // localStorage общий для вкладок, Store.state у каждой свой. Совпадение
+    // общего кэша не означает, что эта вкладка уже приняла новую версию.
+    const store = window.App && window.App.Store;
+    const storeRaw = store ? JSON.stringify(store.state) : null;
+    // Store.load may normalize derived fields. Remember that accepted shape
+    // so a version-only check does not repaint forms every three seconds.
+    if (store && (storeRaw === raw || (lastAppliedRaw === raw && storeRaw === lastAppliedStoreRaw))) return false;
+    if (!store && localStorage.getItem(STORAGE_KEY) === raw) return false;
     localStorage.setItem(STORAGE_KEY, raw);
     window.dispatchEvent(new CustomEvent('cloudstate:updated', { detail: state }));
+    lastAppliedRaw = raw;
+    lastAppliedStoreRaw = store ? JSON.stringify(store.state) : null;
     return true;
   }
 
@@ -506,9 +543,7 @@
   }
 
   /* ---- Pull: вытянуть удалённый state и заместить локальный ---- */
-  async function pull({ silent = false } = {}) {
-    // Pull не должен менять merge-base посреди активного guarded push.
-    if (flushPromise) await flushPromise;
+  async function runPull({ silent = false } = {}) {
     if (!silent) setStatus('syncing', 'Загрузка…');
     try {
       const remote = await fetchRemote();
@@ -530,6 +565,7 @@
       }
       remoteSnapshot   = cloneState(remote.data);
       serverUpdatedAt  = remote.updated_at;   // фиксируем «версию» сервера
+      lastFullPullAt = Date.now();
       pullCompleted = true;
       setMeta({ lastPulledAt: remote.updated_at });
 
@@ -594,6 +630,18 @@
   let pendingBaseUpdatedAt = null;
   let pendingRevision = 0;         // меняется при каждом новом локальном снимке/rebase
   let flushPromise = null;         // сериализует push и pull внутри одной вкладки
+  let syncQueue = Promise.resolve();
+  let confirmationError = null;
+  let acknowledgedRevision = 0;
+  let lastFullPullAt = 0;
+  // Чтения и записи одной вкладки идут последовательно. Между вкладками и
+  // устройствами работает CAS; медленная сеть одной вкладки не блокирует другие.
+  function serializeSync(operation) {
+    const next = syncQueue.then(operation);
+    syncQueue = next.catch(() => {});
+    return next;
+  }
+  function pull(options) { return serializeSync(() => runPull(options)); }
   let pullCompleted = false;         // true после первого успешного fetchRemote
   const bootMeta = getMeta();
   const bootVersion = tsMs(bootMeta.lastPushedAt) > tsMs(bootMeta.lastPulledAt)
@@ -671,38 +719,47 @@
   // вытащит и повторит push.
   function persistPending(state) {
     try {
-      localStorage.setItem(PENDING_KEY, JSON.stringify({
+      localStorage.setItem(ownPendingKey, JSON.stringify({
         state,
         base: pendingBase,
         baseUpdatedAt: pendingBaseUpdatedAt,
         queued_at: new Date().toISOString()
       }));
-    } catch (_) {}
+      return true;
+    } catch (error) {
+      console.error('[CloudSync] cannot persist unsent changes', error);
+      setStatus('error', 'Не удалось сохранить черновик на устройстве');
+      return false;
+    }
   }
   function clearPersistedPending() {
-    try { localStorage.removeItem(PENDING_KEY); } catch (_) {}
+    try { localStorage.removeItem(ownPendingKey); } catch (_) {}
   }
-  function readPersistedPending() {
-    try { return JSON.parse(localStorage.getItem(PENDING_KEY) || 'null'); }
+  function readPersistedPending(key = ownPendingKey) {
+    try { return JSON.parse(localStorage.getItem(key) || 'null'); }
     catch { return null; }
   }
-  function quarantinePersistedPending(saved, reason) {
+  function quarantinePersistedPending(saved, reason, key = ownPendingKey) {
     try {
-      localStorage.setItem(PENDING_QUARANTINE_KEY, JSON.stringify({
+      const raw = JSON.stringify({
         saved,
         reason,
         quarantined_at: new Date().toISOString()
-      }));
-      localStorage.removeItem(PENDING_KEY);
+      });
+      localStorage.setItem(`${PENDING_QUARANTINE_KEY}:${documentId}:${Date.now()}`, raw);
+      localStorage.setItem(PENDING_QUARANTINE_KEY, raw);
+      localStorage.removeItem(key);
     } catch (_) {}
+    confirmationError = new Error('Черновик сохранён отдельно и ещё не отправлен');
   }
 
   function schedulePush(state) {
+    confirmationError = null;
     // Замораживаем состояние в момент клика «Сохранить». Сетевые операции
     // асинхронны, а Store.state продолжает мутировать; ссылка здесь недопустима.
     const snapshot = cloneState(state);
     if (!pendingState) {
-      pendingBase = cloneState(remoteSnapshot || {});
+      pendingBase = remoteSnapshot ? cloneState(remoteSnapshot) : null;
       pendingBaseUpdatedAt = serverUpdatedAt || null;
     }
     // При нескольких быстрых сохранениях база остаётся исходной, а pending
@@ -737,8 +794,8 @@
   }
 
   async function runFlush() {
-    if (!pendingState) return;
-    if (!pullCompleted) return; // повторная защита
+    if (!pendingState) return { saved: !confirmationError };
+    if (!pullCompleted) return { saved: false };
     const state = cloneState(pendingState);
     const base = cloneState(pendingBase);
     const baseUpdatedAt = pendingBaseUpdatedAt;
@@ -751,7 +808,7 @@
       });
       persistPending(pendingState);
       setStatus('error', 'Push отклонён (защита)');
-      return;
+      return { saved: false };
     }
 
     let remote = null;
@@ -770,7 +827,7 @@
         setStatus('error', `Нет связи, повтор через ${Math.round(delay/1000)}с`);
         clearTimeout(pushTimer);
         pushTimer = setTimeout(flush, delay);
-        return;
+        return { saved: false, error: e };
       }
       console.warn('[CloudSync] preflight failed; guarded push will use pending base', e);
     }
@@ -793,9 +850,9 @@
         }
         applySyncedState(remote.data);
         setStatus('error', 'Черновик сохранён отдельно');
-        return;
+        return { saved: false, error: confirmationError };
       }
-      if (!versionsEqual(remote.updated_at, baseUpdatedAt)) {
+      if (!versionsEqual(remote.updated_at, baseUpdatedAt) || !sameJson(base, remote.data)) {
         console.warn('[CloudSync] CONFLICT: server changed since pending base; merging.', {
           base: baseUpdatedAt,
           server: remote.updated_at
@@ -816,7 +873,7 @@
     if (isEffectivelyEmpty(candidate) && remoteHasData(safetyRemote)) {
       persistPending(pendingState);
       setStatus('error', 'Push отклонён (защита)');
-      return;
+      return { saved: false };
     }
 
     if (conflicts.length && remote && remote.data) {
@@ -830,6 +887,8 @@
     try {
       const pushedAt = await pushRemote(candidate, expectedUpdatedAt);
       retryAttempt = 0;                  // успех — сбрасываем счётчик retry
+      acknowledgedRevision = Math.max(acknowledgedRevision, revision);
+      confirmationError = null;
 
       if (pendingRevision === revision) {
         pendingState = null;
@@ -859,11 +918,14 @@
         pushTimer = setTimeout(flush, 50);
       }
 
-      setStatus('synced', conflicts.length ? 'Сохранено с объединением' : 'Сохранено');
+      if (pendingState) setStatus('syncing', 'Сохранение…');
+      else setStatus('synced', conflicts.length ? 'Сохранено с объединением' : 'Сохранено');
+      try { localStorage.setItem(ACK_KEY, JSON.stringify({ documentId, updated_at: pushedAt })); } catch (_) {}
       // Зеркалим личные снимки клиентов — best effort, не блокирует основной push
       pushClientSnapshots(candidate).catch(e => {
         console.warn('[CloudSync] snapshots mirror failed', e);
       });
+      return { saved: !pendingState };
     } catch (e) {
       console.warn('[CloudSync] push error, will retry', e);
       // pendingState не обнулялся и содержит либо этот снимок, либо ещё более
@@ -882,13 +944,42 @@
       );
       clearTimeout(pushTimer);
       pushTimer = setTimeout(flush, delay);
+      return { saved: false, error: e };
     }
   }
 
   function flush() {
     if (flushPromise) return flushPromise;
-    flushPromise = runFlush().finally(() => { flushPromise = null; });
+    flushPromise = serializeSync(runFlush).finally(() => { flushPromise = null; });
     return flushPromise;
+  }
+
+  async function confirmSaved() {
+    const target = pendingRevision;
+    let timeout;
+    const confirm = async () => {
+      if (!navigator.onLine) return { saved: false };
+      if (!pullCompleted) {
+        const result = await pull({ silent: true });
+        if (result.error) return { saved: false, error: result.error };
+      }
+      // Drain edits made during an in-flight request too. CAS conflicts retry
+      // immediately; network failures leave the durable draft for normal retry.
+      for (let attempt = 0; attempt < 3; attempt++) {
+        clearTimeout(pushTimer);
+        const result = await flush();
+        if (!pendingState) return { saved: !confirmationError && acknowledgedRevision >= target };
+        if (result && result.error && result.error.code !== 'CRM_STATE_CONFLICT') return result;
+      }
+      return { saved: false };
+    };
+    try {
+      return await Promise.race([
+        confirm(),
+        new Promise(resolve => { timeout = setTimeout(() => resolve({ saved: false }), 15000); })
+      ]);
+    } catch (error) { return { saved: false, error }; }
+    finally { clearTimeout(timeout); }
   }
 
   function readLocal() {
@@ -935,16 +1026,31 @@
   });
   window.addEventListener('pageshow', () => { resumeSync({ silent: pullCompleted }); });
 
-  /* ---- Фоновый pull раз в минуту ----
-     Закрывает сценарий «вторая вкладка с устаревшим стейтом перетёрла
-     свежие данные»: даже если ты её не трогаешь, она каждую минуту
-     подтягивает актуальный state и обновляет serverUpdatedAt.
-     Только когда вкладка видима — на скрытой нет смысла греть сеть. */
-  setInterval(() => {
-    if (document.visibilityState !== 'visible') return;
-    if (!navigator.onLine) return;
-    resumeSync({ silent: true });
-  }, POLL_INTERVAL_MS);
+  /* Версия весит десятки байт. Полный снимок получаем только при изменении
+     версии или контрольном обновлении раз в минуту. Содержимое чужого кэша
+     само по себе не считается подтверждённым сервером. */
+  let versionCheckPromise = null;
+  function checkForRemoteChanges() {
+    if (document.visibilityState !== 'visible' || !navigator.onLine) return Promise.resolve();
+    if (versionCheckPromise) return versionCheckPromise;
+    versionCheckPromise = serializeSync(async () => {
+      try {
+        if (!pullCompleted || Date.now() - lastFullPullAt >= POLL_INTERVAL_MS) {
+          return await runPull({ silent: true });
+        }
+        const version = await fetchRemoteVersion();
+        if (!versionsEqual(version, serverUpdatedAt)) return await runPull({ silent: true });
+        if (!pendingState && remoteSnapshot) applySyncedState(remoteSnapshot);
+      } catch (error) {
+        setStatus('error', 'Нет связи, ожидаем обновления');
+      }
+    }).finally(() => { versionCheckPromise = null; });
+    return versionCheckPromise;
+  }
+  setInterval(checkForRemoteChanges, VERSION_POLL_INTERVAL_MS);
+  window.addEventListener('storage', event => {
+    if (event.key === ACK_KEY || event.key === STORAGE_KEY) checkForRemoteChanges();
+  });
 
   /* ---- Очередь Telegram-уведомлений ----
      Вызывается из app.js при смене статуса. Просто INSERT-нашей строки
@@ -1109,6 +1215,7 @@
     pull,
     push: schedulePush,
     flush,
+    confirmSaved,
     flushOnHide,
     pushClientSnapshots,    // ручной триггер: после CRUD над clientPortals
     queueTelegramNotification, // пишем строку в notification_outbox (читает бот)
@@ -1135,27 +1242,59 @@
      pendingState мы успели сохранить в localStorage вместе с merge-base —
      поднимем его и поставим в очередь. Старые pending без базы не replay'им:
      кладём в quarantine, чтобы не откатить свежую работу. */
+  const draftLocks = navigator.locks;
+  // Fresh ID for every document: duplicating a tab also clones sessionStorage.
+  // Holding the old owner's lock distinguishes a duplicate from a reload.
+  const draftOwnerReady = draftLocks && typeof draftLocks.request === 'function'
+    ? new Promise(resolve => {
+      draftLocks.request(`mentori-crm-draft:${ownPendingKey}`, () => {
+        resolve();
+        return new Promise(() => {}); // released by the browser on document unload
+      }).catch(() => resolve());
+    }) : Promise.resolve();
+
+  let recoveryPromise = null;
   function recoverPending() {
-    const saved = readPersistedPending();
-    if (!saved || !saved.state) return;
-    if (!saved.base || !saved.baseUpdatedAt) {
-      console.warn('[CloudSync] pending push has no merge base; quarantined instead of replaying stale blob.');
-      quarantinePersistedPending(saved, 'missing_merge_base');
-      return;
-    }
-    console.warn('[CloudSync] recovering pending push from', saved.queued_at);
-    pendingState = cloneState(saved.state);
-    pendingBase = cloneState(saved.base);
-    pendingBaseUpdatedAt = saved.baseUpdatedAt;
-    pendingRevision++;
-    setStatus('syncing', 'Восстанавливаем несохранённое…');
-    // не дёргаем flush сразу — он запустится после первого успешного pull
-    // (см. ветку `if (pendingState) ...` внутри pull()).
+    if (recoveryPromise) return recoveryPromise;
+    recoveryPromise = (async () => {
+      await draftOwnerReady;
+      // The old shared slot has no provable owner. Keep it as a recoverable
+      // backup rather than replaying it from several already-open tabs.
+      const legacy = readPersistedPending(PENDING_KEY);
+      if (legacy && legacy.state) {
+        quarantinePersistedPending(legacy, 'legacy_shared_draft', PENDING_KEY);
+        setStatus('error', 'Старый черновик сохранён отдельно');
+      }
+      if (!previousPendingKey || previousPendingKey === ownPendingKey) return;
+      if (!draftLocks || typeof draftLocks.request !== 'function') {
+        if (readPersistedPending(previousPendingKey)) {
+          confirmationError = new Error('Неотправленный черновик предыдущей страницы сохранён отдельно');
+          setStatus('error', 'Неотправленный черновик сохранён отдельно');
+        }
+        return;
+      }
+      await draftLocks.request(`mentori-crm-draft:${previousPendingKey}`, { ifAvailable: true }, async lock => {
+        if (!lock) return; // original tab is still alive; it owns its own draft
+        const saved = readPersistedPending(previousPendingKey);
+        if (!saved || !saved.state) return;
+        if (!saved.base || !saved.baseUpdatedAt || pendingState) {
+          quarantinePersistedPending(saved, pendingState ? 'new_edits_before_recovery' : 'missing_merge_base', previousPendingKey);
+          return;
+        }
+        pendingState = cloneState(saved.state);
+        pendingBase = cloneState(saved.base);
+        pendingBaseUpdatedAt = saved.baseUpdatedAt;
+        pendingRevision++;
+        if (persistPending(pendingState)) localStorage.removeItem(previousPendingKey);
+        setStatus('syncing', 'Восстанавливаем несохранённое…');
+      });
+    })();
+    return recoveryPromise;
   }
 
   /* ---- Авто-pull при загрузке страницы ---- */
-  document.addEventListener('DOMContentLoaded', () => {
-    recoverPending();
+  document.addEventListener('DOMContentLoaded', async () => {
+    await recoverPending();
     if (!navigator.onLine) { setStatus('offline','Оффлайн'); return; }
     // Дать app.js успеть инициализировать Store.load() сначала из localStorage,
     // затем тянем облако и при необходимости ререндерим.

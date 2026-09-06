@@ -368,8 +368,8 @@ const base = {
     assert.equal(h.server.data.clients[1].remain, 315, 'microsecond-newer server edit must survive');
   }
 
-  // Recovery must compare the saved pending base version, not the version
-  // freshly observed by pull. Otherwise an old pending blob can overwrite it.
+  // Old shared drafts have no reliable tab owner. Preserve them separately;
+  // a fresh page must not replay another still-open tab's stale snapshot.
   {
     const h = createHarness(base);
     const pending = clone(base);
@@ -382,13 +382,15 @@ const base = {
       baseUpdatedAt: '2026-07-26T00:00:00.000Z',
       queued_at: '2026-07-26T00:00:01.000Z'
     }));
-    h.recoverPending();
+    await h.recoverPending();
     await h.cloud.pull();
     await h.cloud.flush();
 
-    assert.equal(h.server.data.clients[0].paid, 140, 'recovered local edit must survive initial pull');
-    assert.equal(h.server.data.clients[1].remain, 310, 'new server edit must survive pending recovery');
-    assert.equal(h.storage.has('mentori-crm-pending'), false, 'pending is cleared only after successful push');
+    assert.equal(h.server.data.clients[0].paid, 100, 'unowned legacy snapshot must not change server state');
+    assert.equal(h.server.data.clients[1].remain, 310, 'new server edit must survive');
+    const backup = JSON.parse(h.storage.get('mentori-crm-pending-quarantine'));
+    assert.equal(backup.saved.state.clients[0].paid, 140, 'old unsent change remains recoverable');
+    assert.equal((await h.cloud.confirmSaved()).saved, false, 'quarantined work cannot claim server acknowledgement');
   }
 
   // Same-field edits have one final value (the later Save), but the previous
